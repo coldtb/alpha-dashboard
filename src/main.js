@@ -804,14 +804,14 @@ function calculateScore(coin) {
   // Funding rate factor
   if (coin.funding < 0) {
     score += 20; // Negative funding
-    if (coin.funding <= -0.05) {
+    if (coin.funding <= -0.0005) {
       score += 15; // Deep negative funding
-    } else if (coin.funding <= -0.02) {
+    } else if (coin.funding <= -0.0002) {
       score += 10;
     }
   } else {
     // Highly positive funding: if price is flat, it's froth, which has high mean reversion potential
-    if (coin.funding > 0.03 && change <= 3.0) {
+    if (coin.funding > 0.0003 && change <= 3.0) {
       score += 15; // Mean reversion potential
     }
   }
@@ -996,8 +996,8 @@ function calculateCustomSetupScore(plan) {
     if (direction === "LONG") {
       if (funding < 0) {
         marketScore += 15;
-        if (funding <= -0.05) marketScore += 10;
-        else if (funding <= -0.02) marketScore += 7;
+        if (funding <= -0.0005) marketScore += 10;
+        else if (funding <= -0.0002) marketScore += 7;
       } else if (funding < 0.0003) {
         marketScore += 10;
       } else {
