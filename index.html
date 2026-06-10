@@ -48,16 +48,79 @@
         </div>
       </section>
 
+      <!-- Alpha Trade Planner -->
+      <section class="planner-section">
+        <h2 class="grid-section-title">
+          <svg width="20" height="20" fill="var(--color-blue)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
+            <path d="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M7,7H17V5H19V19H5V5H7V7Z"/>
+          </svg>
+          Alpha Trade Planner
+        </h2>
+        <div class="planner-card">
+          <form id="planner-form" onsubmit="return false;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="plan-symbol">Symbol</label>
+                <input type="text" id="plan-symbol" placeholder="e.g. BTC, SOL" required autocomplete="off">
+                <div id="symbol-live-indicator" class="live-indicator-text">Enter symbol...</div>
+              </div>
+              <div class="form-group">
+                <label for="plan-direction">Direction</label>
+                <select id="plan-direction">
+                  <option value="LONG">LONG</option>
+                  <option value="SHORT">SHORT</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="plan-entry">Entry Price ($)</label>
+                <input type="number" id="plan-entry" placeholder="0.00" step="any" required>
+              </div>
+              <div class="form-group">
+                <label for="plan-sl">Stop Loss (SL) ($)</label>
+                <input type="number" id="plan-sl" placeholder="0.00" step="any" required>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="plan-tp">Take Profit (TP) ($)</label>
+                <input type="number" id="plan-tp" placeholder="0.00" step="any" required>
+              </div>
+              <div class="form-group">
+                <label for="plan-risk-pct">Risk per Trade (%)</label>
+                <input type="number" id="plan-risk-pct" value="2" min="0.1" max="100" step="any">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="plan-account-size">Account Size ($)</label>
+                <input type="number" id="plan-account-size" value="10000" min="10" step="any">
+              </div>
+            </div>
+
+            <button type="submit" id="save-plan-btn" class="planner-submit-btn">
+              Analyze & Save Setup
+            </button>
+          </form>
+        </div>
+      </section>
+
       <!-- Top Opportunities Podium -->
       <section class="signals-section">
-        <h2 class="grid-section-title">
-          <svg width="20" height="20" fill="var(--color-green)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
-            <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6L15.5,9.5L14,11L12,9L8,13L6.5,11.5L12,6Z"/>
-          </svg>
-          Top 3 Alpha Signals
-        </h2>
+        <div class="signals-header-tabs">
+          <button class="tab-btn active" id="tab-market-alpha" data-tab="market">
+            Market Alpha
+          </button>
+          <button class="tab-btn" id="tab-my-plans" data-tab="custom">
+            My Plans (0)
+          </button>
+        </div>
         <div class="podium-container" id="podium-grid">
-          <!-- Top 3 ranked signals will load here dynamically: 1, 2, 3 -->
+          <!-- Top 3 ranked signals will load here dynamically -->
           <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
             <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
           </div>

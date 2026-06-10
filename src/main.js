@@ -14,6 +14,8 @@ let watchlistPrices = {
   "INJ": { price: 0, change: 0, low: 0, high: 0 },
   "WLD": { price: 0, change: 0, low: 0, high: 0 }
 };
+let customTrades = [];
+let activeTab = "market"; // "market" or "custom"
 
 // Hand-crafted professional trade plans from Wiki
 const wikiTradePlans = {
@@ -109,6 +111,17 @@ Select top 2, define SL below the flush wick and reversion targets in Mongolian.
 // Initialize application
 document.addEventListener("DOMContentLoaded", () => {
   renderPromptsHub();
+  
+  // Load custom trades from localStorage
+  const saved = localStorage.getItem("alpha_custom_trades");
+  if (saved) {
+    try {
+      customTrades = JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to parse custom trades:", e);
+    }
+  }
+  
   fetchScannerData();
   initWebSockets();
   
@@ -126,6 +139,45 @@ document.addEventListener("DOMContentLoaded", () => {
       filterAndRenderTable();
     });
   });
+  
+  // Tab Event Listeners
+  const tabMarket = document.getElementById("tab-market-alpha");
+  const tabMyPlans = document.getElementById("tab-my-plans");
+  
+  if (tabMarket && tabMyPlans) {
+    tabMarket.addEventListener("click", () => {
+      tabMarket.classList.add("active");
+      tabMyPlans.classList.remove("active");
+      activeTab = "market";
+      renderPodium();
+    });
+    
+    tabMyPlans.addEventListener("click", () => {
+      tabMyPlans.classList.add("active");
+      tabMarket.classList.remove("active");
+      activeTab = "custom";
+      renderPodium();
+    });
+  }
+  
+  // Planner Form Event Listeners
+  const planSymbolInput = document.getElementById("plan-symbol");
+  if (planSymbolInput) {
+    planSymbolInput.addEventListener("input", handleSymbolInput);
+  }
+  
+  const planDirectionSelect = document.getElementById("plan-direction");
+  if (planDirectionSelect) {
+    planDirectionSelect.addEventListener("change", handleDirectionChange);
+  }
+  
+  const plannerForm = document.getElementById("planner-form");
+  if (plannerForm) {
+    plannerForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveCustomPlan();
+    });
+  }
   
   document.getElementById("drawer-close").addEventListener("click", closeDrawer);
   document.getElementById("drawer-backdrop").addEventListener("click", closeDrawer);
@@ -241,6 +293,7 @@ async function fetchScannerData() {
     
     filterAndRenderTable();
     renderWatchlist();
+    updateCustomPlansTabCount();
     renderPodium();
     
   } catch (err) {
@@ -500,6 +553,120 @@ function openDrawer(symbol) {
   const drawer = document.getElementById("drawer");
   const content = document.getElementById("drawer-content");
   
+  // First, check if there is a custom trade plan saved
+  const customPlan = customTrades.find(t => t.symbol === symbol);
+  if (customPlan) {
+    const scoreInfo = calculateCustomSetupScore(customPlan);
+    const riskAmount = customPlan.accountSize * (customPlan.riskPct / 100);
+    const riskPctOfEntry = Math.abs(customPlan.entry - customPlan.sl) / customPlan.entry;
+    const positionSizeUsdt = riskPctOfEntry > 0 ? (riskAmount / riskPctOfEntry) : 0;
+    const positionSizeTokens = customPlan.entry > 0 ? (positionSizeUsdt / customPlan.entry) : 0;
+    const recommendedLeverage = customPlan.accountSize > 0 ? (positionSizeUsdt / customPlan.accountSize).toFixed(1) : "1";
+    const directionClass = customPlan.direction === "LONG" ? "change-up" : "change-down";
+    const directionBadge = `<span class="plan-type-badge ${directionClass}">${customPlan.direction} SETUP</span>`;
+    
+    let invalidationText = `Хэрэв ханш ${formatPriceText(customPlan.sl)}-оос доош орж 4H хаалт хийвэл арилжааны Stop Loss идэвхжиж, $${riskAmount.toFixed(2)} (${customPlan.riskPct}%) алдагдал хүлээгээд гарна.`;
+    if (customPlan.direction === "SHORT") {
+      invalidationText = `Хэрэв ханш ${formatPriceText(customPlan.sl)}-оос дээш орж 4H хаалт хийвэл арилжааны Stop Loss идэвхжиж, $${riskAmount.toFixed(2)} (${customPlan.riskPct}%) алдагдал хүлээгээд гарна.`;
+    }
+    
+    content.innerHTML = `
+      <div class="drawer-header">
+        <div class="drawer-symbol">
+          ${symbol}
+          ${directionBadge}
+        </div>
+        <div style="font-size: 0.95rem; color: var(--color-text-muted); margin-bottom: 0.5rem;">
+          Custom Trade Plan — Score: <span class="score-badge">${customPlan.score}/100</span>
+        </div>
+        <div class="drawer-price">${formatPriceText(customPlan.entry)}</div>
+      </div>
+      
+      <div class="trade-plan-details">
+        <div>
+          <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-primary);">Strategy Analysis</h4>
+          <div style="font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: 0.25rem;">
+            <div>• Market Score: <strong>${scoreInfo.market}/50</strong> (Funding, Volume, Consolidation)</div>
+            <div>• Trade Structure Score: <strong>${scoreInfo.trade}/50</strong> (R:R, SL Distance, Trend)</div>
+            <div style="margin-top: 0.5rem; font-weight: 500; color: #fff;">
+              Дүгнэлт: ${customPlan.score >= 75 ? '🔥 High Conviction setup. Ороход тохиромжтой.' : (customPlan.score >= 50 ? '⏳ Moderate setup. Хяналтад авах.' : '⚠️ Low Conviction setup. Алгасахыг зөвлөж байна.')}
+            </div>
+          </div>
+        </div>
+        
+        <div class="plan-stats-grid">
+          <div class="plan-stat">
+            <span class="stat-label">Entry Price</span>
+            <span class="stat-val" style="color: var(--color-blue);">${formatPriceText(customPlan.entry)}</span>
+          </div>
+          <div class="plan-stat">
+            <span class="stat-label">Stop Loss (SL)</span>
+            <span class="stat-val down">${formatPriceText(customPlan.sl)}</span>
+          </div>
+          <div class="plan-stat">
+            <span class="stat-label">Target Profit (TP)</span>
+            <span class="stat-val up">${formatPriceText(customPlan.tp)}</span>
+          </div>
+          <div class="plan-stat">
+            <span class="stat-label">Risk/Reward (R:R)</span>
+            <span class="stat-val" style="color: #c084fc;">${scoreInfo.rr}:1</span>
+          </div>
+          <div class="plan-stat">
+            <span class="stat-label">Risk Amount</span>
+            <span class="stat-val" style="color: var(--color-red); font-size: 1.15rem;">$${riskAmount.toFixed(2)} (${customPlan.riskPct}%)</span>
+          </div>
+          <div class="plan-stat">
+            <span class="stat-label">Position Size</span>
+            <span class="stat-val" style="color: var(--color-green); font-size: 1.15rem;">$${positionSizeUsdt.toFixed(2)}</span>
+          </div>
+          <div class="plan-stat" style="grid-column: span 2;">
+            <span class="stat-label">Contracts & Recommended Leverage</span>
+            <span class="stat-val" style="color: #fff; font-size: 0.95rem;">
+              ${positionSizeTokens.toFixed(4)} ${symbol} | Leverage: ${recommendedLeverage}x (Safe limit: ${(100 / scoreInfo.slPct).toFixed(1)}x)
+            </span>
+          </div>
+        </div>
+        
+        <div>
+          <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-blue);">Level Visualization</h4>
+          <div class="plan-visualization">
+            <div class="viz-line tp" style="top: ${customPlan.direction === 'LONG' ? '20%' : '80%'}; border-color: ${customPlan.direction === 'LONG' ? 'rgba(0, 230, 118, 0.3)' : 'rgba(255, 61, 0, 0.3)'};"></div>
+            <div class="viz-line entry" style="top: 50%;"></div>
+            <div class="viz-line sl" style="top: ${customPlan.direction === 'LONG' ? '80%' : '20%'}; border-color: ${customPlan.direction === 'LONG' ? 'rgba(255, 61, 0, 0.3)' : 'rgba(0, 230, 118, 0.3)'};"></div>
+            
+            <div class="viz-label tp" style="color: ${customPlan.direction === 'LONG' ? 'var(--color-green)' : 'var(--color-red)'}; font-weight: ${customPlan.direction === 'LONG' ? '600' : 'normal'};">
+              <span>${customPlan.direction === 'LONG' ? 'TP Target' : 'SL Level'}</span>
+              <span>${formatPriceText(customPlan.direction === 'LONG' ? customPlan.tp : customPlan.sl)}</span>
+            </div>
+            <div class="viz-label entry">
+              <span>Entry Level</span>
+              <span>${formatPriceText(customPlan.entry)}</span>
+            </div>
+            <div class="viz-label sl" style="color: ${customPlan.direction === 'LONG' ? 'var(--color-red)' : 'var(--color-green)'}; font-weight: ${customPlan.direction === 'LONG' ? 'normal' : '600'};">
+              <span>${customPlan.direction === 'LONG' ? 'SL Level' : 'TP Target'}</span>
+              <span>${formatPriceText(customPlan.direction === 'LONG' ? customPlan.sl : customPlan.tp)}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="invalidation-box">
+          <div class="invalidation-title">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12,2L1,21H23L12,2M12,6L19.8,18H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z"/>
+            </svg>
+            Risk Invalidation Rule
+          </div>
+          <div>${invalidationText}</div>
+        </div>
+      </div>
+    `;
+    
+    backdrop.classList.add("open");
+    drawer.classList.add("open");
+    return;
+  }
+
+  // Fallback to auto-generated or wiki plans if not custom
   const coin = top100Coins.find(c => c.symbol === symbol) || {
     symbol: symbol,
     price: watchlistPrices[symbol]?.price || 0,
@@ -510,7 +677,6 @@ function openDrawer(symbol) {
   
   let plan = wikiTradePlans[symbol];
   
-  // If no wiki plan exists, generate one dynamically based on current price!
   if (!plan) {
     const isSqueeze = coin.setup === "Squeeze Setup";
     const type = isSqueeze ? "Mean Reversion Long" : (coin.change >= 1.5 ? "Momentum Long" : "Range Breakout Long");
@@ -535,7 +701,6 @@ function openDrawer(symbol) {
     };
   }
   
-  // Format visualization levels for styles
   const currentText = formatPriceText(coin.price);
   
   content.innerHTML = `
@@ -670,61 +835,416 @@ function calculateScore(coin) {
 function renderPodium() {
   const container = document.getElementById("podium-grid");
   
-  // Calculate scores for all coins
-  const scoredCoins = top100Coins.map(coin => ({
-    ...coin,
-    score: calculateScore(coin)
-  }));
+  if (activeTab === "market") {
+    // Calculate scores for all coins
+    const scoredCoins = top100Coins.map(coin => ({
+      ...coin,
+      score: calculateScore(coin)
+    }));
+    
+    // Sort by score descending
+    scoredCoins.sort((a, b) => b.score - a.score);
+    
+    // Take top 3
+    const top3 = scoredCoins.slice(0, 3);
+    
+    if (top3.length === 0) {
+      container.innerHTML = `
+        <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
+          <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
+        </div>
+      `;
+      return;
+    }
+    
+    container.innerHTML = top3.map((coin, index) => {
+      const rank = index + 1;
+      const rankClass = `rank-${rank}`;
+      const priceText = formatPriceText(coin.price);
+      const changeClass = coin.change >= 0 ? "change-up" : "change-down";
+      const changePrefix = coin.change >= 0 ? "+" : "";
+      
+      return `
+        <div class="podium-card" data-symbol="${coin.symbol}">
+          <div class="podium-left">
+            <div class="signal-rank-badge ${rankClass}">${rank}</div>
+            <div class="podium-info">
+              <span class="podium-symbol">
+                ${coin.symbol} 
+                <span class="score-badge">${coin.score}/100</span>
+              </span>
+              <span class="podium-score">${coin.setup}</span>
+            </div>
+          </div>
+          <div class="podium-right">
+            <span class="podium-price" id="podium-price-${coin.symbol}">${priceText}</span>
+            <span class="ticker-change ${changeClass}" style="font-size: 0.75rem; padding: 0.1rem 0.4rem; margin-top: 0.2rem;">${changePrefix}${coin.change.toFixed(2)}%</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // Add click listeners to podium cards
+    container.querySelectorAll(".podium-card").forEach(card => {
+      card.addEventListener("click", () => {
+        const sym = card.getAttribute("data-symbol");
+        openDrawer(sym);
+      });
+    });
+  } else {
+    // Sort customTrades by score descending
+    const sortedCustom = [...customTrades].sort((a, b) => b.score - a.score);
+    const top3Custom = sortedCustom.slice(0, 3);
+    
+    if (top3Custom.length === 0) {
+      container.innerHTML = `
+        <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px; text-align: center; padding: 1.5rem;">
+          <div style="font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.5;">
+            No custom trade plans yet.<br>Use the Trade Planner on the left to add one!
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    container.innerHTML = top3Custom.map((plan, index) => {
+      const rank = index + 1;
+      const rankClass = `rank-${rank}`;
+      const priceText = formatPriceText(plan.entry);
+      const directionClass = plan.direction === "LONG" ? "change-up" : "change-down";
+      const risk = Math.abs(plan.entry - plan.sl);
+      const reward = Math.abs(plan.tp - plan.entry);
+      const rr = risk > 0 ? (reward / risk).toFixed(1) : "0";
+      
+      return `
+        <div class="podium-card custom-plan-card ${rankClass}" data-symbol="${plan.symbol}">
+          <div class="podium-left">
+            <div class="signal-rank-badge ${rankClass}">${rank}</div>
+            <div class="podium-info">
+              <span class="podium-symbol">
+                ${plan.symbol} 
+                <span class="score-badge">${plan.score}/100</span>
+              </span>
+              <span class="podium-score ${directionClass}" style="font-weight: 600;">
+                ${plan.direction} Setup
+              </span>
+            </div>
+          </div>
+          <div class="podium-right" style="flex-direction: row; align-items: center; gap: 0.8rem;">
+            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+              <span class="podium-price">${priceText}</span>
+              <span class="ticker-change" style="font-size: 0.7rem; padding: 0.1rem 0.4rem; margin-top: 0.2rem; background: rgba(255,255,255,0.05); color: var(--color-text-muted);">
+                R:R ${rr}
+              </span>
+            </div>
+            <button class="delete-plan-btn" data-symbol="${plan.symbol}" title="Delete Plan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // Add click listeners to custom podium cards
+    container.querySelectorAll(".podium-card").forEach(card => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".delete-plan-btn")) return;
+        const sym = card.getAttribute("data-symbol");
+        openDrawer(sym);
+      });
+    });
+    
+    // Add click listener for delete buttons
+    container.querySelectorAll(".delete-plan-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const sym = btn.getAttribute("data-symbol");
+        deleteCustomPlan(sym);
+      });
+    });
+  }
+}
+
+// Custom scoring algorithm based on Wiki rules
+function calculateCustomSetupScore(plan) {
+  let marketScore = 0;
+  let tradeScore = 0;
   
-  // Sort by score descending
-  scoredCoins.sort((a, b) => b.score - a.score);
+  const symbol = plan.symbol;
+  const direction = plan.direction;
+  const entry = plan.entry;
+  const sl = plan.sl;
+  const tp = plan.tp;
   
-  // Take top 3
-  const top3 = scoredCoins.slice(0, 3);
+  const matchedCoin = top100Coins.find(c => c.symbol === symbol) || 
+                      (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0 ? { 
+                        symbol: symbol, 
+                        price: watchlistPrices[symbol].price, 
+                        change: watchlistPrices[symbol].change,
+                        volume: 50000000, 
+                        funding: -0.0001
+                      } : null);
+                      
+  if (matchedCoin) {
+    // 1. Funding rate score (max 25)
+    const funding = matchedCoin.funding;
+    if (direction === "LONG") {
+      if (funding < 0) {
+        marketScore += 15;
+        if (funding <= -0.05) marketScore += 10;
+        else if (funding <= -0.02) marketScore += 7;
+      } else if (funding < 0.0003) {
+        marketScore += 10;
+      } else {
+        marketScore += 5;
+      }
+    } else { // SHORT
+      if (funding > 0.0002) {
+        marketScore += 15;
+        if (funding >= 0.0008) marketScore += 10;
+        else if (funding >= 0.0004) marketScore += 7;
+      } else if (funding > -0.0001) {
+        marketScore += 10;
+      } else {
+        marketScore += 5;
+      }
+    }
+    
+    // 2. Volume score (max 15)
+    const volume = matchedCoin.volume;
+    if (volume > 100000000) marketScore += 15;
+    else if (volume > 50000000) marketScore += 12;
+    else if (volume > 10000000) marketScore += 8;
+    else marketScore += 4;
+    
+    // 3. Price Consolidation (max 10)
+    const change = Math.abs(matchedCoin.change);
+    if (change <= 1.5) marketScore += 10;
+    else if (change <= 3.0) marketScore += 5;
+    else marketScore += 2;
+  } else {
+    marketScore = 25; // default mid-score for unrecognized coins
+  }
   
-  if (top3.length === 0) {
-    container.innerHTML = `
-      <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
-        <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
-      </div>
-    `;
+  // 4. Trade Structure Score (max 50)
+  const risk = Math.abs(entry - sl);
+  const reward = Math.abs(tp - entry);
+  const rr = risk > 0 ? (reward / risk) : 0;
+  
+  if (rr >= 3.0) tradeScore += 20;
+  else if (rr >= 2.0) tradeScore += 15;
+  else if (rr >= 1.5) tradeScore += 10;
+  else if (rr >= 1.0) tradeScore += 5;
+  else tradeScore -= 10;
+  
+  // Stop Loss Distance (max 15)
+  const slDistancePct = entry > 0 ? (risk / entry * 100) : 0;
+  if (slDistancePct >= 1.5 && slDistancePct <= 4.0) {
+    tradeScore += 15;
+  } else if (slDistancePct > 4.0 && slDistancePct <= 8.0) {
+    tradeScore += 10;
+  } else if (slDistancePct >= 0.5 && slDistancePct < 1.5) {
+    tradeScore += 10;
+  } else if (slDistancePct > 8.0) {
+    tradeScore += 5;
+  } else {
+    tradeScore += 2;
+  }
+  
+  // Trend Alignment (max 15)
+  if (matchedCoin) {
+    const isPriceUp = matchedCoin.change > 0;
+    if ((isPriceUp && direction === "LONG") || (!isPriceUp && direction === "SHORT")) {
+      tradeScore += 15;
+    } else {
+      tradeScore += 5;
+    }
+  } else {
+    tradeScore += 10;
+  }
+  
+  const totalScore = Math.max(0, Math.min(100, marketScore + tradeScore));
+  return {
+    total: totalScore,
+    market: marketScore,
+    trade: tradeScore,
+    rr: rr.toFixed(2),
+    slPct: slDistancePct.toFixed(2)
+  };
+}
+
+// Handle typing in the Planner symbol input field
+function handleSymbolInput(e) {
+  const symbol = e.target.value.toUpperCase().trim();
+  const indicator = document.getElementById("symbol-live-indicator");
+  
+  if (!symbol) {
+    if (indicator) indicator.textContent = "Enter symbol...";
     return;
   }
   
-  container.innerHTML = top3.map((coin, index) => {
-    const rank = index + 1;
-    const rankClass = `rank-${rank}`;
-    const priceText = formatPriceText(coin.price);
-    const changeClass = coin.change >= 0 ? "change-up" : "change-down";
-    const changePrefix = coin.change >= 0 ? "+" : "";
+  // Try to find in top100 or watchlist
+  const coin = top100Coins.find(c => c.symbol === symbol) || 
+               (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0 ? {
+                 symbol: symbol,
+                 price: watchlistPrices[symbol].price,
+                 change: watchlistPrices[symbol].change,
+                 volume: 50000000,
+                 funding: -0.0001
+               } : null);
+               
+  if (coin) {
+    const formattedPrice = formatPriceText(coin.price);
+    const fundingPercent = (coin.funding * 100).toFixed(4);
+    if (indicator) {
+      indicator.innerHTML = `Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span>`;
+    }
     
-    return `
-      <div class="podium-card" data-symbol="${coin.symbol}">
-        <div class="podium-left">
-          <div class="signal-rank-badge ${rankClass}">${rank}</div>
-          <div class="podium-info">
-            <span class="podium-symbol">
-              ${coin.symbol} 
-              <span class="score-badge">${coin.score}/100</span>
-            </span>
-            <span class="podium-score">${coin.setup}</span>
-          </div>
-        </div>
-        <div class="podium-right">
-          <span class="podium-price" id="podium-price-${coin.symbol}">${priceText}</span>
-          <span class="ticker-change ${changeClass}" style="font-size: 0.75rem; padding: 0.1rem 0.4rem; margin-top: 0.2rem;">${changePrefix}${coin.change.toFixed(2)}%</span>
-        </div>
-      </div>
-    `;
-  }).join('');
+    repopulateSlAndTp(coin.price);
+  } else {
+    if (indicator) {
+      indicator.textContent = "Custom asset. Enter values manually.";
+    }
+  }
+}
+
+// Handle change of direction select element
+function handleDirectionChange() {
+  const entryEl = document.getElementById("plan-entry");
+  if (!entryEl) return;
+  const price = parseFloat(entryEl.value) || 0;
+  if (price > 0) {
+    repopulateSlAndTp(price);
+  }
+}
+
+// Repopulate SL/TP based on entry price and direction
+function repopulateSlAndTp(price) {
+  const directionSelect = document.getElementById("plan-direction");
+  const entryEl = document.getElementById("plan-entry");
+  const slEl = document.getElementById("plan-sl");
+  const tpEl = document.getElementById("plan-tp");
   
-  // Add click listeners to podium cards
-  container.querySelectorAll(".podium-card").forEach(card => {
-    card.addEventListener("click", () => {
-      const sym = card.getAttribute("data-symbol");
-      openDrawer(sym);
-    });
-  });
+  if (!entryEl || !slEl || !tpEl || !directionSelect) return;
+  
+  const dir = directionSelect.value;
+  const priceDecimals = price < 1 ? 6 : (price < 10 ? 4 : 2);
+  
+  entryEl.value = price.toFixed(priceDecimals);
+  
+  if (dir === "LONG") {
+    slEl.value = (price * 0.97).toFixed(priceDecimals);
+    tpEl.value = (price * 1.06).toFixed(priceDecimals);
+  } else {
+    slEl.value = (price * 1.03).toFixed(priceDecimals);
+    tpEl.value = (price * 0.94).toFixed(priceDecimals);
+  }
+}
+
+// Save planner custom trade plan
+function saveCustomPlan() {
+  const symbolEl = document.getElementById("plan-symbol");
+  const directionEl = document.getElementById("plan-direction");
+  const entryEl = document.getElementById("plan-entry");
+  const slEl = document.getElementById("plan-sl");
+  const tpEl = document.getElementById("plan-tp");
+  const riskPctEl = document.getElementById("plan-risk-pct");
+  const accountSizeEl = document.getElementById("plan-account-size");
+  
+  if (!symbolEl || !directionEl || !entryEl || !slEl || !tpEl) return;
+  
+  const symbol = symbolEl.value.toUpperCase().trim();
+  const direction = directionEl.value;
+  const entry = parseFloat(entryEl.value) || 0;
+  const sl = parseFloat(slEl.value) || 0;
+  const tp = parseFloat(tpEl.value) || 0;
+  const riskPct = parseFloat(riskPctEl.value) || 2;
+  const accountSize = parseFloat(accountSizeEl.value) || 10000;
+  
+  if (!symbol) {
+    alert("Please enter a valid symbol.");
+    return;
+  }
+  if (entry <= 0 || sl <= 0 || tp <= 0) {
+    alert("All prices must be positive numbers.");
+    return;
+  }
+  
+  if (direction === "LONG") {
+    if (sl >= entry) {
+      alert("For LONG trades, Stop Loss must be BELOW Entry Price.");
+      return;
+    }
+    if (tp <= entry) {
+      alert("For LONG trades, Take Profit must be ABOVE Entry Price.");
+      return;
+    }
+  } else {
+    if (sl <= entry) {
+      alert("For SHORT trades, Stop Loss must be ABOVE Entry Price.");
+      return;
+    }
+    if (tp >= entry) {
+      alert("For SHORT trades, Take Profit must be BELOW Entry Price.");
+      return;
+    }
+  }
+  
+  const scoreInfo = calculateCustomSetupScore({ symbol, direction, entry, sl, tp });
+  
+  const newPlan = {
+    symbol,
+    direction,
+    entry,
+    sl,
+    tp,
+    riskPct,
+    accountSize,
+    score: scoreInfo.total,
+    timestamp: Date.now()
+  };
+  
+  customTrades = customTrades.filter(t => t.symbol !== symbol);
+  customTrades.push(newPlan);
+  
+  localStorage.setItem("alpha_custom_trades", JSON.stringify(customTrades));
+  
+  symbolEl.value = "";
+  const indicator = document.getElementById("symbol-live-indicator");
+  if (indicator) indicator.textContent = "Enter symbol...";
+  
+  updateCustomPlansTabCount();
+  
+  activeTab = "custom";
+  const tabMarket = document.getElementById("tab-market-alpha");
+  const tabMyPlans = document.getElementById("tab-my-plans");
+  if (tabMarket && tabMyPlans) {
+    tabMarket.classList.remove("active");
+    tabMyPlans.classList.add("active");
+  }
+  
+  renderPodium();
+}
+
+// Delete custom plan
+function deleteCustomPlan(symbol) {
+  customTrades = customTrades.filter(t => t.symbol !== symbol);
+  localStorage.setItem("alpha_custom_trades", JSON.stringify(customTrades));
+  updateCustomPlansTabCount();
+  renderPodium();
+}
+
+// Update the tab label with number of plans
+function updateCustomPlansTabCount() {
+  const tabBtn = document.getElementById("tab-my-plans");
+  if (tabBtn) {
+    tabBtn.textContent = `My Plans (${customTrades.length})`;
+  }
 }
 
 // Helpers
