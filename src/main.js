@@ -17,6 +17,90 @@ let watchlistPrices = {
 let customTrades = [];
 let activeTab = "market"; // "market" or "custom"
 
+// Symbol to CoinGecko ID map for TrueNorth MCP Server queries
+const geckoIdMap = {
+  "BTC": "bitcoin",
+  "ETH": "ethereum",
+  "SOL": "solana",
+  "HYPE": "hyperliquid",
+  "LINK": "chainlink",
+  "XRP": "ripple",
+  "INJ": "injective-protocol",
+  "WLD": "worldcoin-org"
+};
+
+// In-memory cache for MCP responses
+const mcpCache = {
+  technical: {},
+  derivatives: {},
+  smartMoney: {}
+};
+
+// Generic JSON-RPC tool caller helper
+async function callMcpTool(toolName, args) {
+  try {
+    const res = await fetch('/api/mcp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      })
+    });
+    if (!res.ok) {
+      throw new Error(`Proxy status: ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error.message || JSON.stringify(data.error));
+    }
+    if (data.result && data.result.content && data.result.content[0] && data.result.content[0].text) {
+      return JSON.parse(data.result.content[0].text);
+    }
+    throw new Error('Invalid response structure');
+  } catch (err) {
+    console.warn(`Failed to call TrueNorth tool ${toolName}:`, err);
+    return null;
+  }
+}
+
+let plannerDebounceTimer = null;
+
+async function fetchTrueNorthPlannerData(symbol, dir) {
+  const geckoId = geckoIdMap[symbol];
+  if (!geckoId) return;
+  
+  const indicator = document.getElementById("symbol-live-indicator");
+  if (!indicator) return;
+  
+  let data = null;
+  if (mcpCache.technical[symbol]) {
+    data = mcpCache.technical[symbol];
+  } else {
+    data = await callMcpTool('technical_analysis', { token_address: geckoId, timeframe: '1h' });
+    if (data) {
+      mcpCache.technical[symbol] = data;
+    }
+  }
+  
+  const currentSymbolEl = document.getElementById("plan-symbol");
+  if (currentSymbolEl && currentSymbolEl.value.toUpperCase().trim() === symbol) {
+    if (data) {
+      renderTrueNorthIndicator(getScannedCoin(symbol), dir, true, data);
+    } else {
+      const span = indicator.querySelector('.mcp-loader-span');
+      if (span) span.remove();
+    }
+  }
+}
+
 // Hand-crafted professional trade plans from Wiki
 const wikiTradePlans = {
   "BTC": {
@@ -713,6 +797,13 @@ function openDrawer(symbol) {
         
         ${trueNorthHtml}
         
+        <div id="mcp-deep-insights-${symbol}">
+          <div class="mcp-drawer-loading">
+            <div class="mcp-spinner"></div>
+            <div>TrueNorth & Whale Flow ачаалж байна...</div>
+          </div>
+        </div>
+        
         <div class="invalidation-box">
           <div class="invalidation-title">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
@@ -727,6 +818,7 @@ function openDrawer(symbol) {
     
     backdrop.classList.add("open");
     drawer.classList.add("open");
+    fetchDrawerDeepInsights(symbol);
     return;
   }
 
@@ -865,6 +957,13 @@ function openDrawer(symbol) {
       
       ${trueNorthHtml}
       
+      <div id="mcp-deep-insights-${symbol}">
+        <div class="mcp-drawer-loading">
+          <div class="mcp-spinner"></div>
+          <div>TrueNorth & Whale Flow ачаалж байна...</div>
+        </div>
+      </div>
+      
       <div class="invalidation-box">
         <div class="invalidation-title">
           <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
@@ -879,6 +978,7 @@ function openDrawer(symbol) {
   
   backdrop.classList.add("open");
   drawer.classList.add("open");
+  fetchDrawerDeepInsights(symbol);
 }
 
 function closeDrawer() {
@@ -887,6 +987,312 @@ function closeDrawer() {
   
   backdrop.classList.remove("open");
   drawer.classList.remove("open");
+}
+
+// Async: Fetch deep insights from TrueNorth MCP and render into drawer
+async function fetchDrawerDeepInsights(symbol) {
+  const container = document.getElementById(`mcp-deep-insights-${symbol}`);
+  if (!container) return;
+  
+  const geckoId = geckoIdMap[symbol];
+  if (!geckoId) {
+    container.innerHTML = `<div style="font-size:0.8rem; color:var(--color-text-muted); text-align:center; padding:1rem;">TrueNorth: ${symbol} нь дэмжигдээгүй.</div>`;
+    return;
+  }
+  
+  // Fire all 3 queries in parallel
+  const [taData, derivData, whaleData] = await Promise.all([
+    mcpCache.technical[symbol] || callMcpTool('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
+    mcpCache.derivatives[symbol] || callMcpTool('derivatives_analysis', { token_address: geckoId }),
+    mcpCache.smartMoney[symbol] || callMcpTool('hyperliquid_smart_money', { token_address: geckoId })
+  ]);
+  
+  // Cache results
+  if (taData) mcpCache.technical[symbol] = taData;
+  if (derivData) mcpCache.derivatives[symbol] = derivData;
+  if (whaleData) mcpCache.smartMoney[symbol] = whaleData;
+  
+  // Check if drawer is still open for same symbol
+  const check = document.getElementById(`mcp-deep-insights-${symbol}`);
+  if (!check) return;
+  
+  let html = '<div class="mcp-insights-container">';
+  
+  // ─── 1. TrueNorth S/R Channels ───
+  if (taData && taData.support_resistance) {
+    const sr = taData.support_resistance;
+    let channelsHtml = '';
+    
+    if (sr['support and resistance channel'] && sr['support and resistance channel'].channels) {
+      const channels = [...sr['support and resistance channel'].channels].sort((a, b) => b.strength - a.strength).slice(0, 5);
+      const currentPrice = taData.token_metadata?.current_price || 0;
+      
+      channelsHtml = channels.map(ch => {
+        const mid = (ch.hi + ch.lo) / 2;
+        const isSupport = mid < currentPrice;
+        const typeColor = isSupport ? 'var(--color-green)' : 'var(--color-red)';
+        const typeLabel = isSupport ? 'Support' : 'Resistance';
+        const strengthPct = Math.min(ch.strength, 120);
+        
+        return `
+          <div class="channel-row">
+            <div>
+              <span style="color:${typeColor}; font-weight:600; font-size:0.7rem;">${typeLabel}</span>
+              <span class="channel-range">${formatPriceText(ch.lo)} – ${formatPriceText(ch.hi)}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <div style="width:50px; height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
+                <div style="width:${strengthPct}%; height:100%; background:${typeColor}; border-radius:2px;"></div>
+              </div>
+              <span class="channel-strength">${ch.strength}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    let vwapHtml = '';
+    if (sr.vwap && sr.vwap.cumulative) {
+      const v = sr.vwap.cumulative;
+      const slopeColor = v.slope === 'up' ? 'var(--color-green)' : 'var(--color-red)';
+      const stateText = v.state === 'price_above' ? 'Үнэ дээр (Bullish)' : 'Үнэ доор (Bearish)';
+      vwapHtml = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem; padding:0.5rem 0.8rem; background:rgba(0,176,255,0.04); border-radius:8px; border: 1px solid rgba(0,176,255,0.1);">
+          <div>
+            <span style="font-size:0.7rem; color:var(--color-text-muted);">VWAP (${v.scope}):</span>
+            <span style="font-family:var(--font-title); font-weight:700; color:var(--color-blue); margin-left:0.4rem;">${formatPriceText(v.value)}</span>
+          </div>
+          <div style="font-size:0.7rem;">
+            <span style="color:${slopeColor}; font-weight:600;">↗ ${v.slope}</span> · <span style="color:var(--color-text-muted);">${stateText}</span>
+          </div>
+        </div>
+      `;
+    }
+    
+    html += `
+      <div class="insight-block">
+        <div class="insight-block-title">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M3,14L3.5,14.07L8.07,9.5C7.89,8.85 8.06,8.11 8.59,7.59C9.37,6.8 10.63,6.8 11.41,7.59C11.94,8.11 12.11,8.85 11.93,9.5L14.5,12.07L15,12C15.79,12 16.5,12.31 17.03,12.83L20.29,9.57C20.1,8.92 20.27,8.16 20.8,7.63C21.59,6.84 22.84,6.84 23.63,7.63C24.41,8.41 24.41,9.67 23.63,10.45C23.1,10.98 22.34,11.15 21.7,10.96L18.44,14.22C18.95,15.09 18.88,16.2 18.14,17L21.5,20.37C22.15,20.18 22.91,20.35 23.44,20.88C24.22,21.66 24.22,22.92 23.44,23.7C22.66,24.5 21.39,24.5 20.61,23.7C20.08,23.18 19.91,22.41 20.1,21.77L16.73,18.39C15.93,19.13 14.83,19.2 13.96,18.69L11.39,21.27C11.58,21.91 11.41,22.67 10.88,23.2C10.1,24 8.83,24 8.05,23.2C7.27,22.42 7.27,21.16 8.05,20.38C8.58,19.85 9.34,19.68 9.98,19.87L12.55,17.3C12.04,16.41 12.12,15.3 12.88,14.5L10.3,11.93C9.66,12.11 8.9,11.94 8.38,11.41C7.59,10.63 7.59,9.37 8.38,8.59L3.8,13.17L3,14Z"/></svg>
+          TrueNorth Support/Resistance Channels
+          <span class="mcp-status-pill live">LIVE</span>
+        </div>
+        <div class="channels-list">
+          ${channelsHtml || '<div style="font-size:0.8rem; color:var(--color-text-muted);">Channels олдсонгүй.</div>'}
+        </div>
+        ${vwapHtml}
+      </div>
+    `;
+  }
+  
+  // ─── 2. Derivatives: Liquidation Clusters & Funding ───
+  if (derivData && derivData.derivative_data) {
+    const sym = Object.keys(derivData.derivative_data).find(k => k !== '_metadata' && k !== 'url' && k !== 'title');
+    if (sym) {
+      const d = derivData.derivative_data[sym];
+      
+      let fundingHtml = '';
+      const fundingKey = Object.keys(d).find(k => k.toLowerCase().includes('funding'));
+      if (fundingKey) {
+        const f = d[fundingKey];
+        const rate = f.current_funding_rate_in_percentage;
+        const annualized = f.annualized_funding_cost_est_in_percentage;
+        const percentile = f.current_funding_percentile_7d;
+        const fundingColor = rate < 0 ? 'var(--color-green)' : (rate > 0.01 ? 'var(--color-red)' : 'var(--color-blue)');
+        const fundingLabel = rate < 0 ? 'Сөрөг (Short даралт)' : (rate > 0.01 ? 'Эерэг (Long даралт)' : 'Төвийг сахисан');
+        
+        fundingHtml = `
+          <div class="liq-metrics-grid">
+            <div class="liq-metric">
+              <span class="w-label">Funding Rate</span>
+              <span class="w-val" style="color:${fundingColor};">${rate != null ? rate.toFixed(4) : '–'}%</span>
+              <span style="font-size:0.65rem; color:var(--color-text-muted);">${fundingLabel}</span>
+            </div>
+            <div class="liq-metric">
+              <span class="w-label">Annualized / 7D Percentile</span>
+              <span class="w-val" style="color:#fff;">${annualized != null ? annualized.toFixed(2) : '–'}%</span>
+              <span style="font-size:0.65rem; color:var(--color-text-muted);">Percentile: ${percentile != null ? percentile.toFixed(1) : '–'}%</span>
+            </div>
+          </div>
+        `;
+      }
+      
+      let liqHtml = '';
+      const liqKey = Object.keys(d).find(k => k.toLowerCase().includes('liquidation'));
+      if (liqKey) {
+        const liq = d[liqKey];
+        const shortLiqs = liq.max_liquidation_points?.max_short_liquidation_point || [];
+        const longLiqs = liq.max_liquidation_points?.max_long_liquidation_point || [];
+        const imb = liq.imbalance;
+        
+        const shortTotal = imb?.short_total_usd || 0;
+        const longTotal = imb?.long_total_usd || 0;
+        const total = shortTotal + longTotal;
+        const longPct = total > 0 ? (longTotal / total * 100) : 50;
+        
+        liqHtml = `
+          <div style="margin-top:0.5rem;">
+            <div style="font-size:0.7rem; color:var(--color-text-muted); margin-bottom:0.3rem;">Liquidation Imbalance:</div>
+            <div class="liq-ratio-bar-wrapper">
+              <div class="liq-ratio-bar-fill long" style="width:${longPct}%;"></div>
+              <div class="liq-ratio-bar-fill short" style="width:${100 - longPct}%;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; margin-top:0.2rem;">
+              <span style="color:var(--color-green);">Long: $${formatVolume(longTotal)}</span>
+              <span style="color:var(--color-text-muted);">${imb?.interpretation?.replace(/_/g, ' ') || ''}</span>
+              <span style="color:var(--color-red);">Short: $${formatVolume(shortTotal)}</span>
+            </div>
+          </div>
+          <div class="liq-metrics-grid" style="margin-top:0.5rem;">
+            ${shortLiqs.slice(0, 2).map(s => `
+              <div class="liq-metric" style="border-left:2px solid var(--color-red);">
+                <span class="w-label">Short Liq Magnet</span>
+                <span class="w-val" style="color:var(--color-red);">${formatPriceText(s.price)}</span>
+                <span style="font-size:0.65rem; color:var(--color-text-muted);">$${formatVolume(s.liq_usd)} · +${s.distance_pct?.toFixed(2) || '?'}%</span>
+              </div>
+            `).join('')}
+            ${longLiqs.slice(0, 2).map(l => `
+              <div class="liq-metric" style="border-left:2px solid var(--color-green);">
+                <span class="w-label">Long Liq Magnet</span>
+                <span class="w-val" style="color:var(--color-green);">${formatPriceText(l.price)}</span>
+                <span style="font-size:0.65rem; color:var(--color-text-muted);">$${formatVolume(l.liq_usd)} · -${l.distance_pct?.toFixed(2) || '?'}%</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+      
+      // OI block
+      let oiHtml = '';
+      const oiKey = Object.keys(d).find(k => k.toLowerCase().includes('open interest'));
+      if (oiKey) {
+        const oi = d[oiKey];
+        const oiCurrent = oi.current_open_interest;
+        const oi1h = oi.rolling_changes?.oi_change_1h_abs || 0;
+        const oi1d = oi.rolling_changes?.oi_change_1d_abs || 0;
+        const oi1hColor = oi1h >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+        const oi1dColor = oi1d >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+        
+        oiHtml = `
+          <div class="liq-metrics-grid" style="margin-top:0.5rem;">
+            <div class="liq-metric">
+              <span class="w-label">Open Interest</span>
+              <span class="w-val" style="color:#fff;">$${formatVolume(oiCurrent)}</span>
+            </div>
+            <div class="liq-metric">
+              <span class="w-label">OI Δ (1h / 24h)</span>
+              <span class="w-val" style="font-size:0.85rem;"><span style="color:${oi1hColor};">${oi1h >= 0 ? '+' : ''}$${formatVolume(Math.abs(oi1h))}</span> / <span style="color:${oi1dColor};">${oi1d >= 0 ? '+' : ''}$${formatVolume(Math.abs(oi1d))}</span></span>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `
+        <div class="insight-block">
+          <div class="insight-block-title">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z"/></svg>
+            Derivatives & Liquidation Map
+            <span class="mcp-status-pill live">LIVE</span>
+          </div>
+          ${fundingHtml}
+          ${oiHtml}
+          ${liqHtml}
+        </div>
+      `;
+    }
+  }
+  
+  // ─── 3. Whale Smart Money (Nansen-style) ───
+  if (whaleData && whaleData.smart_money) {
+    const sm = whaleData.smart_money;
+    const sentiment = sm.sentiment || 'NEUTRAL';
+    const sentimentColor = sentiment === 'BULLISH' ? 'var(--color-green)' : (sentiment === 'BEARISH' ? 'var(--color-red)' : 'var(--color-blue)');
+    const sentimentBg = sentiment === 'BULLISH' ? 'rgba(0,230,118,0.08)' : (sentiment === 'BEARISH' ? 'rgba(255,61,0,0.08)' : 'rgba(0,176,255,0.08)');
+    const sentimentIcon = sentiment === 'BULLISH' ? '🐂' : (sentiment === 'BEARISH' ? '🐻' : '⚖️');
+    
+    const lsRatio = sm.long_short_ratio || 0;
+    const longPct = lsRatio > 0 ? (lsRatio / (lsRatio + 1) * 100) : 50;
+    
+    const agg = sm.aggregated_position || {};
+    const longPos = agg.long_position || 0;
+    const shortPos = agg.short_position || 0;
+    const netPos = agg.net_position || 0;
+    
+    const topWallets = (sm.top_wallets || []).slice(0, 5);
+    let walletsHtml = topWallets.map(w => {
+      const dirColor = w.direction === 'LONG' ? 'var(--color-green)' : 'var(--color-red)';
+      const pnlColor = w.pnl >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:0.35rem 0; border-bottom: 1px solid rgba(255,255,255,0.02); font-size:0.75rem;">
+          <div style="display:flex; align-items:center; gap:0.4rem;">
+            <span style="color:${dirColor}; font-weight:700; font-size:0.65rem;">${w.direction}</span>
+            <span style="color:var(--color-text-muted); font-family:monospace; font-size:0.65rem;">${w.wallet || w.wallet_address?.slice(0, 10) + '...'}</span>
+          </div>
+          <div style="display:flex; gap:0.6rem; align-items:center;">
+            <span style="color:#fff; font-weight:600;">$${formatVolume(Math.abs(w.value || 0))}</span>
+            <span style="color:${pnlColor}; font-size:0.65rem;">${w.pnl >= 0 ? '+' : ''}$${formatVolume(Math.abs(w.pnl || 0))}</span>
+            <span style="color:var(--color-text-muted); font-size:0.6rem;">${w.leverage || '?'}x</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    html += `
+      <div class="insight-block" style="border-color:${sentimentColor.replace('var(', '').replace(')', '')}22;">
+        <div class="insight-block-title">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0 0,1 8.5,9A3.5,3.5 0 0,1 12,5.5M5,8C5.56,8 6.08,8.15 6.53,8.42C6.38,9.85 6.8,11.27 7.66,12.38C7.16,13.34 6.16,14 5,14A3,3 0 0,1 2,11A3,3 0 0,1 5,8M19,8A3,3 0 0,1 22,11A3,3 0 0,1 19,14C17.84,14 16.84,13.34 16.34,12.38C17.2,11.27 17.62,9.85 17.47,8.42C17.92,8.15 18.44,8 19,8M5.5,18.25C5.5,16.18 8.41,14.5 12,14.5C15.59,14.5 18.5,16.18 18.5,18.25V20H5.5V18.25M0,20V18.5C0,17.11 1.89,15.94 4.45,15.6C3.86,16.28 3.5,17.22 3.5,18.25V20H0M24,20H20.5V18.25C20.5,17.22 20.14,16.28 19.55,15.6C22.11,15.94 24,17.11 24,18.5V20Z"/></svg>
+          Whale Smart Money Flow (Hyperliquid)
+          <span class="mcp-status-pill live">LIVE</span>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.3rem;">
+          <span style="font-size:1.3rem;">${sentimentIcon}</span>
+          <span class="sentiment-badge" style="background:${sentimentBg}; color:${sentimentColor}; font-weight:700; font-size:0.85rem; padding:0.2rem 0.6rem;">
+            ${sentiment}
+          </span>
+          <span style="font-size:0.75rem; color:var(--color-text-muted);">L/S Ratio: <span style="color:#fff; font-weight:600;">${lsRatio.toFixed(2)}</span></span>
+        </div>
+        
+        <div class="whale-metrics-grid">
+          <div class="whale-metric">
+            <span class="w-label">Long Position</span>
+            <span class="w-val" style="color:var(--color-green);">$${formatVolume(longPos)}</span>
+          </div>
+          <div class="whale-metric">
+            <span class="w-label">Short Position</span>
+            <span class="w-val" style="color:var(--color-red);">$${formatVolume(shortPos)}</span>
+          </div>
+        </div>
+        
+        <div>
+          <div class="whale-ratio-bar-wrapper">
+            <div class="whale-ratio-bar-fill" style="width:${longPct.toFixed(1)}%;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.65rem; margin-top:0.15rem;">
+            <span style="color:var(--color-green);">Longs ${longPct.toFixed(0)}%</span>
+            <span style="color:var(--color-text-muted);">Net: <span style="color:${netPos >= 0 ? 'var(--color-green)' : 'var(--color-red)'}; font-weight:600;">${netPos >= 0 ? '+' : ''}$${formatVolume(Math.abs(netPos))}</span></span>
+            <span style="color:var(--color-red);">Shorts ${(100 - longPct).toFixed(0)}%</span>
+          </div>
+        </div>
+        
+        <div style="margin-top:0.3rem;">
+          <div style="font-size:0.7rem; color:var(--color-text-muted); margin-bottom:0.3rem; font-weight:600;">Top Whale Positions:</div>
+          ${walletsHtml || '<div style="font-size:0.75rem; color:var(--color-text-muted);">Мэдээлэл олдсонгүй.</div>'}
+        </div>
+      </div>
+    `;
+  }
+  
+  html += '</div>';
+  
+  // Final check
+  const finalCheck = document.getElementById(`mcp-deep-insights-${symbol}`);
+  if (finalCheck) {
+    if (html === '<div class="mcp-insights-container"></div>') {
+      finalCheck.innerHTML = '<div style="font-size:0.8rem; color:var(--color-text-muted); text-align:center; padding:1rem;">TrueNorth мэдээлэл татахад алдаа гарлаа. Дахин оролдоно уу.</div>';
+    } else {
+      finalCheck.innerHTML = html;
+    }
+  }
 }
 
 // Calculate conviction score for a coin
@@ -1192,31 +1598,79 @@ function getScannedCoin(symbol) {
 }
 
 // Render TrueNorth key execution zones and interactive suggestion badges below Symbol field
-function renderTrueNorthIndicator(coin, dir) {
+function renderTrueNorthIndicator(coin, dir, isLive = false, taData = null) {
   const indicator = document.getElementById("symbol-live-indicator");
   if (!indicator || !coin) return;
   
   const formattedPrice = formatPriceText(coin.price);
   const fundingPercent = (coin.funding * 100).toFixed(4);
   
-  const high = coin.high || coin.price * 1.03;
-  const low = coin.low || coin.price * 0.97;
+  let fibVal = null;
+  let vwapVal = null;
+  let slVal = null;
+  
+  let high = coin.high || coin.price * 1.03;
+  let low = coin.low || coin.price * 0.97;
+  
+  if (taData) {
+    if (taData.support_resistance) {
+      // VWAP
+      if (taData.support_resistance.vwap && taData.support_resistance.vwap.cumulative) {
+        vwapVal = taData.support_resistance.vwap.cumulative.value;
+      }
+      
+      // High/Low
+      if (taData.support_resistance.recent_high_low && taData.support_resistance.recent_high_low.calendar) {
+        high = taData.support_resistance.recent_high_low.calendar.high_24h || high;
+        low = taData.support_resistance.recent_high_low.calendar.low_24h || low;
+      }
+      
+      // S/R channels
+      if (taData.support_resistance['support and resistance channel']) {
+        const channels = [...(taData.support_resistance['support and resistance channel'].channels || [])];
+        const currentPrice = taData.current_price || coin.price;
+        channels.sort((a, b) => b.strength - a.strength);
+        
+        if (dir === "LONG") {
+          const support = channels.find(c => c.hi <= currentPrice);
+          if (support) fibVal = (support.hi + support.lo) / 2;
+        } else {
+          const resistance = channels.find(c => c.lo >= currentPrice);
+          if (resistance) fibVal = (resistance.hi + resistance.lo) / 2;
+        }
+      }
+    }
+  }
+  
   const priceDecimals = coin.price < 1 ? 6 : (coin.price < 10 ? 4 : 2);
   
-  // Golden Pocket (0.618 support for Long, 0.382 resistance for Short)
-  const fibVal = (dir === "LONG" ? (high - (high - low) * 0.618) : (high - (high - low) * 0.382)).toFixed(priceDecimals);
-  // Estimated daily VWAP Pivot
-  const vwapVal = ((high + low + coin.price) / 3).toFixed(priceDecimals);
-  // Wick Stop Loss (Below 24h low for Long, above 24h high for Short)
-  const slVal = (dir === "LONG" ? (low * 0.99) : (high * 1.01)).toFixed(priceDecimals);
+  if (!fibVal) {
+    fibVal = dir === "LONG" ? (high - (high - low) * 0.618) : (high - (high - low) * 0.382);
+  }
+  if (!vwapVal) {
+    vwapVal = (high + low + coin.price) / 3;
+  }
+  if (!slVal) {
+    slVal = dir === "LONG" ? (low * 0.99) : (high * 1.01);
+  }
+  
+  const fibStr = parseFloat(fibVal).toFixed(priceDecimals);
+  const vwapStr = parseFloat(vwapVal).toFixed(priceDecimals);
+  const slStr = parseFloat(slVal).toFixed(priceDecimals);
+  
+  const badgeTitle = isLive ? "TrueNorth Live Level" : "Estimated Level";
+  const badgeStyle = isLive ? "border-style: solid; box-shadow: 0 0 6px rgba(139, 92, 246, 0.2);" : "border-style: dashed; opacity: 0.85;";
   
   indicator.innerHTML = `
-    <div style="margin-bottom:0.25rem;">Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span></div>
+    <div style="margin-bottom:0.25rem; display:flex; justify-content:space-between; align-items:center;">
+      <div>Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span></div>
+      <span class="mcp-status-pill ${isLive ? 'live' : 'loading'}">${isLive ? 'TrueNorth Live' : 'Calculating...'}</span>
+    </div>
     <div style="font-size:0.7rem; color:var(--color-text-muted); display:flex; gap:0.3rem; flex-wrap:wrap; margin-top:0.35rem; align-items:center;">
-      <span style="font-weight:600; color:#9ca3af;">TrueNorth Zones:</span>
-      <span class="suggest-level-badge" data-target="entry" data-value="${fibVal}" style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color:#ffd700; padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Entry Price">Entry (Fib): $${fibVal}</span>
-      <span class="suggest-level-badge" data-target="tp" data-value="${vwapVal}" style="background: rgba(0,176,255,0.08); border: 1px solid rgba(0,176,255,0.25); color:var(--color-blue); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Take Profit">TP (VWAP): $${vwapVal}</span>
-      <span class="suggest-level-badge" data-target="sl" data-value="${slVal}" style="background: rgba(255,61,0,0.08); border: 1px solid rgba(255,61,0,0.25); color:var(--color-red); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Stop Loss">SL (Wick): $${slVal}</span>
+      <span style="font-weight:600; color:#9ca3af;">Execution Zones:</span>
+      <span class="suggest-level-badge" data-target="entry" data-value="${fibStr}" style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color:#ffd700; padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Entry Price)">Entry (Fib): $${fibStr}</span>
+      <span class="suggest-level-badge" data-target="tp" data-value="${vwapStr}" style="background: rgba(0,176,255,0.08); border: 1px solid rgba(0,176,255,0.25); color:var(--color-blue); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Take Profit)">TP (VWAP): $${vwapStr}</span>
+      <span class="suggest-level-badge" data-target="sl" data-value="${slStr}" style="background: rgba(255,61,0,0.08); border: 1px solid rgba(255,61,0,0.25); color:var(--color-red); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Stop Loss)">SL (Wick): $${slStr}</span>
     </div>
   `;
 }
@@ -1250,8 +1704,16 @@ function handleSymbolInput(e) {
   if (coin) {
     const directionSelect = document.getElementById("plan-direction");
     const dir = directionSelect ? directionSelect.value : "LONG";
-    renderTrueNorthIndicator(coin, dir);
+    
+    // 1. Immediately render fallback
+    renderTrueNorthIndicator(coin, dir, false);
     repopulateSlAndTp(coin.price);
+    
+    // 2. Query TrueNorth live
+    clearTimeout(plannerDebounceTimer);
+    plannerDebounceTimer = setTimeout(() => {
+      fetchTrueNorthPlannerData(symbol, dir);
+    }, 500);
   } else {
     if (indicator) {
       indicator.textContent = "Custom asset. Enter values manually.";
@@ -1271,8 +1733,15 @@ function handleDirectionChange() {
   
   const coin = getScannedCoin(symbol);
   if (coin) {
-    renderTrueNorthIndicator(coin, dir);
+    // 1. Immediately render fallback
+    renderTrueNorthIndicator(coin, dir, false);
     repopulateSlAndTp(coin.price);
+    
+    // 2. Query TrueNorth live
+    clearTimeout(plannerDebounceTimer);
+    plannerDebounceTimer = setTimeout(() => {
+      fetchTrueNorthPlannerData(symbol, dir);
+    }, 500);
   } else {
     const price = parseFloat(entryEl.value) || 0;
     if (price > 0) {
