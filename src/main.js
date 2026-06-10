@@ -171,6 +171,22 @@ document.addEventListener("DOMContentLoaded", () => {
     planDirectionSelect.addEventListener("change", handleDirectionChange);
   }
   
+  const indicator = document.getElementById("symbol-live-indicator");
+  if (indicator) {
+    indicator.addEventListener("click", (e) => {
+      const badge = e.target.closest(".suggest-level-badge");
+      if (!badge) return;
+      
+      const target = badge.getAttribute("data-target");
+      const val = badge.getAttribute("data-value");
+      
+      const el = document.getElementById(`plan-${target}`);
+      if (el) {
+        el.value = val;
+      }
+    });
+  }
+  
   const plannerForm = document.getElementById("planner-form");
   if (plannerForm) {
     plannerForm.addEventListener("submit", (e) => {
@@ -284,7 +300,9 @@ async function fetchScannerData() {
         change: change,
         volume: floatParse(coin.quoteVolume),
         funding: fundingRate,
-        setup: setup
+        setup: setup,
+        high: floatParse(coin.highPrice),
+        low: floatParse(coin.lowPrice)
       };
     });
     
@@ -320,6 +338,8 @@ async function fetchHyperliquidHypePrice() {
       const existingIdx = top100Coins.findIndex(c => c.symbol === "HYPE");
       if (existingIdx !== -1) {
         top100Coins[existingIdx].price = hypePrice;
+        top100Coins[existingIdx].high = hypePrice * 1.05;
+        top100Coins[existingIdx].low = hypePrice * 0.95;
       } else {
         top100Coins.push({
           rank: 101,
@@ -329,7 +349,9 @@ async function fetchHyperliquidHypePrice() {
           change: -9.4, // Live reference for June 10
           volume: 85000000,
           funding: -0.00013, // -0.013% hourly as negative funding
-          setup: "Squeeze Setup" // Highly negative post-unlock
+          setup: "Squeeze Setup", // Highly negative post-unlock
+          high: hypePrice * 1.05,
+          low: hypePrice * 0.95
         });
       }
     }
@@ -569,6 +591,46 @@ function openDrawer(symbol) {
     if (customPlan.direction === "SHORT") {
       invalidationText = `Хэрэв ханш ${formatPriceText(customPlan.sl)}-оос дээш орж 4H хаалт хийвэл арилжааны Stop Loss идэвхжиж, $${riskAmount.toFixed(2)} (${customPlan.riskPct}%) алдагдал хүлээгээд гарна.`;
     }
+
+    const coinForLevels = getScannedCoin(symbol) || {
+      symbol: symbol,
+      price: customPlan.entry,
+      funding: 0,
+      volume: 0,
+      change: 0
+    };
+    const levels = getTrueNorthKeyLevels(coinForLevels);
+    let trueNorthHtml = "";
+    if (levels) {
+      trueNorthHtml = `
+        <div style="margin-top: 1.2rem;">
+          <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-blue); display: flex; align-items: center; gap: 0.4rem;">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;">
+              <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
+            </svg>
+            TrueNorth Key Execution Zones
+          </h4>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem; background: rgba(11, 12, 16, 0.4); padding: 0.8rem; border-radius: 10px; border: 1px solid var(--border-light);">
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+              <span style="color: var(--color-text-muted);">Golden Pocket (0.618 support):</span>
+              <span style="color: #ffd700; font-weight: 600;">${formatPriceText(levels.fib0618)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+              <span style="color: var(--color-text-muted);">Daily VWAP Pivot:</span>
+              <span style="color: var(--color-blue); font-weight: 600;">${formatPriceText(levels.vwap)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+              <span style="color: var(--color-text-muted);">Short Liq Magnet (+2.5%):</span>
+              <span style="color: var(--color-red); font-weight: 600;">${formatPriceText(levels.shortLiqCluster)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+              <span style="color: var(--color-text-muted);">Long Liq Magnet (-2.5%):</span>
+              <span style="color: var(--color-green); font-weight: 600;">${formatPriceText(levels.longLiqCluster)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
     
     content.innerHTML = `
       <div class="drawer-header">
@@ -649,6 +711,8 @@ function openDrawer(symbol) {
           </div>
         </div>
         
+        ${trueNorthHtml}
+        
         <div class="invalidation-box">
           <div class="invalidation-title">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
@@ -702,6 +766,39 @@ function openDrawer(symbol) {
   }
   
   const currentText = formatPriceText(coin.price);
+  
+  const levels = getTrueNorthKeyLevels(coin);
+  let trueNorthHtml = "";
+  if (levels) {
+    trueNorthHtml = `
+      <div style="margin-top: 1.2rem;">
+        <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-blue); display: flex; align-items: center; gap: 0.4rem;">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;">
+            <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
+          </svg>
+          TrueNorth Key Execution Zones
+        </h4>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; background: rgba(11, 12, 16, 0.4); padding: 0.8rem; border-radius: 10px; border: 1px solid var(--border-light);">
+          <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+            <span style="color: var(--color-text-muted);">Golden Pocket (0.618 support):</span>
+            <span style="color: #ffd700; font-weight: 600;">${formatPriceText(levels.fib0618)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+            <span style="color: var(--color-text-muted);">Daily VWAP Pivot:</span>
+            <span style="color: var(--color-blue); font-weight: 600;">${formatPriceText(levels.vwap)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.03);">
+            <span style="color: var(--color-text-muted);">Short Liq Magnet (+2.5%):</span>
+            <span style="color: var(--color-red); font-weight: 600;">${formatPriceText(levels.shortLiqCluster)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+            <span style="color: var(--color-text-muted);">Long Liq Magnet (-2.5%):</span>
+            <span style="color: var(--color-green); font-weight: 600;">${formatPriceText(levels.longLiqCluster)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   
   content.innerHTML = `
     <div class="drawer-header">
@@ -765,6 +862,8 @@ function openDrawer(symbol) {
           </div>
         </div>
       </div>
+      
+      ${trueNorthHtml}
       
       <div class="invalidation-box">
         <div class="invalidation-title">
@@ -1078,6 +1177,65 @@ function calculateCustomSetupScore(plan) {
   };
 }
 
+// Helper to find scanned coin data
+function getScannedCoin(symbol) {
+  return top100Coins.find(c => c.symbol === symbol) || 
+         (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0 ? {
+           symbol: symbol,
+           price: watchlistPrices[symbol].price,
+           change: watchlistPrices[symbol].change,
+           volume: 50000000,
+           funding: -0.0001,
+           high: watchlistPrices[symbol].price * 1.03,
+           low: watchlistPrices[symbol].price * 0.97
+         } : null);
+}
+
+// Render TrueNorth key execution zones and interactive suggestion badges below Symbol field
+function renderTrueNorthIndicator(coin, dir) {
+  const indicator = document.getElementById("symbol-live-indicator");
+  if (!indicator || !coin) return;
+  
+  const formattedPrice = formatPriceText(coin.price);
+  const fundingPercent = (coin.funding * 100).toFixed(4);
+  
+  const high = coin.high || coin.price * 1.03;
+  const low = coin.low || coin.price * 0.97;
+  const priceDecimals = coin.price < 1 ? 6 : (coin.price < 10 ? 4 : 2);
+  
+  // Golden Pocket (0.618 support for Long, 0.382 resistance for Short)
+  const fibVal = (dir === "LONG" ? (high - (high - low) * 0.618) : (high - (high - low) * 0.382)).toFixed(priceDecimals);
+  // Estimated daily VWAP Pivot
+  const vwapVal = ((high + low + coin.price) / 3).toFixed(priceDecimals);
+  // Wick Stop Loss (Below 24h low for Long, above 24h high for Short)
+  const slVal = (dir === "LONG" ? (low * 0.99) : (high * 1.01)).toFixed(priceDecimals);
+  
+  indicator.innerHTML = `
+    <div style="margin-bottom:0.25rem;">Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span></div>
+    <div style="font-size:0.7rem; color:var(--color-text-muted); display:flex; gap:0.3rem; flex-wrap:wrap; margin-top:0.35rem; align-items:center;">
+      <span style="font-weight:600; color:#9ca3af;">TrueNorth Zones:</span>
+      <span class="suggest-level-badge" data-target="entry" data-value="${fibVal}" style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color:#ffd700; padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Entry Price">Entry (Fib): $${fibVal}</span>
+      <span class="suggest-level-badge" data-target="tp" data-value="${vwapVal}" style="background: rgba(0,176,255,0.08); border: 1px solid rgba(0,176,255,0.25); color:var(--color-blue); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Take Profit">TP (VWAP): $${vwapVal}</span>
+      <span class="suggest-level-badge" data-target="sl" data-value="${slVal}" style="background: rgba(255,61,0,0.08); border: 1px solid rgba(255,61,0,0.25); color:var(--color-red); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer;" title="Click to fill Stop Loss">SL (Wick): $${slVal}</span>
+    </div>
+  `;
+}
+
+// Calculate TrueNorth key level structures for details page
+function getTrueNorthKeyLevels(coin) {
+  if (!coin || coin.price === 0) return null;
+  const high = coin.high || coin.price * 1.03;
+  const low = coin.low || coin.price * 0.97;
+  const price = coin.price;
+  
+  const fib0618 = high - (high - low) * 0.618;
+  const vwap = (high + low + price) / 3;
+  const shortLiqCluster = price * 1.025;
+  const longLiqCluster = price * 0.975;
+  
+  return { fib0618, vwap, shortLiqCluster, longLiqCluster };
+}
+
 // Handle typing in the Planner symbol input field
 function handleSymbolInput(e) {
   const symbol = e.target.value.toUpperCase().trim();
@@ -1088,23 +1246,11 @@ function handleSymbolInput(e) {
     return;
   }
   
-  // Try to find in top100 or watchlist
-  const coin = top100Coins.find(c => c.symbol === symbol) || 
-               (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0 ? {
-                 symbol: symbol,
-                 price: watchlistPrices[symbol].price,
-                 change: watchlistPrices[symbol].change,
-                 volume: 50000000,
-                 funding: -0.0001
-               } : null);
-               
+  const coin = getScannedCoin(symbol);
   if (coin) {
-    const formattedPrice = formatPriceText(coin.price);
-    const fundingPercent = (coin.funding * 100).toFixed(4);
-    if (indicator) {
-      indicator.innerHTML = `Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span>`;
-    }
-    
+    const directionSelect = document.getElementById("plan-direction");
+    const dir = directionSelect ? directionSelect.value : "LONG";
+    renderTrueNorthIndicator(coin, dir);
     repopulateSlAndTp(coin.price);
   } else {
     if (indicator) {
@@ -1115,11 +1261,23 @@ function handleSymbolInput(e) {
 
 // Handle change of direction select element
 function handleDirectionChange() {
+  const symbolEl = document.getElementById("plan-symbol");
+  const directionSelect = document.getElementById("plan-direction");
   const entryEl = document.getElementById("plan-entry");
-  if (!entryEl) return;
-  const price = parseFloat(entryEl.value) || 0;
-  if (price > 0) {
-    repopulateSlAndTp(price);
+  
+  if (!symbolEl || !directionSelect) return;
+  const symbol = symbolEl.value.toUpperCase().trim();
+  const dir = directionSelect.value;
+  
+  const coin = getScannedCoin(symbol);
+  if (coin) {
+    renderTrueNorthIndicator(coin, dir);
+    repopulateSlAndTp(coin.price);
+  } else {
+    const price = parseFloat(entryEl.value) || 0;
+    if (price > 0) {
+      repopulateSlAndTp(price);
+    }
   }
 }
 
