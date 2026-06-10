@@ -241,6 +241,7 @@ async function fetchScannerData() {
     
     filterAndRenderTable();
     renderWatchlist();
+    renderPodium();
     
   } catch (err) {
     console.error("Error fetching scanner data:", err);
@@ -454,6 +455,12 @@ function initWebSockets() {
           tablePriceEl.textContent = formatPriceText(newPrice);
           flashPrice(tablePriceEl, newPrice, oldPrice);
         }
+
+        const podiumPriceEl = document.getElementById(`podium-price-${symbolBase}`);
+        if (podiumPriceEl) {
+          podiumPriceEl.textContent = formatPriceText(newPrice);
+          flashPrice(podiumPriceEl, newPrice, oldPrice);
+        }
         
         // Sync to top100Coins
         const coinIdx = top100Coins.findIndex(c => c.symbol === symbolBase);
@@ -616,6 +623,108 @@ function closeDrawer() {
   
   backdrop.classList.remove("open");
   drawer.classList.remove("open");
+}
+
+// Calculate conviction score for a coin
+function calculateScore(coin) {
+  let score = 0;
+  
+  // 1. Squeeze Setup (Derivatives Divergence) -> max 50 points
+  const change = Math.abs(coin.change);
+  if (change <= 3.0) {
+    score += 30; // Consolidating price
+    if (change <= 1.5) score += 10; // Extra tight price consolidation
+  }
+  
+  // Funding rate factor
+  if (coin.funding < 0) {
+    score += 20; // Negative funding
+    if (coin.funding <= -0.05) {
+      score += 15; // Deep negative funding
+    } else if (coin.funding <= -0.02) {
+      score += 10;
+    }
+  } else {
+    // Highly positive funding: if price is flat, it's froth, which has high mean reversion potential
+    if (coin.funding > 0.03 && change <= 3.0) {
+      score += 15; // Mean reversion potential
+    }
+  }
+  
+  // 2. Volume Factor (Liquidity / Interest) -> max 20 points
+  if (coin.volume > 100000000) score += 20; // >100M volume
+  else if (coin.volume > 50000000) score += 15; // >50M volume
+  else if (coin.volume > 10000000) score += 10;
+  
+  // 3. Conviction Watchlist Bonus -> 15 points
+  const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  if (watchlist.includes(coin.symbol)) {
+    score += 15;
+  }
+  
+  // Cap at 100
+  return Math.min(score, 100);
+}
+
+// Render Top 3 Alpha Podium
+function renderPodium() {
+  const container = document.getElementById("podium-grid");
+  
+  // Calculate scores for all coins
+  const scoredCoins = top100Coins.map(coin => ({
+    ...coin,
+    score: calculateScore(coin)
+  }));
+  
+  // Sort by score descending
+  scoredCoins.sort((a, b) => b.score - a.score);
+  
+  // Take top 3
+  const top3 = scoredCoins.slice(0, 3);
+  
+  if (top3.length === 0) {
+    container.innerHTML = `
+      <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
+        <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = top3.map((coin, index) => {
+    const rank = index + 1;
+    const rankClass = `rank-${rank}`;
+    const priceText = formatPriceText(coin.price);
+    const changeClass = coin.change >= 0 ? "change-up" : "change-down";
+    const changePrefix = coin.change >= 0 ? "+" : "";
+    
+    return `
+      <div class="podium-card" data-symbol="${coin.symbol}">
+        <div class="podium-left">
+          <div class="signal-rank-badge ${rankClass}">${rank}</div>
+          <div class="podium-info">
+            <span class="podium-symbol">
+              ${coin.symbol} 
+              <span class="score-badge">${coin.score}/100</span>
+            </span>
+            <span class="podium-score">${coin.setup}</span>
+          </div>
+        </div>
+        <div class="podium-right">
+          <span class="podium-price" id="podium-price-${coin.symbol}">${priceText}</span>
+          <span class="ticker-change ${changeClass}" style="font-size: 0.75rem; padding: 0.1rem 0.4rem; margin-top: 0.2rem;">${changePrefix}${coin.change.toFixed(2)}%</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add click listeners to podium cards
+  container.querySelectorAll(".podium-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const sym = card.getAttribute("data-symbol");
+      openDrawer(sym);
+    });
+  });
 }
 
 // Helpers

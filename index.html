@@ -30,21 +30,40 @@
   <!-- Main Container -->
   <main>
     
-    <!-- Major Watchlist Tickers -->
-    <section>
-      <h2 class="grid-section-title">
-        <svg width="20" height="20" fill="var(--color-primary)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
-          <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
-        </svg>
-        Conviction Watchlist
-      </h2>
-      <div class="ticker-grid" id="watchlist-grid">
-        <!-- Main tickers will load here dynamically: BTC, HYPE, LINK, XRP, INJ, WLD, ETH, SOL -->
-        <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
-          <div style="font-size: 0.9rem; color: var(--color-text-muted);">Connecting to WebSockets...</div>
+    <!-- Watchlist & Top Signals Row -->
+    <div class="dashboard-top-row">
+      <!-- Major Watchlist Tickers -->
+      <section class="watchlist-section">
+        <h2 class="grid-section-title">
+          <svg width="20" height="20" fill="var(--color-primary)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
+            <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
+          </svg>
+          Conviction Watchlist
+        </h2>
+        <div class="ticker-grid" id="watchlist-grid">
+          <!-- Main tickers will load here dynamically: BTC, HYPE, LINK, XRP, INJ, WLD, ETH, SOL -->
+          <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
+            <div style="font-size: 0.9rem; color: var(--color-text-muted);">Connecting to WebSockets...</div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <!-- Top Opportunities Podium -->
+      <section class="signals-section">
+        <h2 class="grid-section-title">
+          <svg width="20" height="20" fill="var(--color-green)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
+            <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6L15.5,9.5L14,11L12,9L8,13L6.5,11.5L12,6Z"/>
+          </svg>
+          Top 3 Alpha Signals
+        </h2>
+        <div class="podium-container" id="podium-grid">
+          <!-- Top 3 ranked signals will load here dynamically: 1, 2, 3 -->
+          <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
+            <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <!-- Top 100 Scanner -->
     <section>
