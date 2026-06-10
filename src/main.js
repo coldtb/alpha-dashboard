@@ -394,7 +394,6 @@ async function fetchScannerData() {
     await fetchHyperliquidHypePrice();
     
     filterAndRenderTable();
-    renderWatchlist();
     updateCustomPlansTabCount();
     renderPodium();
     
@@ -521,59 +520,6 @@ function filterAndRenderTable() {
   });
 }
 
-// Render major tickers watchlist
-function renderWatchlist() {
-  const container = document.getElementById("watchlist-grid");
-  const watchlistSymbols = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD", "ETH", "SOL"];
-  
-  container.innerHTML = watchlistSymbols.map(sym => {
-    const data = watchlistPrices[sym];
-    // Sync price if loaded from top100
-    const matchedCoin = top100Coins.find(c => c.symbol === sym);
-    if (matchedCoin && sym !== "HYPE") {
-      data.price = matchedCoin.price;
-      data.change = matchedCoin.change;
-    } else if (sym === "HYPE" && data.price === 0 && matchedCoin) {
-      data.price = matchedCoin.price;
-      data.change = matchedCoin.change;
-    }
-    
-    const changeClass = data.change >= 0 ? "change-up" : "change-down";
-    const changePrefix = data.change >= 0 ? "+" : "";
-    
-    // Check if squeeze condition is met
-    const isSqueeze = Math.abs(data.change) <= 3.0 && matchedCoin && matchedCoin.funding < 0;
-    const cardGlowClass = isSqueeze || sym === "HYPE" ? "glow-squeeze" : ""; // HYPE glows post-unlock as it's a top squeeze candidate
-    
-    let formattedPrice = `$${data.price.toFixed(2)}`;
-    if (data.price < 1) formattedPrice = `$${data.price.toFixed(6)}`;
-    else if (data.price < 10) formattedPrice = `$${data.price.toFixed(4)}`;
-    
-    return `
-      <div class="ticker-card ${cardGlowClass}" data-symbol="${sym}">
-        <div class="ticker-header">
-          <div class="ticker-info">
-            <span class="ticker-symbol">${sym}</span>
-            <span class="ticker-name">${getAssetName(sym)}</span>
-          </div>
-          ${isSqueeze || sym === "HYPE" ? '<span class="badge-squeeze">SQUEEZE</span>' : ''}
-        </div>
-        <div class="ticker-price-container">
-          <span class="ticker-price" id="price-card-${sym}">${formattedPrice}</span>
-          <span class="ticker-change ${changeClass}">${changePrefix}${data.change.toFixed(2)}%</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  // Add card click listeners
-  container.querySelectorAll(".ticker-card").forEach(card => {
-    card.addEventListener("click", () => {
-      const sym = card.getAttribute("data-symbol");
-      openDrawer(sym);
-    });
-  });
-}
 
 // WebSocket connection to Binance Futures real-time ticks
 function initWebSockets() {
