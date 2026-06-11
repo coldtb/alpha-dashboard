@@ -263,47 +263,54 @@ export default async function handler(req, res) {
     const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
     const exchange = new ExchangeClient({ transport, wallet: account });
 
-    // 4. Fetch Scanner Data
-    const resTicker = await fetch("https://fapi.binance.com/fapi/v1/ticker/24hr");
-    const tickers = await resTicker.json();
+    // 4. Fetch Scanner Data directly from Hyperliquid (to avoid Binance IP block on cloud servers)
+    const [hlMeta, hlAssetCtxs] = await info.metaAndAssetCtxs();
+    const userState = await info.clearinghouseState({ user: walletAddress });
+    const openOrders = await info.openOrders({ user: walletAddress });
 
-    const resFunding = await fetch("https://fapi.binance.com/fapi/v1/premiumIndex");
-    const premiumData = await resFunding.json();
+    // Map universe and contexts to standard structure and calculate scores
+    const scoredCoins = hlMeta.universe.map((asset, index) => {
+      const ctx = hlAssetCtxs[index];
+      if (!ctx) return null;
 
-    const fundingMap = {};
-    premiumData.forEach(item => {
-      fundingMap[item.symbol] = {
-        fundingRate: parseFloat(item.lastFundingRate) || 0,
-        markPrice: parseFloat(item.markPrice) || 0
+      const price = parseFloat(ctx.markPx || ctx.midPx || "0");
+      const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
+      const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+      const volume = parseFloat(ctx.dayNtlVlm || "0");
+      const funding = parseFloat(ctx.funding || "0");
+
+      const coinData = {
+        symbol: asset.name,
+        price: price,
+        change: change,
+        volume: volume,
+        funding: funding,
+        high: price * 1.03, // estimate high
+        low: price * 0.97,  // estimate low
       };
-    });
-
-    const usdtPerps = tickers.filter(t => t.symbol.endsWith("USDT"));
-    usdtPerps.sort((a, b) => (parseFloat(b.quoteVolume) || 0) - (parseFloat(a.quoteVolume) || 0));
-
-    const top100Coins = usdtPerps.slice(0, 100).map((coin, index) => {
-      const symbolBase = coin.symbol.replace("USDT", "");
-      const fundingInfo = fundingMap[coin.symbol] || { fundingRate: 0.0001, markPrice: parseFloat(coin.lastPrice) };
-      const change = parseFloat(coin.priceChangePercent) || 0;
-      const fundingRate = fundingInfo.fundingRate;
 
       return {
-        rank: index + 1,
-        symbol: symbolBase,
-        price: fundingInfo.markPrice || parseFloat(coin.lastPrice),
-        change: change,
-        volume: parseFloat(coin.quoteVolume) || 0,
-        funding: fundingRate,
-        high: parseFloat(coin.highPrice),
-        low: parseFloat(coin.lowPrice)
+        ...coinData,
+        score: calculateScore(coinData),
+        assetIndex: index,
+        assetInfo: asset
       };
+    }).filter(Boolean);
+
+    // Sort by score descending, then by volume descending
+    scoredCoins.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.volume - a.volume;
     });
 
-    // Score and Sort
-    const scoredCoins = top100Coins.map(coin => ({
-      ...coin,
-      score: calculateScore(coin)
-    })).sort((a, b) => b.score - a.score);
+    console.log("Top 5 candidates:", scoredCoins.slice(0, 5).map(c => ({
+      symbol: c.symbol,
+      score: c.score,
+      price: c.price,
+      change: parseFloat(c.change.toFixed(2)),
+      funding: c.funding,
+      volume: Math.round(c.volume)
+    })));
 
     // Pick top candidates (score >= 90)
     const candidates = scoredCoins.filter(c => c.score >= 90);
@@ -311,23 +318,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "success", message: "No candidates with score >= 90 found at this time." });
     }
 
-    // 5. Fetch Hyperliquid Universe Meta
-    const meta = await info.meta();
-    const userState = await info.clearinghouseState({ user: walletAddress });
-    const openOrders = await info.openOrders({ user: walletAddress });
-
-    // Filter candidates that are tradeable and not currently in active positions/orders
+    // Filter candidates that are not currently in active positions/orders
     const tradeableCandidates = [];
     for (const cand of candidates) {
-      const assetIndex = meta.universe.findIndex(a => a.name === cand.symbol);
-      if (assetIndex === -1) continue; // Skip if not tradeable perp on HL
-
-      // Check existing open orders or active position
       const hasOpenOrder = openOrders.some(order => order.coin === cand.symbol);
       const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.s) !== 0);
 
       if (!hasOpenOrder && !hasPosition) {
-        tradeableCandidates.push({ ...cand, assetIndex, assetInfo: meta.universe[assetIndex] });
+        tradeableCandidates.push(cand);
       }
     }
 
@@ -369,7 +367,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Calculated Stop Loss distance is zero." });
     }
 
-    const positionSizeUsd = riskAmount / slDistancePct;
+    let positionSizeUsd = riskAmount / slDistancePct;
+    
+    // Hyperliquid requires a minimum notional order size of $10.0.
+    // We round up to $10.0 if the calculated size is smaller, to ensure the order is accepted.
+    if (positionSizeUsd < 10.0) {
+      positionSizeUsd = 10.0;
+    }
+
     const positionSizeTokens = positionSizeUsd / levels.entry;
 
     // Determine leverage
