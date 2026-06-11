@@ -756,8 +756,9 @@ function openDrawer(symbol) {
         <div>
           <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-primary);">Strategy Analysis</h4>
           <div style="font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: 0.25rem;">
-            <div>• Market Score: <strong>${scoreInfo.market}/50</strong> (Funding, Volume, Consolidation)</div>
-            <div>• Trade Structure Score: <strong>${scoreInfo.trade}/50</strong> (R:R, SL Distance, Trend)</div>
+            <div>• Conviction Score: <strong>${scoreInfo.total}/100</strong> (Funding, Volume, Consolidation, Watchlist)</div>
+            <div>• Risk/Reward Ratio: <strong>${scoreInfo.rr}:1</strong></div>
+            <div>• Stop Loss Distance: <strong>${scoreInfo.slPct}%</strong></div>
             <div style="margin-top: 0.5rem; font-weight: 500; color: #fff;">
               Дүгнэлт: ${customPlan.score >= 75 ? '🔥 High Conviction setup. Ороход тохиромжтой.' : (customPlan.score >= 50 ? '⏳ Moderate setup. Хяналтад авах.' : '⚠️ Low Conviction setup. Алгасахыг зөвлөж байна.')}
             </div>
@@ -1500,8 +1501,8 @@ function renderPodium() {
 }
 
 // Custom scoring — unified with Market Alpha score
-// Base = same calculateScore() market context (funding, volume, consolidation, watchlist)
-// Bonus = trade structure quality (R:R, SL discipline, direction alignment)
+// Since scoring system is identical for all coins, we use the exact conviction score
+// calculateScore(coin) of the coin as the custom setup score.
 function calculateCustomSetupScore(plan) {
   const { symbol, direction, entry, sl, tp } = plan;
   
@@ -1514,34 +1515,13 @@ function calculateCustomSetupScore(plan) {
   // ── Base: same as Market Alpha score ────────────────────────────────────
   const baseScore = matchedCoin ? calculateScore(matchedCoin) : 50;
 
-  // ── Bonus: trade structure quality (max +25, min -10) ───────────────────
-  let structureBonus = 0;
-
   const risk   = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
   const rr     = risk > 0 ? reward / risk : 0;
-
-  // R:R bonus (wiki: TP1=1:1.5, TP2=1:2.5, TP3=1:4+)
-  if (rr >= 4.0)      structureBonus += 20;
-  else if (rr >= 2.5) structureBonus += 15;
-  else if (rr >= 1.5) structureBonus += 10;
-  else if (rr >= 1.0) structureBonus += 5;
-  else                structureBonus -= 10; // Poor R:R
-
-  // SL discipline (wiki: swing low - 2-3%, max 5%)
-  const slPct = entry > 0 ? (risk / entry * 100) : 0;
-  if (slPct >= 1.5 && slPct <= 5.0)  structureBonus += 5;   // Optimal
-  else if (slPct > 5.0)               structureBonus -= 5;   // Too wide
-  else if (slPct < 0.5)               structureBonus -= 5;   // Too tight
-
-  // ── Blend: base dominates, structure refines ────────────────────────────
-  // Score = base * 0.8 + structureBonus (capped to keep consistent scale)
-  const total = Math.max(0, Math.min(100, Math.round(baseScore * 0.8) + structureBonus + 20));
+  const slPct  = entry > 0 ? (risk / entry * 100) : 0;
 
   return {
-    total,
-    base: baseScore,
-    bonus: structureBonus,
+    total: baseScore,
     rr: rr.toFixed(2),
     slPct: slPct.toFixed(2)
   };
