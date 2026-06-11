@@ -350,6 +350,151 @@ export default async function handler(req, res) {
       }
     }
 
+    // 5b. Active Position Trailing (Breakeven & Profit Trailing)
+    let needsOrdersRefresh = false;
+    for (const pos of userState.assetPositions) {
+      const size = parseFloat(pos.position.s || "0");
+      if (size === 0) continue;
+
+      const coin = pos.position.coin;
+      const entryPx = parseFloat(pos.position.entryPx || "0");
+      if (entryPx === 0) continue;
+
+      // Find current mark price from scanner
+      const currentCoin = scoredCoins.find(c => c.symbol === coin);
+      if (!currentCoin) continue;
+      const currentPrice = currentCoin.price;
+
+      const isLong = size > 0;
+      const returnPct = isLong ? (currentPrice - entryPx) / entryPx : (entryPx - currentPrice) / entryPx;
+
+      // Find active trigger orders for this coin
+      const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
+      
+      // Stop Loss is a trigger order whose price is on the loss side of the entry
+      const slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < entryPx : parseFloat(o.triggerPx) > entryPx));
+      
+      // Take Profit is a trigger order whose price is on the profit side of the entry
+      const tpOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) > entryPx : parseFloat(o.triggerPx) < entryPx));
+
+      // A. Breakeven Stop Loss: if in profit >= 1.5%, move SL to entry
+      if (returnPct >= 0.015 && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
+        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}%. Moving SL to entry: ${entryPx}`);
+        try {
+          // Cancel old SL
+          const cancelRes = await exchange.cancel({
+            cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
+          });
+          console.log(`[Breakeven] Cancelled old SL order ${slOrder.oid}:`, JSON.stringify(cancelRes));
+
+          // Place new SL at entry price
+          const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+          const entryPxStr = formatPrice(entryPx);
+          const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
+
+          const orderRes = await exchange.order({
+            orders: [{
+              a: currentCoin.assetIndex,
+              b: !isLong,
+              p: slWorstPx,
+              s: entrySz,
+              r: true,
+              t: {
+                trigger: {
+                  triggerPx: entryPxStr,
+                  isMarket: true,
+                  tpsl: "sl"
+                }
+              }
+            }]
+          });
+          console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
+          needsOrdersRefresh = true;
+        } catch (e) {
+          console.error(`[Breakeven] Failed to move SL for ${coin}:`, e.message);
+        }
+      }
+
+      // B. Profit Trailing: if price gets within 0.8% of TP and score is high (>= 90), trail TP higher
+      if (tpOrder && currentCoin.score >= 90) {
+        const tpPx = parseFloat(tpOrder.triggerPx);
+        const isNearTp = isLong ? currentPrice >= tpPx * 0.992 : currentPrice <= tpPx * 1.008;
+
+        if (isNearTp) {
+          const newTpPx = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // trail by another 2%
+          const newSlPx = tpPx; // Lock in original TP profit!
+
+          console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Score is ${currentCoin.score}. Trailing TP to ${newTpPx.toFixed(4)} and raising SL to ${newSlPx.toFixed(4)}`);
+          try {
+            // Cancel old TP and SL
+            const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
+            if (slOrder) {
+              cancelsToMake.push({ a: currentCoin.assetIndex, o: slOrder.oid });
+            }
+            await exchange.cancel({ cancels: cancelsToMake });
+            console.log(`[Profit Trailing] Cancelled old TP/SL orders for ${coin}`);
+
+            // Place new TP and SL
+            const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+            
+            const newTpPxStr = formatPrice(newTpPx);
+            const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newTpPx));
+
+            const newSlPxStr = formatPrice(newSlPx);
+            const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
+
+            const orderRes = await exchange.order({
+              orders: [
+                // New TP
+                {
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: tpWorstPx,
+                  s: entrySz,
+                  r: true,
+                  t: {
+                    trigger: {
+                      triggerPx: newTpPxStr,
+                      isMarket: true,
+                      tpsl: "tp"
+                    }
+                  }
+                },
+                // New SL (Locking in original TP price)
+                {
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: slWorstPx,
+                  s: entrySz,
+                  r: true,
+                  t: {
+                    trigger: {
+                      triggerPx: newSlPxStr,
+                      isMarket: true,
+                      tpsl: "sl"
+                    }
+                  }
+                }
+              ],
+              grouping: "normalTpsl"
+            });
+            console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin}:`, JSON.stringify(orderRes));
+            needsOrdersRefresh = true;
+          } catch (e) {
+            console.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}:`, e.message);
+          }
+        }
+      }
+    }
+
+    if (needsOrdersRefresh) {
+      try {
+        openOrders = await info.frontendOpenOrders({ user: walletAddress });
+      } catch (e) {
+        console.error("Failed to refresh openOrders after trailing:", e.message);
+      }
+    }
+
     // Pick top candidates (score >= 90)
     const candidates = scoredCoins.filter(c => c.score >= 90);
     if (candidates.length === 0) {
