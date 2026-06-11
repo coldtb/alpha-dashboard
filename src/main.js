@@ -1499,113 +1499,54 @@ function renderPodium() {
   }
 }
 
-// Custom scoring algorithm based on Wiki rules
+// Custom scoring — unified with Market Alpha score
+// Base = same calculateScore() market context (funding, volume, consolidation, watchlist)
+// Bonus = trade structure quality (R:R, SL discipline, direction alignment)
 function calculateCustomSetupScore(plan) {
-  let marketScore = 0;
-  let tradeScore = 0;
+  const { symbol, direction, entry, sl, tp } = plan;
   
-  const symbol = plan.symbol;
-  const direction = plan.direction;
-  const entry = plan.entry;
-  const sl = plan.sl;
-  const tp = plan.tp;
-  
-  const matchedCoin = top100Coins.find(c => c.symbol === symbol) || 
-                      (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0 ? { 
-                        symbol: symbol, 
-                        price: watchlistPrices[symbol].price, 
-                        change: watchlistPrices[symbol].change,
-                        volume: 50000000, 
-                        funding: -0.0001
-                      } : null);
-                      
-  if (matchedCoin) {
-    // 1. Funding rate score (max 25)
-    const funding = matchedCoin.funding;
-    if (direction === "LONG") {
-      if (funding < 0) {
-        marketScore += 15;
-        if (funding <= -0.0005) marketScore += 10;
-        else if (funding <= -0.0002) marketScore += 7;
-      } else if (funding < 0.0003) {
-        marketScore += 10;
-      } else {
-        marketScore += 5;
-      }
-    } else { // SHORT
-      if (funding > 0.0002) {
-        marketScore += 15;
-        if (funding >= 0.0008) marketScore += 10;
-        else if (funding >= 0.0004) marketScore += 7;
-      } else if (funding > -0.0001) {
-        marketScore += 10;
-      } else {
-        marketScore += 5;
-      }
-    }
-    
-    // 2. Volume score (max 15)
-    const volume = matchedCoin.volume;
-    if (volume > 100000000) marketScore += 15;
-    else if (volume > 50000000) marketScore += 12;
-    else if (volume > 10000000) marketScore += 8;
-    else marketScore += 4;
-    
-    // 3. Price Consolidation (max 10)
-    const change = Math.abs(matchedCoin.change);
-    if (change <= 1.5) marketScore += 10;
-    else if (change <= 3.0) marketScore += 5;
-    else marketScore += 2;
-  } else {
-    marketScore = 25; // default mid-score for unrecognized coins
-  }
-  
-  // 4. Trade Structure Score (max 50)
-  const risk = Math.abs(entry - sl);
+  const matchedCoin = top100Coins.find(c => c.symbol === symbol) ||
+    (watchlistPrices[symbol] && watchlistPrices[symbol].price > 0
+      ? { symbol, price: watchlistPrices[symbol].price, change: watchlistPrices[symbol].change,
+          volume: 50000000, funding: -0.0001 }
+      : null);
+
+  // ── Base: same as Market Alpha score ────────────────────────────────────
+  const baseScore = matchedCoin ? calculateScore(matchedCoin) : 50;
+
+  // ── Bonus: trade structure quality (max +25, min -10) ───────────────────
+  let structureBonus = 0;
+
+  const risk   = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
-  const rr = risk > 0 ? (reward / risk) : 0;
-  
-  if (rr >= 3.0) tradeScore += 20;
-  else if (rr >= 2.0) tradeScore += 15;
-  else if (rr >= 1.5) tradeScore += 10;
-  else if (rr >= 1.0) tradeScore += 5;
-  else tradeScore -= 10;
-  
-  // Stop Loss Distance (max 15)
-  const slDistancePct = entry > 0 ? (risk / entry * 100) : 0;
-  if (slDistancePct >= 1.5 && slDistancePct <= 4.0) {
-    tradeScore += 15;
-  } else if (slDistancePct > 4.0 && slDistancePct <= 8.0) {
-    tradeScore += 10;
-  } else if (slDistancePct >= 0.5 && slDistancePct < 1.5) {
-    tradeScore += 10;
-  } else if (slDistancePct > 8.0) {
-    tradeScore += 5;
-  } else {
-    tradeScore += 2;
-  }
-  
-  // Trend Alignment (max 15)
-  if (matchedCoin) {
-    const isPriceUp = matchedCoin.change > 0;
-    if ((isPriceUp && direction === "LONG") || (!isPriceUp && direction === "SHORT")) {
-      tradeScore += 15;
-    } else {
-      tradeScore += 5;
-    }
-  } else {
-    tradeScore += 10;
-  }
-  
-  const totalScore = Math.max(0, Math.min(100, marketScore + tradeScore));
+  const rr     = risk > 0 ? reward / risk : 0;
+
+  // R:R bonus (wiki: TP1=1:1.5, TP2=1:2.5, TP3=1:4+)
+  if (rr >= 4.0)      structureBonus += 20;
+  else if (rr >= 2.5) structureBonus += 15;
+  else if (rr >= 1.5) structureBonus += 10;
+  else if (rr >= 1.0) structureBonus += 5;
+  else                structureBonus -= 10; // Poor R:R
+
+  // SL discipline (wiki: swing low - 2-3%, max 5%)
+  const slPct = entry > 0 ? (risk / entry * 100) : 0;
+  if (slPct >= 1.5 && slPct <= 5.0)  structureBonus += 5;   // Optimal
+  else if (slPct > 5.0)               structureBonus -= 5;   // Too wide
+  else if (slPct < 0.5)               structureBonus -= 5;   // Too tight
+
+  // ── Blend: base dominates, structure refines ────────────────────────────
+  // Score = base * 0.8 + structureBonus (capped to keep consistent scale)
+  const total = Math.max(0, Math.min(100, Math.round(baseScore * 0.8) + structureBonus + 20));
+
   return {
-    total: totalScore,
-    market: marketScore,
-    trade: tradeScore,
+    total,
+    base: baseScore,
+    bonus: structureBonus,
     rr: rr.toFixed(2),
-    slPct: slDistancePct.toFixed(2)
+    slPct: slPct.toFixed(2)
   };
 }
+
 
 // Helper to find scanned coin data
 function getScannedCoin(symbol) {
