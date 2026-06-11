@@ -378,9 +378,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Calculated Stop Loss distance is zero." });
     }
 
-    // Option A: Use 100% of account balance with 5x leverage
+    // Option A: Use 90% of account balance with 5x leverage to leave buffer for fees and slippage
     const finalLeverage = 5;
-    let positionSizeUsd = accountSize * finalLeverage;
+    let positionSizeUsd = (accountSize * 0.90) * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
