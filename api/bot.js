@@ -277,7 +277,7 @@ export default async function handler(req, res) {
       const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
       const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
       const volume = parseFloat(ctx.dayNtlVlm || "0");
-      const funding = parseFloat(ctx.funding || "0");
+      const funding = parseFloat(ctx.funding || "0") * 8; // Convert hourly funding to 8h equivalent for scoring alignment
 
       const coinData = {
         symbol: asset.name,
