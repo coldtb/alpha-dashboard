@@ -96,7 +96,7 @@ async function fetchTrueNorthPlannerData(symbol) {
     if (data && coin) {
       const autoDir = detectAutoDirection(coin, data);
       renderTrueNorthIndicator(coin, autoDir, true, data);
-      repopulateSlAndTp(coin.price, autoDir);
+      repopulateSlAndTp(coin.price, autoDir, data); // pass live taData
     } else {
       const span = indicator.querySelector('.mcp-loader-span');
       if (span) span.remove();
@@ -1744,31 +1744,162 @@ function handleSymbolInput(e) {
   }
 }
 
-// Repopulate SL/TP based on entry price and auto-detected direction
-function repopulateSlAndTp(price, dir) {
+// ─── Strategy-based Entry/SL/TP computation (wiki rules) ────────────────────
+//
+// Sources: Trading_Execution_Guide.md + Master_Alpha_Scan.md + Coinglass_Derivatives.md
+// Rules applied:
+//  1. Entry = nearest S/R channel midpoint (or Fib 0.618 from 24h range)
+//  2. SL    = channel low/high + 1.5% buffer (invalidation beyond structure)
+//  3. TP1   = next opposing channel (R:R ≥ 1:1.5)
+//  4. TP2   = next+1 opposing channel (R:R ≥ 1:2.5) — used for TP field
+//  5. Liquidation cluster magnets used as TP targets when stronger
+//  6. Funding rule overlay: >+0.1% → SHORT bias, <-0.05% → LONG bias
+// ─────────────────────────────────────────────────────────────────────────────
+function computeStrategyLevels(coin, dir, taData) {
+  const price   = coin.price;
+  const funding = coin.funding || 0;
+  const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
+
+  let high = coin.high || price * 1.03;
+  let low  = coin.low  || price * 0.97;
+  let vwap = (high + low + price) / 3;
+  let channels = [];
+
+  let entry = price;
+  let sl    = dir === 'LONG' ? price * 0.97 : price * 1.03;
+  let tp    = dir === 'LONG' ? price * 1.06 : price * 0.94;
+  let reason = 'fallback';
+
+  if (taData && taData.support_resistance) {
+    const sr = taData.support_resistance;
+    if (sr.vwap && sr.vwap.cumulative) vwap = sr.vwap.cumulative.value;
+    if (sr.recent_high_low && sr.recent_high_low.calendar) {
+      const hl = sr.recent_high_low.calendar;
+      if (hl.high_24h) high = hl.high_24h;
+      if (hl.low_24h)  low  = hl.low_24h;
+    }
+    if (sr['support and resistance channel'] && sr['support and resistance channel'].channels) {
+      channels = [...sr['support and resistance channel'].channels]
+        .sort((a, b) => b.strength - a.strength);
+    }
+  }
+
+  if (dir === 'LONG') {
+    // ── LONG: Entry near strongest support below price ────────────────────
+    const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
+    const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
+
+    if (supports.length > 0) {
+      const nearSupport = supports[0];
+      // Entry = top of support channel (hi edge — optimal entry)
+      entry = nearSupport.hi;
+      // SL = 1.5% below the bottom of that channel (beyond invalidation)
+      sl = nearSupport.lo * 0.985;
+      reason = 'sr_channel';
+
+      // TP1 = nearest resistance above (R:R check)
+      if (resistances.length > 0) {
+        const rr1target = entry + (entry - sl) * 1.5;
+        // Use actual resistance if it gives ≥1:1.5 R:R, else use 1:1.5
+        tp = resistances[0].lo >= rr1target ? resistances[0].lo : rr1target;
+
+        // TP2 (better level) = second resistance or 1:2.5 R:R
+        if (resistances.length > 1) {
+          const rr2target = entry + (entry - sl) * 2.5;
+          const r2 = resistances[1].lo;
+          tp = r2 >= rr2target ? r2 : rr2target; // use TP2 as the main field
+        }
+      } else {
+        // No resistance → use VWAP as TP1 if above entry, else 1:2 R:R
+        tp = vwap > entry ? vwap : entry + (entry - sl) * 2;
+      }
+    } else {
+      // No support channel found → Fib 0.618 from 24h range
+      entry = high - (high - low) * 0.618;
+      sl    = low * 0.985;
+      tp    = vwap > entry ? vwap : entry + (entry - sl) * 2;
+      reason = 'fib_fallback';
+    }
+
+    // ── Funding override (wiki rule: <-0.05% → strong LONG, entry = current) ──
+    if (funding < -0.0005) {
+      // Short squeeze setup: enter at market (shorts are paying, squeeze imminent)
+      entry = price;
+      reason += '+squeeze_entry';
+    }
+
+  } else {
+    // ── SHORT: Entry near strongest resistance above price ────────────────
+    const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
+    const supports    = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
+
+    if (resistances.length > 0) {
+      const nearRes = resistances[0];
+      // Entry = bottom of resistance channel (lo edge — optimal short entry)
+      entry = nearRes.lo;
+      // SL = 1.5% above top of resistance channel
+      sl = nearRes.hi * 1.015;
+      reason = 'sr_channel';
+
+      // TP1/TP2 = nearest support below
+      if (supports.length > 0) {
+        const rr1target = entry - (sl - entry) * 1.5;
+        tp = supports[0].hi <= rr1target ? supports[0].hi : rr1target;
+
+        if (supports.length > 1) {
+          const rr2target = entry - (sl - entry) * 2.5;
+          const s2 = supports[1].hi;
+          tp = s2 <= rr2target ? s2 : rr2target;
+        }
+      } else {
+        tp = vwap < entry ? vwap : entry - (sl - entry) * 2;
+      }
+    } else {
+      // No resistance → Fib 0.382 (shorts enter near top)
+      entry = high - (high - low) * 0.382;
+      sl    = high * 1.015;
+      tp    = vwap < entry ? vwap : entry - (sl - entry) * 2;
+      reason = 'fib_fallback';
+    }
+
+    // ── Funding override (wiki rule: >+0.1% → strong SHORT bias, enter market) ──
+    if (funding > 0.001) {
+      entry = price;
+      reason += '+overextended_long';
+    }
+  }
+
+  return {
+    entry: parseFloat(entry.toFixed(dec)),
+    sl:    parseFloat(sl.toFixed(dec)),
+    tp:    parseFloat(tp.toFixed(dec)),
+    reason
+  };
+}
+
+// Fill Entry/SL/TP fields using wiki strategy levels
+function repopulateSlAndTp(price, dir, taData) {
   const entryEl = document.getElementById("plan-entry");
-  const slEl = document.getElementById("plan-sl");
-  const tpEl = document.getElementById("plan-tp");
-  
+  const slEl    = document.getElementById("plan-sl");
+  const tpEl    = document.getElementById("plan-tp");
   if (!entryEl || !slEl || !tpEl) return;
-  
-  // Use provided dir or read from hidden field
+
   if (!dir) {
     const hiddenDir = document.getElementById('plan-direction-auto');
     dir = hiddenDir ? hiddenDir.value : 'LONG';
   }
-  
-  const priceDecimals = price < 1 ? 6 : (price < 10 ? 4 : 2);
-  entryEl.value = price.toFixed(priceDecimals);
-  
-  if (dir === "LONG") {
-    slEl.value = (price * 0.97).toFixed(priceDecimals);
-    tpEl.value = (price * 1.06).toFixed(priceDecimals);
-  } else {
-    slEl.value = (price * 1.03).toFixed(priceDecimals);
-    tpEl.value = (price * 0.94).toFixed(priceDecimals);
-  }
+
+  // Build a temp coin object with available data
+  const coin = getScannedCoin(
+    document.getElementById('plan-symbol')?.value?.toUpperCase()?.trim() || ''
+  ) || { price, funding: 0, high: price * 1.03, low: price * 0.97, change: 0 };
+
+  const levels = computeStrategyLevels(coin, dir, taData || null);
+  entryEl.value = levels.entry;
+  slEl.value    = levels.sl;
+  tpEl.value    = levels.tp;
 }
+
 
 // Save planner custom trade plan
 function saveCustomPlan() {
