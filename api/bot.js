@@ -231,7 +231,9 @@ function formatPrice(price) {
 }
 
 function formatSize(sz, decimals) {
-  return parseFloat(sz).toFixed(decimals);
+  const factor = Math.pow(10, decimals);
+  const rounded = Math.ceil(parseFloat(sz) * factor) / factor;
+  return rounded.toFixed(decimals);
 }
 
 function getTriggerLimitPrice(isBuyTrigger, triggerPx) {
@@ -382,9 +384,9 @@ export default async function handler(req, res) {
     let positionSizeUsd = riskAmount / slDistancePct;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
-    // We round up to $10.0 if the calculated size is smaller, to ensure the order is accepted.
-    if (positionSizeUsd < 10.0) {
-      positionSizeUsd = 10.0;
+    // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
+    if (positionSizeUsd < 10.5) {
+      positionSizeUsd = 10.5;
     }
 
     const positionSizeTokens = positionSizeUsd / levels.entry;
