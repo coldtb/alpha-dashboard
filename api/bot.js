@@ -266,13 +266,14 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({ transport, wallet: account });
 
     // 4. Fetch Scanner Data directly from Hyperliquid (to avoid Binance IP block on cloud servers)
-    const [metaAndCtxs, userState, openOrders, spotState] = await Promise.all([
+    const [metaAndCtxs, userState, initialOpenOrders, spotState] = await Promise.all([
       info.metaAndAssetCtxs(),
       info.clearinghouseState({ user: walletAddress }),
-      info.openOrders({ user: walletAddress }),
+      info.frontendOpenOrders({ user: walletAddress }),
       info.spotClearinghouseState({ user: walletAddress }).catch(() => null)
     ]);
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
+    let openOrders = initialOpenOrders;
 
     // Map universe and contexts to standard structure and calculate scores
     const scoredCoins = hlMeta.universe.map((asset, index) => {
@@ -317,6 +318,37 @@ export default async function handler(req, res) {
       funding: c.funding,
       volume: Math.round(c.volume)
     })));
+
+    // 5. Cancel stale unfilled limit entry orders if their score is no longer >= 90
+    const cancels = [];
+    for (const order of openOrders) {
+      // We only cancel unfilled Limit Entry orders (not TP/SL trigger orders)
+      const isLimitEntry = !order.isTrigger && (!order.triggerPx || parseFloat(order.triggerPx) === 0);
+      if (isLimitEntry) {
+        // Find current score of the coin
+        const currentCoin = scoredCoins.find(c => c.symbol === order.coin);
+        const currentScore = currentCoin ? currentCoin.score : 0;
+
+        if (currentScore < 90) {
+          const assetIndex = hlMeta.universe.findIndex(a => a.name === order.coin);
+          if (assetIndex !== -1) {
+            cancels.push({ a: assetIndex, o: order.oid });
+            console.log(`Scheduling cancellation for stale order: ${order.coin} limit entry at ${order.limitPx} (Current Score: ${currentScore})`);
+          }
+        }
+      }
+    }
+
+    if (cancels.length > 0) {
+      try {
+        const cancelRes = await exchange.cancel({ cancels });
+        console.log("Stale orders cancelled successfully:", JSON.stringify(cancelRes));
+        // Refresh openOrders list to reflect cancellations
+        openOrders = await info.frontendOpenOrders({ user: walletAddress });
+      } catch (e) {
+        console.error("Failed to cancel stale orders:", e.message);
+      }
+    }
 
     // Pick top candidates (score >= 90)
     const candidates = scoredCoins.filter(c => c.score >= 90);
