@@ -73,7 +73,7 @@ async function callMcpTool(toolName, args) {
 
 let plannerDebounceTimer = null;
 
-async function fetchTrueNorthPlannerData(symbol, dir) {
+async function fetchTrueNorthPlannerData(symbol) {
   const geckoId = geckoIdMap[symbol];
   if (!geckoId) return;
   
@@ -92,13 +92,96 @@ async function fetchTrueNorthPlannerData(symbol, dir) {
   
   const currentSymbolEl = document.getElementById("plan-symbol");
   if (currentSymbolEl && currentSymbolEl.value.toUpperCase().trim() === symbol) {
-    if (data) {
-      renderTrueNorthIndicator(getScannedCoin(symbol), dir, true, data);
+    const coin = getScannedCoin(symbol);
+    if (data && coin) {
+      const autoDir = detectAutoDirection(coin, data);
+      renderTrueNorthIndicator(coin, autoDir, true, data);
+      repopulateSlAndTp(coin.price, autoDir);
     } else {
       const span = indicator.querySelector('.mcp-loader-span');
       if (span) span.remove();
     }
   }
+}
+
+// Auto-detect trade direction based on funding rate, VWAP, S/R, momentum
+function detectAutoDirection(coin, taData = null) {
+  const funding = coin.funding || 0;  // already in decimal (e.g. 0.0001)
+  const change24h = coin.change || 0;
+  let score = 0; // positive = LONG bias, negative = SHORT bias
+  let reasons = [];
+
+  // ── Rule 1: Funding Rate ──
+  // Negative funding = shorts paying longs → squeeze candidate → LONG
+  // High positive funding = longs overextended → SHORT
+  if (funding < -0.0001) {
+    score += 2;
+    reasons.push('neg_funding');
+  } else if (funding < 0) {
+    score += 1;
+    reasons.push('slight_neg_funding');
+  } else if (funding > 0.001) {
+    score -= 2;
+    reasons.push('high_pos_funding');
+  } else if (funding > 0.0003) {
+    score -= 1;
+    reasons.push('pos_funding');
+  }
+
+  // ── Rule 2: Price vs VWAP ──
+  if (taData && taData.support_resistance && taData.support_resistance.vwap) {
+    const vwapData = taData.support_resistance.vwap.cumulative;
+    if (vwapData) {
+      if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
+        score += 2; // price above rising VWAP = bullish
+        reasons.push('above_rising_vwap');
+      } else if (vwapData.state === 'price_above' && vwapData.slope === 'down') {
+        score += 0; // above but weakening
+      } else if (vwapData.state === 'price_below' && vwapData.slope === 'down') {
+        score -= 2; // below falling VWAP = bearish
+        reasons.push('below_falling_vwap');
+      } else if (vwapData.state === 'price_below' && vwapData.slope === 'up') {
+        // Below VWAP but recovering → bounce candidate
+        if (funding < 0) {
+          score += 1; // squeeze setup
+          reasons.push('below_vwap_squeeze');
+        } else {
+          score -= 1;
+        }
+      }
+    }
+  }
+
+  // ── Rule 3: S/R Channel position ──
+  if (taData && taData.support_resistance && taData.support_resistance['support and resistance channel']) {
+    const channels = [...(taData.support_resistance['support and resistance channel'].channels || [])];
+    const currentPrice = coin.price;
+    channels.sort((a, b) => b.strength - a.strength);
+    
+    // Find nearest strong support below price
+    const strongSupport = channels.find(c => c.hi <= currentPrice && c.strength >= 80);
+    // Find nearest strong resistance above price
+    const strongResistance = channels.find(c => c.lo >= currentPrice && c.strength >= 80);
+    
+    if (strongSupport && !strongResistance) {
+      score += 1; // sitting on support with no resistance overhead → LONG
+      reasons.push('at_support');
+    } else if (strongResistance && !strongSupport) {
+      score -= 1; // near resistance with no support → SHORT
+      reasons.push('at_resistance');
+    }
+  }
+
+  // ── Rule 4: 24h Momentum (weakest signal, tiebreaker) ──
+  if (change24h > 3) {
+    score += 1;
+    reasons.push('bullish_momentum');
+  } else if (change24h < -3) {
+    score -= 1;
+    reasons.push('bearish_momentum');
+  }
+
+  return score >= 0 ? 'LONG' : 'SHORT';
 }
 
 // Hand-crafted professional trade plans from Wiki
@@ -248,11 +331,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const planSymbolInput = document.getElementById("plan-symbol");
   if (planSymbolInput) {
     planSymbolInput.addEventListener("input", handleSymbolInput);
-  }
-  
-  const planDirectionSelect = document.getElementById("plan-direction");
-  if (planDirectionSelect) {
-    planDirectionSelect.addEventListener("change", handleDirectionChange);
   }
   
   const indicator = document.getElementById("symbol-live-indicator");
@@ -1560,23 +1638,17 @@ function renderTrueNorthIndicator(coin, dir, isLive = false, taData = null) {
   
   if (taData) {
     if (taData.support_resistance) {
-      // VWAP
       if (taData.support_resistance.vwap && taData.support_resistance.vwap.cumulative) {
         vwapVal = taData.support_resistance.vwap.cumulative.value;
       }
-      
-      // High/Low
       if (taData.support_resistance.recent_high_low && taData.support_resistance.recent_high_low.calendar) {
         high = taData.support_resistance.recent_high_low.calendar.high_24h || high;
         low = taData.support_resistance.recent_high_low.calendar.low_24h || low;
       }
-      
-      // S/R channels
       if (taData.support_resistance['support and resistance channel']) {
         const channels = [...(taData.support_resistance['support and resistance channel'].channels || [])];
         const currentPrice = taData.current_price || coin.price;
         channels.sort((a, b) => b.strength - a.strength);
-        
         if (dir === "LONG") {
           const support = channels.find(c => c.hi <= currentPrice);
           if (support) fibVal = (support.hi + support.lo) / 2;
@@ -1589,16 +1661,9 @@ function renderTrueNorthIndicator(coin, dir, isLive = false, taData = null) {
   }
   
   const priceDecimals = coin.price < 1 ? 6 : (coin.price < 10 ? 4 : 2);
-  
-  if (!fibVal) {
-    fibVal = dir === "LONG" ? (high - (high - low) * 0.618) : (high - (high - low) * 0.382);
-  }
-  if (!vwapVal) {
-    vwapVal = (high + low + coin.price) / 3;
-  }
-  if (!slVal) {
-    slVal = dir === "LONG" ? (low * 0.99) : (high * 1.01);
-  }
+  if (!fibVal) fibVal = dir === "LONG" ? (high - (high - low) * 0.618) : (high - (high - low) * 0.382);
+  if (!vwapVal) vwapVal = (high + low + coin.price) / 3;
+  if (!slVal) slVal = dir === "LONG" ? (low * 0.99) : (high * 1.01);
   
   const fibStr = parseFloat(fibVal).toFixed(priceDecimals);
   const vwapStr = parseFloat(vwapVal).toFixed(priceDecimals);
@@ -1607,16 +1672,30 @@ function renderTrueNorthIndicator(coin, dir, isLive = false, taData = null) {
   const badgeTitle = isLive ? "TrueNorth Live Level" : "Estimated Level";
   const badgeStyle = isLive ? "border-style: solid; box-shadow: 0 0 6px rgba(139, 92, 246, 0.2);" : "border-style: dashed; opacity: 0.85;";
   
+  // Direction badge
+  const dirColor = dir === 'LONG' ? 'var(--color-green)' : 'var(--color-red)';
+  const dirBg = dir === 'LONG' ? 'rgba(0,230,118,0.1)' : 'rgba(255,61,0,0.1)';
+  const dirBorder = dir === 'LONG' ? 'rgba(0,230,118,0.35)' : 'rgba(255,61,0,0.35)';
+  const dirIcon = dir === 'LONG' ? '▲' : '▼';
+  const dirLabel = isLive ? `Auto: ${dir}` : `Est: ${dir}`;
+  
+  // Update the hidden direction state so saveCustomPlan can read it
+  const hiddenDir = document.getElementById('plan-direction-auto');
+  if (hiddenDir) hiddenDir.value = dir;
+  
   indicator.innerHTML = `
-    <div style="margin-bottom:0.25rem; display:flex; justify-content:space-between; align-items:center;">
-      <div>Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span></div>
-      <span class="mcp-status-pill ${isLive ? 'live' : 'loading'}">${isLive ? 'TrueNorth Live' : 'Calculating...'}</span>
+    <div style="margin-bottom:0.25rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.3rem;">
+      <div style="font-size:0.75rem;">Live: <span style="color:#fff;">${formattedPrice}</span> | 24h: <span class="${coin.change >= 0 ? 'change-up' : 'change-down'}">${coin.change >= 0 ? '+' : ''}${coin.change.toFixed(2)}%</span> | Funding: <span style="color:#fff;">${fundingPercent}%</span></div>
+      <div style="display:flex; gap:0.35rem; align-items:center;">
+        <span style="font-size:0.7rem; font-weight:700; padding:0.15rem 0.55rem; border-radius:5px; background:${dirBg}; color:${dirColor}; border:1px solid ${dirBorder}; letter-spacing:0.05em;">${dirIcon} ${dirLabel}</span>
+        <span class="mcp-status-pill ${isLive ? 'live' : 'loading'}">${isLive ? 'TrueNorth Live' : 'Calculating...'}</span>
+      </div>
     </div>
     <div style="font-size:0.7rem; color:var(--color-text-muted); display:flex; gap:0.3rem; flex-wrap:wrap; margin-top:0.35rem; align-items:center;">
       <span style="font-weight:600; color:#9ca3af;">Execution Zones:</span>
-      <span class="suggest-level-badge" data-target="entry" data-value="${fibStr}" style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color:#ffd700; padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Entry Price)">Entry (Fib): $${fibStr}</span>
-      <span class="suggest-level-badge" data-target="tp" data-value="${vwapStr}" style="background: rgba(0,176,255,0.08); border: 1px solid rgba(0,176,255,0.25); color:var(--color-blue); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Take Profit)">TP (VWAP): $${vwapStr}</span>
-      <span class="suggest-level-badge" data-target="sl" data-value="${slStr}" style="background: rgba(255,61,0,0.08); border: 1px solid rgba(255,61,0,0.25); color:var(--color-red); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Stop Loss)">SL (Wick): $${slStr}</span>
+      <span class="suggest-level-badge" data-target="entry" data-value="${fibStr}" style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.25); color:#ffd700; padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill Entry)">Entry (Fib): $${fibStr}</span>
+      <span class="suggest-level-badge" data-target="tp" data-value="${vwapStr}" style="background: rgba(0,176,255,0.08); border: 1px solid rgba(0,176,255,0.25); color:var(--color-blue); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill TP)">TP (VWAP): $${vwapStr}</span>
+      <span class="suggest-level-badge" data-target="sl" data-value="${slStr}" style="background: rgba(255,61,0,0.08); border: 1px solid rgba(255,61,0,0.25); color:var(--color-red); padding:0.05rem 0.25rem; border-radius:4px; cursor:pointer; ${badgeStyle}" title="${badgeTitle} (Click to fill SL)">SL (Wick): $${slStr}</span>
     </div>
   `;
 }
@@ -1642,72 +1721,44 @@ function handleSymbolInput(e) {
   const indicator = document.getElementById("symbol-live-indicator");
   
   if (!symbol) {
-    if (indicator) indicator.textContent = "Enter symbol...";
+    if (indicator) indicator.innerHTML = '<span style="color:var(--color-text-muted); font-size:0.8rem;">Symbol оруулна уу...</span>';
     return;
   }
   
   const coin = getScannedCoin(symbol);
   if (coin) {
-    const directionSelect = document.getElementById("plan-direction");
-    const dir = directionSelect ? directionSelect.value : "LONG";
+    // 1. Quick estimate with available coin data (no TrueNorth yet)
+    const quickDir = detectAutoDirection(coin);
+    renderTrueNorthIndicator(coin, quickDir, false);
+    repopulateSlAndTp(coin.price, quickDir);
     
-    // 1. Immediately render fallback
-    renderTrueNorthIndicator(coin, dir, false);
-    repopulateSlAndTp(coin.price);
-    
-    // 2. Query TrueNorth live
+    // 2. Query TrueNorth live for better signal
     clearTimeout(plannerDebounceTimer);
     plannerDebounceTimer = setTimeout(() => {
-      fetchTrueNorthPlannerData(symbol, dir);
+      fetchTrueNorthPlannerData(symbol);
     }, 500);
   } else {
     if (indicator) {
-      indicator.textContent = "Custom asset. Enter values manually.";
+      indicator.innerHTML = '<span style="color:var(--color-text-muted); font-size:0.8rem;">Custom asset — утгуудыг гараар оруулна уу.</span>';
     }
   }
 }
 
-// Handle change of direction select element
-function handleDirectionChange() {
-  const symbolEl = document.getElementById("plan-symbol");
-  const directionSelect = document.getElementById("plan-direction");
-  const entryEl = document.getElementById("plan-entry");
-  
-  if (!symbolEl || !directionSelect) return;
-  const symbol = symbolEl.value.toUpperCase().trim();
-  const dir = directionSelect.value;
-  
-  const coin = getScannedCoin(symbol);
-  if (coin) {
-    // 1. Immediately render fallback
-    renderTrueNorthIndicator(coin, dir, false);
-    repopulateSlAndTp(coin.price);
-    
-    // 2. Query TrueNorth live
-    clearTimeout(plannerDebounceTimer);
-    plannerDebounceTimer = setTimeout(() => {
-      fetchTrueNorthPlannerData(symbol, dir);
-    }, 500);
-  } else {
-    const price = parseFloat(entryEl.value) || 0;
-    if (price > 0) {
-      repopulateSlAndTp(price);
-    }
-  }
-}
-
-// Repopulate SL/TP based on entry price and direction
-function repopulateSlAndTp(price) {
-  const directionSelect = document.getElementById("plan-direction");
+// Repopulate SL/TP based on entry price and auto-detected direction
+function repopulateSlAndTp(price, dir) {
   const entryEl = document.getElementById("plan-entry");
   const slEl = document.getElementById("plan-sl");
   const tpEl = document.getElementById("plan-tp");
   
-  if (!entryEl || !slEl || !tpEl || !directionSelect) return;
+  if (!entryEl || !slEl || !tpEl) return;
   
-  const dir = directionSelect.value;
+  // Use provided dir or read from hidden field
+  if (!dir) {
+    const hiddenDir = document.getElementById('plan-direction-auto');
+    dir = hiddenDir ? hiddenDir.value : 'LONG';
+  }
+  
   const priceDecimals = price < 1 ? 6 : (price < 10 ? 4 : 2);
-  
   entryEl.value = price.toFixed(priceDecimals);
   
   if (dir === "LONG") {
@@ -1722,48 +1773,58 @@ function repopulateSlAndTp(price) {
 // Save planner custom trade plan
 function saveCustomPlan() {
   const symbolEl = document.getElementById("plan-symbol");
-  const directionEl = document.getElementById("plan-direction");
   const entryEl = document.getElementById("plan-entry");
   const slEl = document.getElementById("plan-sl");
   const tpEl = document.getElementById("plan-tp");
   const riskPctEl = document.getElementById("plan-risk-pct");
   const accountSizeEl = document.getElementById("plan-account-size");
+  const hiddenDirEl = document.getElementById("plan-direction-auto");
   
-  if (!symbolEl || !directionEl || !entryEl || !slEl || !tpEl) return;
+  if (!symbolEl || !entryEl || !slEl || !tpEl) return;
   
   const symbol = symbolEl.value.toUpperCase().trim();
-  const direction = directionEl.value;
   const entry = parseFloat(entryEl.value) || 0;
   const sl = parseFloat(slEl.value) || 0;
   const tp = parseFloat(tpEl.value) || 0;
-  const riskPct = parseFloat(riskPctEl.value) || 2;
-  const accountSize = parseFloat(accountSizeEl.value) || 10000;
+  const riskPct = parseFloat(riskPctEl?.value) || 2;
+  const accountSize = parseFloat(accountSizeEl?.value) || 10000;
+  
+  // Auto-detect direction from price logic (entry/sl/tp relationship)
+  let direction;
+  if (sl < entry && tp > entry) {
+    direction = 'LONG';
+  } else if (sl > entry && tp < entry) {
+    direction = 'SHORT';
+  } else {
+    // Fallback: read from hidden field (set by renderTrueNorthIndicator)
+    direction = hiddenDirEl ? hiddenDirEl.value : 'LONG';
+  }
   
   if (!symbol) {
-    alert("Please enter a valid symbol.");
+    alert("Symbol оруулна уу.");
     return;
   }
   if (entry <= 0 || sl <= 0 || tp <= 0) {
-    alert("All prices must be positive numbers.");
+    alert("Бүх үнэ эерэг тоо байх ёстой.");
     return;
   }
   
   if (direction === "LONG") {
     if (sl >= entry) {
-      alert("For LONG trades, Stop Loss must be BELOW Entry Price.");
+      alert("LONG арилжааны Stop Loss нь Entry-ийн ДООР байх ёстой.");
       return;
     }
     if (tp <= entry) {
-      alert("For LONG trades, Take Profit must be ABOVE Entry Price.");
+      alert("LONG арилжааны Take Profit нь Entry-ийн ДЭЭР байх ёстой.");
       return;
     }
   } else {
     if (sl <= entry) {
-      alert("For SHORT trades, Stop Loss must be ABOVE Entry Price.");
+      alert("SHORT арилжааны Stop Loss нь Entry-ийн ДЭЭР байх ёстой.");
       return;
     }
     if (tp >= entry) {
-      alert("For SHORT trades, Take Profit must be BELOW Entry Price.");
+      alert("SHORT арилжааны Take Profit нь Entry-ийн ДООР байх ёстой.");
       return;
     }
   }

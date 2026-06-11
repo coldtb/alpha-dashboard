@@ -49,14 +49,9 @@
                 <input type="text" id="plan-symbol" placeholder="e.g. BTC, SOL" required autocomplete="off">
                 <div id="symbol-live-indicator" class="live-indicator-text">Enter symbol...</div>
               </div>
-              <div class="form-group">
-                <label for="plan-direction">Direction</label>
-                <select id="plan-direction">
-                  <option value="LONG">LONG</option>
-                  <option value="SHORT">SHORT</option>
-                </select>
-              </div>
-            </div>
+            <!-- Hidden auto-direction field populated by JS -->
+            <input type="hidden" id="plan-direction-auto" value="LONG">
+
             
             <div class="form-row">
               <div class="form-group">
