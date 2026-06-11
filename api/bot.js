@@ -264,9 +264,13 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({ transport, wallet: account });
 
     // 4. Fetch Scanner Data directly from Hyperliquid (to avoid Binance IP block on cloud servers)
-    const [hlMeta, hlAssetCtxs] = await info.metaAndAssetCtxs();
-    const userState = await info.clearinghouseState({ user: walletAddress });
-    const openOrders = await info.openOrders({ user: walletAddress });
+    const [metaAndCtxs, userState, openOrders, spotState] = await Promise.all([
+      info.metaAndAssetCtxs(),
+      info.clearinghouseState({ user: walletAddress }),
+      info.openOrders({ user: walletAddress }),
+      info.spotClearinghouseState({ user: walletAddress }).catch(() => null)
+    ]);
+    const [hlMeta, hlAssetCtxs] = metaAndCtxs;
 
     // Map universe and contexts to standard structure and calculate scores
     const scoredCoins = hlMeta.universe.map((asset, index) => {
@@ -352,7 +356,15 @@ export default async function handler(req, res) {
 
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
-    const withdrawableUsd = parseFloat(userState.withdrawable || "0");
+    let withdrawableUsd = parseFloat(userState.withdrawable || "0");
+
+    // Support Unified Accounts: fallback to spot USDC balance if perp balance is 0
+    if (withdrawableUsd === 0 && spotState && spotState.balances) {
+      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcBal) {
+        withdrawableUsd = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+      }
+    }
     const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
 
     if (accountSize <= 5) {
