@@ -373,15 +373,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `Insufficient balance for trading. Account size: $${accountSize}` });
     }
 
-    const riskPct = process.env.HYPERLIQUID_RISK_PCT ? parseFloat(process.env.HYPERLIQUID_RISK_PCT) : 1.0; // default 1%
-    const riskAmount = accountSize * (riskPct / 100);
-
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
       return res.status(400).json({ error: "Calculated Stop Loss distance is zero." });
     }
 
-    let positionSizeUsd = riskAmount / slDistancePct;
+    // Option A: Use 100% of account balance with 5x leverage
+    const finalLeverage = 5;
+    let positionSizeUsd = accountSize * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
@@ -390,10 +389,6 @@ export default async function handler(req, res) {
     }
 
     const positionSizeTokens = positionSizeUsd / levels.entry;
-
-    // Determine leverage
-    const leverageNeeded = Math.ceil(positionSizeUsd / accountSize);
-    const finalLeverage = Math.max(3, Math.min(leverageNeeded, 10)); // Safe range 3x to 10x
 
     // 7. Execute Leverage and Order
     // A. Update Leverage
