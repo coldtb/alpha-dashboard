@@ -770,9 +770,23 @@ export default async function handler(req, res) {
             callTrueNorthMcp('options_report', { token_address: geckoId })
           ]);
           
-          if (results[0].status === 'fulfilled') taData = results[0].value;
-          if (results[1].status === 'fulfilled') derivData = results[1].value;
-          if (results[2].status === 'fulfilled') optionsData = results[2].value;
+          if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
+            try {
+              taData = JSON.parse(results[0].value.result.content[0].text);
+            } catch (e) {
+              console.error(`[Entry Trailing] Failed to parse taData for ${coinSymbol}:`, e.message);
+            }
+          }
+          if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
+            try {
+              derivData = JSON.parse(results[1].value.result.content[0].text);
+            } catch (e) {
+              console.error(`[Entry Trailing] Failed to parse derivData for ${coinSymbol}:`, e.message);
+            }
+          }
+          if (results[2].status === 'fulfilled') {
+            optionsData = results[2].value;
+          }
         } catch (e) {
           console.error(`[Entry Trailing] TrueNorth MCP query failed for ${coinSymbol}:`, e.message);
         }
@@ -941,9 +955,23 @@ export default async function handler(req, res) {
           callTrueNorthMcp('options_report', { token_address: geckoId })
         ]);
         
-        if (results[0].status === 'fulfilled') taData = results[0].value;
-        if (results[1].status === 'fulfilled') derivData = results[1].value;
-        if (results[2].status === 'fulfilled') optionsData = results[2].value;
+        if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
+          try {
+            taData = JSON.parse(results[0].value.result.content[0].text);
+          } catch (e) {
+            console.error("Failed to parse taData:", e.message);
+          }
+        }
+        if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
+          try {
+            derivData = JSON.parse(results[1].value.result.content[0].text);
+          } catch (e) {
+            console.error("Failed to parse derivData:", e.message);
+          }
+        }
+        if (results[2].status === 'fulfilled') {
+          optionsData = results[2].value;
+        }
       } catch (e) {
         console.error("TrueNorth MCP query failed:", e.message);
       }
