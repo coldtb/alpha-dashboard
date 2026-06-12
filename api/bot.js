@@ -212,6 +212,48 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     }
   }
 
+  // Squeeze-aware SL Adjustment
+  if (useSmartSlTp && derivData?.derivative_data?.[coin.symbol]) {
+    try {
+      const deriv = derivData.derivative_data[coin.symbol];
+      const liqKey = Object.keys(deriv).find(k => k.toLowerCase().includes('liquidation'));
+      if (liqKey) {
+        const liqMap = deriv[liqKey];
+        if (dir === 'LONG') {
+          const longLiqs = liqMap.max_liquidation_points?.max_long_liquidation_point || [];
+          const sortedLiqs = longLiqs
+            .filter(l => l.liq_usd >= 2000000)
+            .sort((a, b) => b.price - a.price);
+          
+          if (sortedLiqs.length > 0) {
+            const nearestLiq = sortedLiqs[0].price;
+            if (nearestLiq > sl && nearestLiq < entry) {
+              const oldSl = sl;
+              sl = nearestLiq * 1.002;
+              reason += `+squeeze_sl_long(old:${oldSl.toFixed(dec)}->new:${sl.toFixed(dec)}@liq:${nearestLiq})`;
+            }
+          }
+        } else {
+          const shortLiqs = liqMap.max_liquidation_points?.max_short_liquidation_point || [];
+          const sortedLiqs = shortLiqs
+            .filter(l => l.liq_usd >= 2000000)
+            .sort((a, b) => a.price - b.price);
+          
+          if (sortedLiqs.length > 0) {
+            const nearestLiq = sortedLiqs[0].price;
+            if (nearestLiq < sl && nearestLiq > entry) {
+              const oldSl = sl;
+              sl = nearestLiq * 0.998;
+              reason += `+squeeze_sl_short(old:${oldSl.toFixed(dec)}->new:${sl.toFixed(dec)}@liq:${nearestLiq})`;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not calculate liquidation squeeze levels:", e.message);
+    }
+  }
+
   if (derivData?.derivative_data) {
     try {
       const sym = Object.keys(derivData.derivative_data).find(k => k !== '_metadata' && k !== 'url' && k !== 'title');
@@ -521,7 +563,7 @@ export default async function handler(req, res) {
     const cancels = [];
     const coinsWithPendingOrders = new Set();
     for (const order of openOrders) {
-      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.s) !== 0);
+      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.szi) !== 0);
       if (!hasPosition) {
         coinsWithPendingOrders.add(order.coin);
       }
@@ -532,7 +574,7 @@ export default async function handler(req, res) {
     const potentialCandidates = scoredCoins.filter(c => 
       c.score >= minScore && 
       !openOrders.some(o => o.coin === c.symbol) && 
-      !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.s) !== 0)
+      !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0)
     );
     const bestCand = potentialCandidates[0]; // Since scoredCoins is already sorted descending, the first is the best
     const bestCandScore = bestCand ? bestCand.score : 0;
@@ -584,7 +626,7 @@ export default async function handler(req, res) {
     // 5b. Active Position Trailing (Breakeven & Profit Trailing)
     let needsOrdersRefresh = false;
     for (const pos of userState.assetPositions) {
-      const size = parseFloat(pos.position.s || "0");
+      const size = parseFloat(pos.position.szi || "0");
       if (size === 0) continue;
 
       const coin = pos.position.coin;
@@ -603,10 +645,70 @@ export default async function handler(req, res) {
       const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
       
       // Stop Loss is a trigger order whose price is on the loss side of the entry
-      const slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < entryPx : parseFloat(o.triggerPx) > entryPx));
+      let slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < entryPx : parseFloat(o.triggerPx) > entryPx));
       
       // Take Profit is a trigger order whose price is on the profit side of the entry
       const tpOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) > entryPx : parseFloat(o.triggerPx) < entryPx));
+
+      // Fetch TrueNorth technical analysis for divergence check
+      let taDataActive = null;
+      const geckoIdActive = geckoIdMap[coin];
+      if (geckoIdActive) {
+        try {
+          const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdActive, timeframe: '1h' });
+          if (mcpRes?.result?.content?.[0]?.text) {
+            taDataActive = JSON.parse(mcpRes.result.content[0].text);
+          }
+        } catch (e) {
+          console.error(`[Active Trailing] TrueNorth MCP query failed for ${coin}:`, e.message);
+        }
+      }
+
+      // Divergence-based SL tightening
+      if (taDataActive?.support_resistance?.rsi_divergence) {
+        const divInfo = taDataActive.support_resistance.rsi_divergence;
+        const divType = divInfo.latest_signal?.type || "";
+        const isCounterDivergence = isLong 
+          ? (divType.includes("bear_hidden") || divType.includes("bear_classic"))
+          : (divType.includes("bull_hidden") || divType.includes("bull_classic"));
+
+        if (isCounterDivergence && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
+          console.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry price (breakeven): ${entryPx}`);
+          try {
+            // Cancel old SL
+            await exchange.cancel({
+              cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
+            });
+            // Place new SL at entry price
+            const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+            const entryPxStr = formatPrice(entryPx);
+            const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
+
+            const orderRes = await exchange.order({
+              orders: [{
+                a: currentCoin.assetIndex,
+                b: !isLong,
+                p: slWorstPx,
+                s: entrySz,
+                r: true,
+                t: {
+                  trigger: {
+                    triggerPx: entryPxStr,
+                    isMarket: true,
+                    tpsl: "sl"
+                  }
+                }
+              }]
+            });
+            console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
+            needsOrdersRefresh = true;
+            // Update local slOrder reference to reflect the new triggerPx
+            slOrder = { ...slOrder, triggerPx: entryPxStr };
+          } catch (e) {
+            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
+          }
+        }
+      }
 
       // A. Breakeven Stop Loss: if in profit >= 1.5%, move SL to entry
       if (returnPct >= 0.015 && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
@@ -734,7 +836,7 @@ export default async function handler(req, res) {
     // Re-evaluate pending orders to see if they need level trailing
     const pendingCoins = new Set();
     for (const order of openOrders) {
-      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.s) !== 0);
+      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.szi) !== 0);
       if (!hasPosition) {
         pendingCoins.add(order.coin);
       }
@@ -928,7 +1030,7 @@ export default async function handler(req, res) {
     const tradeableCandidates = [];
     for (const cand of candidates) {
       const hasOpenOrder = openOrders.some(order => order.coin === cand.symbol);
-      const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.s) !== 0);
+      const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.szi) !== 0);
 
       if (!hasOpenOrder && !hasPosition) {
         tradeableCandidates.push(cand);
@@ -939,42 +1041,93 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "success", message: "Candidates found but all already have open positions or orders." });
     }
 
-    // Process the top candidate
-    const target = tradeableCandidates[0];
-    const geckoId = geckoIdMap[target.symbol];
-
+    // Process tradeable candidates through the Crowded Trade Filter
+    let target = null;
     let taData = null;
     let derivData = null;
     let optionsData = null;
 
-    if (geckoId) {
-      try {
-        const results = await Promise.allSettled([
-          callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
-          callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
-          callTrueNorthMcp('options_report', { token_address: geckoId })
-        ]);
-        
-        if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
-          try {
-            taData = JSON.parse(results[0].value.result.content[0].text);
-          } catch (e) {
-            console.error("Failed to parse taData:", e.message);
+    const crowdedPercentileLimit = process.env.HYPERLIQUID_CROWDED_PERCENTILE 
+      ? parseInt(process.env.HYPERLIQUID_CROWDED_PERCENTILE) 
+      : 90;
+
+    for (const cand of tradeableCandidates) {
+      const geckoId = geckoIdMap[cand.symbol];
+      if (geckoId) {
+        try {
+          console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`);
+          const results = await Promise.allSettled([
+            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
+            callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
+            callTrueNorthMcp('options_report', { token_address: geckoId })
+          ]);
+          
+          let parsedTa = null;
+          let parsedDeriv = null;
+          let parsedOpt = null;
+
+          if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
+            try { parsedTa = JSON.parse(results[0].value.result.content[0].text); } catch (e) { console.error("Failed to parse taData:", e.message); }
           }
-        }
-        if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
-          try {
-            derivData = JSON.parse(results[1].value.result.content[0].text);
-          } catch (e) {
-            console.error("Failed to parse derivData:", e.message);
+          if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
+            try { parsedDeriv = JSON.parse(results[1].value.result.content[0].text); } catch (e) { console.error("Failed to parse derivData:", e.message); }
           }
+          if (results[2].status === 'fulfilled') {
+            parsedOpt = results[2].value;
+          }
+
+          // Evaluate direction to contextualize funding checks
+          const direction = detectAutoDirection(cand, parsedTa);
+
+          // Crowded Trade Filter
+          if (parsedDeriv?.derivative_data?.[cand.symbol]) {
+            const deriv = parsedDeriv.derivative_data[cand.symbol];
+            const fundingInfo = deriv["1h Aggregated OI weighted funding rate"];
+            if (fundingInfo) {
+              const percentile = fundingInfo.current_funding_percentile_7d || 50;
+              const fundingRate = fundingInfo.current_funding_rate_in_percentage || 0;
+              
+              let isCrowded = false;
+              let crowdedReason = "";
+
+              if (direction === 'LONG') {
+                if (fundingRate > 0 && percentile >= crowdedPercentileLimit) {
+                  isCrowded = true;
+                  crowdedReason = `Long funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
+                }
+              } else {
+                if (fundingRate < 0 && percentile >= crowdedPercentileLimit) {
+                  isCrowded = true;
+                  crowdedReason = `Short funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
+                }
+              }
+
+              if (isCrowded) {
+                console.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Crowded Trade! Reason: ${crowdedReason}`);
+                continue;
+              }
+            }
+          }
+
+          // Valid candidate found
+          target = cand;
+          taData = parsedTa;
+          derivData = parsedDeriv;
+          optionsData = parsedOpt;
+          break;
+        } catch (e) {
+          console.error(`TrueNorth MCP query failed for candidate ${cand.symbol}:`, e.message);
         }
-        if (results[2].status === 'fulfilled') {
-          optionsData = results[2].value;
-        }
-      } catch (e) {
-        console.error("TrueNorth MCP query failed:", e.message);
+      } else {
+        // Fallback candidate if no TrueNorth mappings exist
+        target = cand;
+        break;
       }
+    }
+
+    if (!target) {
+      console.warn("[Bot Execution] No trade: All candidates were filtered out by Crowded Trade rules.");
+      return res.status(200).json({ status: "success", message: "No trade: All candidates were filtered out by Crowded Trade rules." });
     }
 
     const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
