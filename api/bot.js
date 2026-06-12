@@ -1,5 +1,10 @@
 import { ExchangeClient, InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
+import crypto from "crypto";
+
+function generateBotCloid() {
+  return "0x626f745f" + crypto.randomBytes(12).toString("hex");
+}
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 const geckoIdMap = {
@@ -705,7 +710,8 @@ export default async function handler(req, res) {
                       isMarket: true,
                       tpsl: "sl"
                     }
-                  }
+                  },
+                  c: generateBotCloid()
                 }]
               });
               console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
@@ -751,7 +757,8 @@ export default async function handler(req, res) {
                     isMarket: true,
                     tpsl: "sl"
                   }
-                }
+                },
+                c: generateBotCloid()
               }]
             });
             console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
@@ -809,7 +816,8 @@ export default async function handler(req, res) {
                         isMarket: true,
                         tpsl: "tp"
                       }
-                    }
+                    },
+                    c: generateBotCloid()
                   },
                   // New SL (Locking in original TP price)
                   {
@@ -824,7 +832,8 @@ export default async function handler(req, res) {
                         isMarket: true,
                         tpsl: "sl"
                       }
-                    }
+                    },
+                    c: generateBotCloid()
                   }
                 ],
                 grouping: "normalTpsl"
@@ -992,7 +1001,8 @@ export default async function handler(req, res) {
                   p: entryPxStr,
                   s: entrySz,
                   r: false,
-                  t: { limit: { tif: "Gtc" } }
+                  t: { limit: { tif: "Gtc" } },
+                  c: generateBotCloid()
                 },
                 {
                   a: currentCoin.assetIndex,
@@ -1006,7 +1016,8 @@ export default async function handler(req, res) {
                       isMarket: true,
                       tpsl: "tp"
                     }
-                  }
+                  },
+                  c: generateBotCloid()
                 },
                 {
                   a: currentCoin.assetIndex,
@@ -1020,7 +1031,8 @@ export default async function handler(req, res) {
                       isMarket: true,
                       tpsl: "sl"
                     }
-                  }
+                  },
+                  c: generateBotCloid()
                 }
               ],
               grouping: "normalTpsl"
@@ -1243,7 +1255,8 @@ export default async function handler(req, res) {
             p: entryPx,
             s: entrySz,
             r: false,
-            t: { limit: { tif: "Gtc" } }
+            t: { limit: { tif: "Gtc" } },
+            c: generateBotCloid()
           },
           // Take Profit Trigger Order (Market Trigger to guarantee fill)
           {
@@ -1258,7 +1271,8 @@ export default async function handler(req, res) {
                 isMarket: true,
                 tpsl: "tp"
               }
-            }
+            },
+            c: generateBotCloid()
           },
           // Stop Loss Trigger Order (Market Trigger to guarantee invalidation)
           {
@@ -1273,7 +1287,8 @@ export default async function handler(req, res) {
                 isMarket: true,
                 tpsl: "sl"
               }
-            }
+            },
+            c: generateBotCloid()
           }
         ],
         grouping: "normalTpsl"

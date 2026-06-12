@@ -65,6 +65,7 @@ export default async function handler(req, res) {
       activePositions: mockPositions,
       recentTrades: mockTrades,
       totalRealizedPnl: 294.50,
+      botRealizedPnl: 182.00,
       winRate: 75.0 // 3 wins out of 4 trades
     });
   }
@@ -118,7 +119,10 @@ export default async function handler(req, res) {
     // Process Trade History from Closed Fills
     const closedFills = fills.filter(f => parseFloat(f.closedPnl || "0") !== 0);
     
-    const recentTrades = closedFills.slice(0, 20).map(f => {
+    // Filter closed fills that were executed by the bot (tagged with bot cloid prefix)
+    const botClosedFills = closedFills.filter(f => f.cloid && f.cloid.startsWith("0x626f745f"));
+    
+    const recentTrades = botClosedFills.slice(0, 20).map(f => {
       const pnl = parseFloat(f.closedPnl);
       return {
         coin: f.coin,
@@ -131,10 +135,11 @@ export default async function handler(req, res) {
     });
 
     const totalRealizedPnl = closedFills.reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
+    const botRealizedPnl = botClosedFills.reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
     
-    // Calculate Win Rate
-    const wins = closedFills.filter(f => parseFloat(f.closedPnl) > 0).length;
-    const totalClosed = closedFills.length;
+    // Calculate Win Rate (for Bot trades only)
+    const wins = botClosedFills.filter(f => parseFloat(f.closedPnl) > 0).length;
+    const totalClosed = botClosedFills.length;
     const winRate = totalClosed > 0 ? parseFloat(((wins / totalClosed) * 100).toFixed(1)) : 0.0;
 
     return res.status(200).json({
@@ -147,6 +152,7 @@ export default async function handler(req, res) {
       activePositions,
       recentTrades,
       totalRealizedPnl: parseFloat(totalRealizedPnl.toFixed(2)),
+      botRealizedPnl: parseFloat(botRealizedPnl.toFixed(2)),
       winRate
     });
 

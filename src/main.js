@@ -2201,6 +2201,7 @@ async function fetchPerformanceData() {
     const balanceEl = document.getElementById("perf-balance");
     const equityEl = document.getElementById("perf-equity");
     const realizedEl = document.getElementById("perf-realized-pnl");
+    const botRealizedEl = document.getElementById("perf-bot-realized-pnl");
     const winRateEl = document.getElementById("perf-win-rate");
 
     if (balanceEl) balanceEl.textContent = `$${data.account.withdrawable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -2212,6 +2213,14 @@ async function fetchPerformanceData() {
       realizedEl.className = `perf-val ${pnlVal >= 0 ? 'change-up' : 'change-down'}`;
       realizedEl.style.background = "none";
       realizedEl.style.padding = "0";
+    }
+
+    if (botRealizedEl) {
+      const botPnlVal = data.botRealizedPnl !== undefined ? data.botRealizedPnl : 0;
+      botRealizedEl.textContent = `${botPnlVal >= 0 ? '+' : ''}$${botPnlVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      botRealizedEl.className = `perf-val ${botPnlVal >= 0 ? 'change-up' : 'change-down'}`;
+      botRealizedEl.style.background = "none";
+      botRealizedEl.style.padding = "0";
     }
 
     if (winRateEl) {
