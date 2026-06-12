@@ -514,6 +514,7 @@ export default async function handler(req, res) {
         coinsWithPendingOrders.add(order.coin);
       }
     }
+    console.log(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`);
 
     for (const coinSymbol of coinsWithPendingOrders) {
       const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
@@ -704,12 +705,19 @@ export default async function handler(req, res) {
     let needsOrdersRefreshAfterTrailing = false;
     for (const coinSymbol of pendingCoins) {
       const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
-      if (!currentCoin) continue;
-      if (currentCoin.score < minScore) continue; // Will be or was handled by stale order check
+      if (!currentCoin) {
+        console.log(`[Entry Trailing] Skip check for ${coinSymbol}: coin not found in scanner.`);
+        continue;
+      }
+      if (currentCoin.score < minScore) {
+        console.log(`[Entry Trailing] Skip check for ${coinSymbol}: score ${currentCoin.score} is below min ${minScore}.`);
+        continue;
+      }
 
       // Find existing Limit Entry order
       const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
       const entryOrder = coinOrders.find(o => !o.isTrigger && (!o.triggerPx || parseFloat(o.triggerPx) === 0));
+      console.log(`[Entry Trailing] Found pending coin ${coinSymbol} with ${coinOrders.length} open orders. Existing entry order: ${entryOrder ? entryOrder.limitPx : 'None'}`);
 
       const geckoId = geckoIdMap[coinSymbol];
       let taData = null;
@@ -735,6 +743,7 @@ export default async function handler(req, res) {
       const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
       const direction = detectAutoDirection(currentCoin, taData);
       const levels = computeStrategyLevels(currentCoin, direction, taData, derivData, optionsData, useSmartSlTp);
+      console.log(`[Entry Trailing] Calculated levels for ${coinSymbol} - Direction: ${direction}, New Entry: ${levels.entry}, TP: ${levels.tp}, SL: ${levels.sl}`);
 
       let shouldUpdate = false;
       let reasonText = "";
@@ -844,6 +853,8 @@ export default async function handler(req, res) {
         } catch (e) {
           console.error(`[Entry Trailing] Failed to update levels for ${coinSymbol}:`, e.message);
         }
+      } else {
+        console.log(`[Entry Trailing] No update needed for ${coinSymbol}. Calculated entry: ${levels.entry}, existing order price: ${entryOrder ? entryOrder.limitPx : 'None'}. Price shift: ${entryOrder ? (Math.abs(parseFloat(entryOrder.limitPx) - levels.entry) / levels.entry * 100).toFixed(4) + '%' : 'N/A'}`);
       }
     }
 
@@ -920,11 +931,13 @@ export default async function handler(req, res) {
     const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
 
     if (accountSize <= 5) {
+      console.warn(`[Bot Execution] Return 400: Insufficient balance for trading. Account size: $${accountSize}`);
       return res.status(400).json({ error: `Insufficient balance for trading. Account size: $${accountSize}` });
     }
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
+      console.warn(`[Bot Execution] Return 400: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`);
       return res.status(400).json({ error: "Calculated Stop Loss distance is zero." });
     }
 
