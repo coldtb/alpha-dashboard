@@ -360,7 +360,7 @@ function getTriggerLimitPrice(isBuyTrigger, triggerPx) {
 export default async function handler(req, res) {
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
+  if (cronSecret && process.env.NODE_ENV !== 'development') {
     const authHeader = req.headers['authorization'] || req.query.secret;
     const expected = `Bearer ${cronSecret}`;
     if (authHeader !== expected && req.query.secret !== cronSecret) {
@@ -931,14 +931,14 @@ export default async function handler(req, res) {
     const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
 
     if (accountSize <= 5) {
-      console.warn(`[Bot Execution] Return 400: Insufficient balance for trading. Account size: $${accountSize}`);
-      return res.status(400).json({ error: `Insufficient balance for trading. Account size: $${accountSize}` });
+      console.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize}`);
+      return res.status(200).json({ status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize}` });
     }
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
-      console.warn(`[Bot Execution] Return 400: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`);
-      return res.status(400).json({ error: "Calculated Stop Loss distance is zero." });
+      console.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`);
+      return res.status(200).json({ status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
     }
 
     // Option A: Use 90% of account balance with 5x leverage to leave buffer for fees and slippage
