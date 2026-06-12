@@ -383,7 +383,7 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({ transport, wallet: account });
 
     // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
-    const [metaAndCtxs, userState, initialOpenOrders, spotState] = await Promise.all([
+    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState] = await Promise.all([
       info.metaAndAssetCtxs(),
       info.clearinghouseState({ user: walletAddress }),
       info.frontendOpenOrders({ user: walletAddress }),
@@ -391,6 +391,8 @@ export default async function handler(req, res) {
     ]);
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
     let openOrders = initialOpenOrders;
+    let userState = initialUserState;
+    let spotState = initialSpotState;
 
     let binanceData = null;
     try {
@@ -560,8 +562,13 @@ export default async function handler(req, res) {
       try {
         const cancelRes = await exchange.cancel({ cancels });
         console.log("Stale/orphaned orders cancelled successfully:", JSON.stringify(cancelRes));
-        // Refresh openOrders list to reflect cancellations
+        // Refresh openOrders and userState to reflect freed margin
         openOrders = await info.frontendOpenOrders({ user: walletAddress });
+        userState = await info.clearinghouseState({ user: walletAddress });
+        if (spotState) {
+          spotState = await info.spotClearinghouseState({ user: walletAddress }).catch(() => null);
+        }
+        console.log(`[Stale Cleanup] States refreshed after cancellation. New withdrawable balance: $${userState.withdrawable}`);
       } catch (e) {
         console.error("Failed to cancel stale orders:", e.message);
       }
