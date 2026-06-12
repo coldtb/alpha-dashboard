@@ -10,7 +10,10 @@ const geckoIdMap = {
   "LINK": "chainlink",
   "XRP": "ripple",
   "INJ": "injective-protocol",
-  "WLD": "worldcoin-org"
+  "WLD": "worldcoin-org",
+  "ZEC": "zcash",
+  "XLM": "stellar",
+  "TRX": "tron"
 };
 
 // Generic JSON-RPC tool caller helper for TrueNorth
@@ -141,12 +144,14 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           tp = resistances[1].lo >= rr2target ? resistances[1].lo : rr2target;
         }
       } else {
-        tp = vwap > entry ? vwap : entry + (entry - sl) * 2;
+        const minTp = entry + (entry - sl) * 1.5;
+        tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
       }
     } else {
       entry = high - (high - low) * 0.618;
       sl    = low * 0.985;
-      tp    = vwap > entry ? vwap : entry + (entry - sl) * 2;
+      const minTp = entry + (entry - sl) * 1.5;
+      tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
       reason = 'fib_fallback';
     }
 
@@ -172,12 +177,14 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           tp = supports[1].hi <= rr2target ? supports[1].hi : rr2target;
         }
       } else {
-        tp = vwap < entry ? vwap : entry - (sl - entry) * 2;
+        const minTp = entry - (sl - entry) * 1.5;
+        tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
       }
     } else {
       entry = high - (high - low) * 0.382;
       sl    = high * 1.015;
-      tp    = vwap < entry ? vwap : entry - (sl - entry) * 2;
+      const minTp = entry - (sl - entry) * 1.5;
+      tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
       reason = 'fib_fallback';
     }
 
