@@ -609,8 +609,12 @@ export default async function handler(req, res) {
 
     if (cancels.length > 0) {
       try {
-        const cancelRes = await exchange.cancel({ cancels });
-        console.log("Stale/orphaned orders cancelled successfully:", JSON.stringify(cancelRes));
+        if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+          console.log("[DRY RUN] Bypassed stale cancels:", JSON.stringify(cancels));
+        } else {
+          const cancelRes = await exchange.cancel({ cancels });
+          console.log("Stale/orphaned orders cancelled successfully:", JSON.stringify(cancelRes));
+        }
         // Refresh openOrders and userState to reflect freed margin
         openOrders = await info.frontendOpenOrders({ user: walletAddress });
         userState = await info.clearinghouseState({ user: walletAddress });
@@ -675,15 +679,65 @@ export default async function handler(req, res) {
         if (isCounterDivergence && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
           console.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry price (breakeven): ${entryPx}`);
           try {
-            // Cancel old SL
-            await exchange.cancel({
-              cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
-            });
-            // Place new SL at entry price
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
             const entryPxStr = formatPrice(entryPx);
             const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
+            if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+              console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
+              console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
+            } else {
+              // Cancel old SL
+              await exchange.cancel({
+                cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
+              });
+              // Place new SL at entry price
+              const orderRes = await exchange.order({
+                orders: [{
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: slWorstPx,
+                  s: entrySz,
+                  r: true,
+                  t: {
+                    trigger: {
+                      triggerPx: entryPxStr,
+                      isMarket: true,
+                      tpsl: "sl"
+                    }
+                  }
+                }]
+              });
+              console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
+            }
+            needsOrdersRefresh = true;
+            // Update local slOrder reference to reflect the new triggerPx
+            slOrder = { ...slOrder, triggerPx: entryPxStr };
+          } catch (e) {
+            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
+          }
+        }
+      }
+
+      // A. Breakeven Stop Loss: if in profit >= 1.5%, move SL to entry
+      if (returnPct >= 0.015 && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
+        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}%. Moving SL to entry: ${entryPx}`);
+        try {
+          const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+          const entryPxStr = formatPrice(entryPx);
+          const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
+
+          if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+            console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
+            console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
+          } else {
+            // Cancel old SL
+            const cancelRes = await exchange.cancel({
+              cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
+            });
+            console.log(`[Breakeven] Cancelled old SL order ${slOrder.oid}:`, JSON.stringify(cancelRes));
+
+            // Place new SL at entry price
             const orderRes = await exchange.order({
               orders: [{
                 a: currentCoin.assetIndex,
@@ -700,48 +754,8 @@ export default async function handler(req, res) {
                 }
               }]
             });
-            console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
-            needsOrdersRefresh = true;
-            // Update local slOrder reference to reflect the new triggerPx
-            slOrder = { ...slOrder, triggerPx: entryPxStr };
-          } catch (e) {
-            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
+            console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
           }
-        }
-      }
-
-      // A. Breakeven Stop Loss: if in profit >= 1.5%, move SL to entry
-      if (returnPct >= 0.015 && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
-        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}%. Moving SL to entry: ${entryPx}`);
-        try {
-          // Cancel old SL
-          const cancelRes = await exchange.cancel({
-            cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
-          });
-          console.log(`[Breakeven] Cancelled old SL order ${slOrder.oid}:`, JSON.stringify(cancelRes));
-
-          // Place new SL at entry price
-          const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
-          const entryPxStr = formatPrice(entryPx);
-          const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
-
-          const orderRes = await exchange.order({
-            orders: [{
-              a: currentCoin.assetIndex,
-              b: !isLong,
-              p: slWorstPx,
-              s: entrySz,
-              r: true,
-              t: {
-                trigger: {
-                  triggerPx: entryPxStr,
-                  isMarket: true,
-                  tpsl: "sl"
-                }
-              }
-            }]
-          });
-          console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
           needsOrdersRefresh = true;
         } catch (e) {
           console.error(`[Breakeven] Failed to move SL for ${coin}:`, e.message);
@@ -759,15 +773,6 @@ export default async function handler(req, res) {
 
           console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Score is ${currentCoin.score}. Trailing TP to ${newTpPx.toFixed(4)} and raising SL to ${newSlPx.toFixed(4)}`);
           try {
-            // Cancel old TP and SL
-            const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
-            if (slOrder) {
-              cancelsToMake.push({ a: currentCoin.assetIndex, o: slOrder.oid });
-            }
-            await exchange.cancel({ cancels: cancelsToMake });
-            console.log(`[Profit Trailing] Cancelled old TP/SL orders for ${coin}`);
-
-            // Place new TP and SL
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
             
             const newTpPxStr = formatPrice(newTpPx);
@@ -776,42 +781,56 @@ export default async function handler(req, res) {
             const newSlPxStr = formatPrice(newSlPx);
             const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
 
-            const orderRes = await exchange.order({
-              orders: [
-                // New TP
-                {
-                  a: currentCoin.assetIndex,
-                  b: !isLong,
-                  p: tpWorstPx,
-                  s: entrySz,
-                  r: true,
-                  t: {
-                    trigger: {
-                      triggerPx: newTpPxStr,
-                      isMarket: true,
-                      tpsl: "tp"
+            if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+              console.log(`[DRY RUN] Bypassed TP/SL cancellation for ${coin}`);
+              console.log(`[DRY RUN] Bypassed placing new trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`);
+            } else {
+              // Cancel old TP and SL
+              const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
+              if (slOrder) {
+                cancelsToMake.push({ a: currentCoin.assetIndex, o: slOrder.oid });
+              }
+              await exchange.cancel({ cancels: cancelsToMake });
+              console.log(`[Profit Trailing] Cancelled old TP/SL orders for ${coin}`);
+
+              // Place new TP and SL
+              const orderRes = await exchange.order({
+                orders: [
+                  // New TP
+                  {
+                    a: currentCoin.assetIndex,
+                    b: !isLong,
+                    p: tpWorstPx,
+                    s: entrySz,
+                    r: true,
+                    t: {
+                      trigger: {
+                        triggerPx: newTpPxStr,
+                        isMarket: true,
+                        tpsl: "tp"
+                      }
+                    }
+                  },
+                  // New SL (Locking in original TP price)
+                  {
+                    a: currentCoin.assetIndex,
+                    b: !isLong,
+                    p: slWorstPx,
+                    s: entrySz,
+                    r: true,
+                    t: {
+                      trigger: {
+                        triggerPx: newSlPxStr,
+                        isMarket: true,
+                        tpsl: "sl"
+                      }
                     }
                   }
-                },
-                // New SL (Locking in original TP price)
-                {
-                  a: currentCoin.assetIndex,
-                  b: !isLong,
-                  p: slWorstPx,
-                  s: entrySz,
-                  r: true,
-                  t: {
-                    trigger: {
-                      triggerPx: newSlPxStr,
-                      isMarket: true,
-                      tpsl: "sl"
-                    }
-                  }
-                }
-              ],
-              grouping: "normalTpsl"
-            });
-            console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin}:`, JSON.stringify(orderRes));
+                ],
+                grouping: "normalTpsl"
+              });
+              console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin}:`, JSON.stringify(orderRes));
+            }
             needsOrdersRefresh = true;
           } catch (e) {
             console.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}:`, e.message);
@@ -918,11 +937,6 @@ export default async function handler(req, res) {
       if (shouldUpdate) {
         console.log(`[Entry Trailing] Updating entry levels for ${coinSymbol}. Reason: ${reasonText}`);
         try {
-          // Cancel all existing open orders for this coin
-          const cancelsToMake = coinOrders.map(o => ({ a: currentCoin.assetIndex, o: o.oid }));
-          const cancelRes = await exchange.cancel({ cancels: cancelsToMake });
-          console.log(`[Entry Trailing] Cancelled old orders for ${coinSymbol}:`, JSON.stringify(cancelRes));
-
           // Calculate size
           const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
           let withdrawableUsd = parseFloat(userState.withdrawable || "0");
@@ -953,56 +967,66 @@ export default async function handler(req, res) {
           const slPxStr = formatPrice(levels.sl);
           const slWorstPxStr = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
 
-          // Place leverage
-          await exchange.updateLeverage({
-            asset: currentCoin.assetIndex,
-            isCross: true,
-            leverage: finalLeverage
-          });
+          if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+            console.log(`[DRY RUN] Bypassed entry trailing cancellation of ${coinOrders.length} orders for ${coinSymbol}`);
+            console.log(`[DRY RUN] Bypassed placing trailed bracket order for ${coinSymbol}: Entry=${entryPxStr}, TP=${tpPxStr}, SL=${slPxStr}`);
+          } else {
+            // Cancel all existing open orders for this coin
+            const cancelsToMake = coinOrders.map(o => ({ a: currentCoin.assetIndex, o: o.oid }));
+            const cancelRes = await exchange.cancel({ cancels: cancelsToMake });
+            console.log(`[Entry Trailing] Cancelled old orders for ${coinSymbol}:`, JSON.stringify(cancelRes));
 
-          // Place order
-          const orderRes = await exchange.order({
-            orders: [
-              {
-                a: currentCoin.assetIndex,
-                b: isBuy,
-                p: entryPxStr,
-                s: entrySz,
-                r: false,
-                t: { limit: { tif: "Gtc" } }
-              },
-              {
-                a: currentCoin.assetIndex,
-                b: !isBuy,
-                p: tpWorstPxStr,
-                s: entrySz,
-                r: true,
-                t: {
-                  trigger: {
-                    triggerPx: tpPxStr,
-                    isMarket: true,
-                    tpsl: "tp"
+            // Place leverage
+            await exchange.updateLeverage({
+              asset: currentCoin.assetIndex,
+              isCross: true,
+              leverage: finalLeverage
+            });
+
+            // Place order
+            const orderRes = await exchange.order({
+              orders: [
+                {
+                  a: currentCoin.assetIndex,
+                  b: isBuy,
+                  p: entryPxStr,
+                  s: entrySz,
+                  r: false,
+                  t: { limit: { tif: "Gtc" } }
+                },
+                {
+                  a: currentCoin.assetIndex,
+                  b: !isBuy,
+                  p: tpWorstPxStr,
+                  s: entrySz,
+                  r: true,
+                  t: {
+                    trigger: {
+                      triggerPx: tpPxStr,
+                      isMarket: true,
+                      tpsl: "tp"
+                    }
+                  }
+                },
+                {
+                  a: currentCoin.assetIndex,
+                  b: !isBuy,
+                  p: slWorstPxStr,
+                  s: entrySz,
+                  r: true,
+                  t: {
+                    trigger: {
+                      triggerPx: slPxStr,
+                      isMarket: true,
+                      tpsl: "sl"
+                    }
                   }
                 }
-              },
-              {
-                a: currentCoin.assetIndex,
-                b: !isBuy,
-                p: slWorstPxStr,
-                s: entrySz,
-                r: true,
-                t: {
-                  trigger: {
-                    triggerPx: slPxStr,
-                    isMarket: true,
-                    tpsl: "sl"
-                  }
-                }
-              }
-            ],
-            grouping: "normalTpsl"
-          });
-          console.log(`[Entry Trailing] Placed new trailed bracket order for ${coinSymbol}:`, JSON.stringify(orderRes));
+              ],
+              grouping: "normalTpsl"
+            });
+            console.log(`[Entry Trailing] Placed new trailed bracket order for ${coinSymbol}:`, JSON.stringify(orderRes));
+          }
           needsOrdersRefreshAfterTrailing = true;
         } catch (e) {
           console.error(`[Entry Trailing] Failed to update levels for ${coinSymbol}:`, e.message);
@@ -1173,14 +1197,6 @@ export default async function handler(req, res) {
     const positionSizeTokens = positionSizeUsd / levels.entry;
 
     // 7. Execute Leverage and Order
-    // A. Update Leverage
-    await exchange.updateLeverage({
-      asset: target.assetIndex,
-      isCross: true,
-      leverage: finalLeverage
-    });
-
-    // B. Place Bracket Order
     const isBuy = direction === "LONG";
     const entrySz = formatSize(positionSizeTokens, target.assetInfo.szDecimals);
     const entryPx = formatPrice(levels.entry);
@@ -1191,65 +1207,93 @@ export default async function handler(req, res) {
     const slPx = formatPrice(levels.sl);
     const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
 
-    const orderResult = await exchange.order({
-      orders: [
-        // Limit Entry
-        {
-          a: target.assetIndex,
-          b: isBuy,
-          p: entryPx,
-          s: entrySz,
-          r: false,
-          t: { limit: { tif: "Gtc" } }
-        },
-        // Take Profit Trigger Order (Market Trigger to guarantee fill)
-        {
-          a: target.assetIndex,
-          b: !isBuy,
-          p: tpWorstPx,
-          s: entrySz,
-          r: true,
-          t: {
-            trigger: {
-              triggerPx: tpPx,
-              isMarket: true,
-              tpsl: "tp"
-            }
-          }
-        },
-        // Stop Loss Trigger Order (Market Trigger to guarantee invalidation)
-        {
-          a: target.assetIndex,
-          b: !isBuy,
-          p: slWorstPx,
-          s: entrySz,
-          r: true,
-          t: {
-            trigger: {
-              triggerPx: slPx,
-              isMarket: true,
-              tpsl: "sl"
-            }
-          }
+    if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+      console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to 5x`);
+      console.log(`[DRY RUN] Bypassed placing bracket order for ${target.symbol}: Entry=${entryPx}, TP=${tpPx}, SL=${slPx}, Size=${entrySz}`);
+      return res.status(200).json({
+        status: "success",
+        message: "[DRY RUN] Simulated trade execution succeeded",
+        executedTrade: {
+          symbol: target.symbol,
+          score: target.score,
+          direction,
+          leverage: finalLeverage,
+          positionSizeUsd: positionSizeUsd.toFixed(2),
+          entryPrice: entryPx,
+          stopLoss: slPx,
+          takeProfit: tpPx,
+          orderResult: { status: "simulated" }
         }
-      ],
-      grouping: "normalTpsl"
-    });
+      });
+    } else {
+      // A. Update Leverage
+      await exchange.updateLeverage({
+        asset: target.assetIndex,
+        isCross: true,
+        leverage: finalLeverage
+      });
 
-    return res.status(200).json({
-      status: "success",
-      executedTrade: {
-        symbol: target.symbol,
-        score: target.score,
-        direction,
-        leverage: finalLeverage,
-        positionSizeUsd: positionSizeUsd.toFixed(2),
-        entryPrice: entryPx,
-        stopLoss: slPx,
-        takeProfit: tpPx,
-        orderResult
-      }
-    });
+      // B. Place Bracket Order
+      const orderResult = await exchange.order({
+        orders: [
+          // Limit Entry
+          {
+            a: target.assetIndex,
+            b: isBuy,
+            p: entryPx,
+            s: entrySz,
+            r: false,
+            t: { limit: { tif: "Gtc" } }
+          },
+          // Take Profit Trigger Order (Market Trigger to guarantee fill)
+          {
+            a: target.assetIndex,
+            b: !isBuy,
+            p: tpWorstPx,
+            s: entrySz,
+            r: true,
+            t: {
+              trigger: {
+                triggerPx: tpPx,
+                isMarket: true,
+                tpsl: "tp"
+              }
+            }
+          },
+          // Stop Loss Trigger Order (Market Trigger to guarantee invalidation)
+          {
+            a: target.assetIndex,
+            b: !isBuy,
+            p: slWorstPx,
+            s: entrySz,
+            r: true,
+            t: {
+              trigger: {
+                triggerPx: slPx,
+                isMarket: true,
+                tpsl: "sl"
+              }
+            }
+          }
+        ],
+        grouping: "normalTpsl"
+      });
+
+      return res.status(200).json({
+        status: "success",
+        executedTrade: {
+          symbol: target.symbol,
+          score: target.score,
+          direction,
+          leverage: finalLeverage,
+          positionSizeUsd: positionSizeUsd.toFixed(2),
+          entryPrice: entryPx,
+          stopLoss: slPx,
+          takeProfit: tpPx,
+          orderResult
+        }
+      });
+    }
 
   } catch (error) {
     console.error("Bot execution error:", error);
