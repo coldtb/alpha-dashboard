@@ -504,6 +504,9 @@ export default async function handler(req, res) {
     })));
 
     const minScore = req.query.min_score ? parseInt(req.query.min_score) : (process.env.HYPERLIQUID_MIN_SCORE ? parseInt(process.env.HYPERLIQUID_MIN_SCORE) : 85);
+    const replacementScoreDiff = process.env.HYPERLIQUID_REPLACEMENT_SCORE_DIFF 
+      ? parseInt(process.env.HYPERLIQUID_REPLACEMENT_SCORE_DIFF) 
+      : 5; // default 5 points
 
     // 5. Cancel stale unfilled limit entry orders (and their associated TP/SL) if their score is no longer >= minScore
     const cancels = [];
@@ -516,18 +519,39 @@ export default async function handler(req, res) {
     }
     console.log(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`);
 
+    // Find the highest score among all tradeable candidates (no positions, no open orders)
+    const potentialCandidates = scoredCoins.filter(c => 
+      c.score >= minScore && 
+      !openOrders.some(o => o.coin === c.symbol) && 
+      !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.s) !== 0)
+    );
+    const bestCand = potentialCandidates[0]; // Since scoredCoins is already sorted descending, the first is the best
+    const bestCandScore = bestCand ? bestCand.score : 0;
+    console.log(`[Stale Cleanup] Best tradeable candidate in market: ${bestCand ? bestCand.symbol : 'None'} (Score: ${bestCandScore})`);
+
     for (const coinSymbol of coinsWithPendingOrders) {
       const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
       const currentScore = currentCoin ? currentCoin.score : 0;
 
+      let shouldCancel = false;
+      let cancelReason = "";
+
       if (currentScore < minScore) {
+        shouldCancel = true;
+        cancelReason = `Current Score ${currentScore} is below Min Score ${minScore}`;
+      } else if (bestCandScore - currentScore >= replacementScoreDiff) {
+        shouldCancel = true;
+        cancelReason = `A better candidate exists: ${bestCand.symbol} (Score: ${bestCandScore}) has a score higher than ${coinSymbol} (Score: ${currentScore}) by >= ${replacementScoreDiff} points`;
+      }
+
+      if (shouldCancel) {
         const assetIndex = hlMeta.universe.findIndex(a => a.name === coinSymbol);
         if (assetIndex !== -1) {
           const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
           coinOrders.forEach(o => {
             cancels.push({ a: assetIndex, o: o.oid });
           });
-          console.log(`Scheduling cancellation of all pending orders for stale coin ${coinSymbol} (Current Score: ${currentScore} < Min Score: ${minScore})`);
+          console.log(`Scheduling cancellation of all pending orders for ${coinSymbol}. Reason: ${cancelReason}`);
         }
       }
     }
