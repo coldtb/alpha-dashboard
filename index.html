@@ -111,6 +111,90 @@
       </section>
     </div>
 
+    <!-- Bot Performance & Active Positions Section -->
+    <section class="performance-section">
+      <h2 class="grid-section-title">
+        <svg width="20" height="20" fill="var(--color-green)" viewBox="0 0 24 24" style="display:inline-block; vertical-align:middle;">
+          <path fill="currentColor" d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z"/>
+        </svg>
+        Bot Portfolio Performance & Active Positions
+      </h2>
+      
+      <!-- Performance Summary Cards -->
+      <div class="perf-summary-grid">
+        <div class="perf-stat-card">
+          <span class="perf-label">Available Balance</span>
+          <span class="perf-val" id="perf-balance">$0.00</span>
+        </div>
+        <div class="perf-stat-card">
+          <span class="perf-label">Total Account Equity</span>
+          <span class="perf-val" id="perf-equity">$0.00</span>
+        </div>
+        <div class="perf-stat-card">
+          <span class="perf-label">Total Realized PnL</span>
+          <span class="perf-val" id="perf-realized-pnl">$0.00</span>
+        </div>
+        <div class="perf-stat-card">
+          <span class="perf-label">Bot Win Rate (7D)</span>
+          <span class="perf-val" id="perf-win-rate">0.0%</span>
+        </div>
+      </div>
+
+      <!-- Active Positions & History Grid -->
+      <div class="perf-details-grid">
+        <!-- Active Positions -->
+        <div class="perf-panel">
+          <h3 class="panel-title">Active Positions</h3>
+          <div class="perf-table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Direction</th>
+                  <th>Size</th>
+                  <th>Entry Price</th>
+                  <th>Unrealized PnL</th>
+                  <th>Margin (Lev)</th>
+                </tr>
+              </thead>
+              <tbody id="perf-positions-tbody">
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 1.5rem; color: var(--color-text-muted);">
+                    No active positions at this time.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Closed Trades -->
+        <div class="perf-panel">
+          <h3 class="panel-title">Recent Closed Trades</h3>
+          <div class="perf-table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Asset</th>
+                  <th>Direction</th>
+                  <th>Size @ Price</th>
+                  <th>Realized PnL</th>
+                </tr>
+              </thead>
+              <tbody id="perf-history-tbody">
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 1.5rem; color: var(--color-text-muted);">
+                    No trade history found.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Top 100 Scanner -->
     <section>
       <h2 class="grid-section-title">

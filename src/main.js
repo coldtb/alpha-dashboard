@@ -291,10 +291,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   fetchScannerData();
+  fetchPerformanceData();
   initWebSockets();
   
-  // Set intervals to poll scanner data every 30 seconds
+  // Set intervals to poll scanner and performance data every 30 seconds
   setInterval(fetchScannerData, 30000);
+  setInterval(fetchPerformanceData, 30000);
   
   // Event Listeners for UI
   document.getElementById("scanner-search").addEventListener("input", filterAndRenderTable);
@@ -2181,4 +2183,110 @@ async function renderSocialAlpha() {
       showNotification("Contract Address санах ойд хуулагдлаа!");
     });
   });
+}
+
+// Fetch active positions and performance PnL data from bot API
+async function fetchPerformanceData() {
+  try {
+    const res = await fetch("/api/pnl");
+    if (!res.ok) {
+      throw new Error(`PNL API returned status: ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.status !== "success") {
+      throw new Error(data.error || "Unknown API error");
+    }
+
+    // 1. Update summary stat cards
+    const balanceEl = document.getElementById("perf-balance");
+    const equityEl = document.getElementById("perf-equity");
+    const realizedEl = document.getElementById("perf-realized-pnl");
+    const winRateEl = document.getElementById("perf-win-rate");
+
+    if (balanceEl) balanceEl.textContent = `$${data.account.withdrawable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (equityEl) equityEl.textContent = `$${data.account.totalEquity.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    
+    if (realizedEl) {
+      const pnlVal = data.totalRealizedPnl;
+      realizedEl.textContent = `${pnlVal >= 0 ? '+' : ''}$${pnlVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      realizedEl.className = `perf-val ${pnlVal >= 0 ? 'change-up' : 'change-down'}`;
+      realizedEl.style.background = "none";
+      realizedEl.style.padding = "0";
+    }
+
+    if (winRateEl) {
+      winRateEl.textContent = `${data.winRate.toFixed(1)}%`;
+      winRateEl.className = `perf-val ${data.winRate >= 50 ? 'change-up' : 'change-down'}`;
+      winRateEl.style.background = "none";
+      winRateEl.style.padding = "0";
+    }
+
+    // 2. Render Active Positions Table
+    const posTbody = document.getElementById("perf-positions-tbody");
+    if (posTbody) {
+      if (data.activePositions.length === 0) {
+        posTbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; padding: 1.5rem; color: var(--color-text-muted);">
+              No active positions at this time.
+            </td>
+          </tr>
+        `;
+      } else {
+        posTbody.innerHTML = data.activePositions.map(pos => {
+          const pnlClass = pos.unrealizedPnl >= 0 ? "change-up" : "change-down";
+          const pnlPrefix = pos.unrealizedPnl >= 0 ? "+" : "";
+          const dirClass = pos.direction === "LONG" ? "change-up" : "change-down";
+          
+          return `
+            <tr>
+              <td><span class="table-symbol">${pos.coin}</span></td>
+              <td><span class="ticker-change ${dirClass}" style="font-size:0.75rem; padding:0.15rem 0.45rem; font-weight:600; background:none;">${pos.direction}</span></td>
+              <td>${pos.size}</td>
+              <td>$${pos.entryPx.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6})}</td>
+              <td><span class="ticker-change ${pnlClass}" style="font-size:0.85rem; font-weight:600; padding:0.15rem 0.45rem;">${pnlPrefix}$${pos.unrealizedPnl.toFixed(2)}</span></td>
+              <td style="color:var(--color-text-muted); font-size:0.8rem;">$${pos.marginUsed.toFixed(2)} (${pos.leverage}x)</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // 3. Render Recent Closed Trades Table
+    const histTbody = document.getElementById("perf-history-tbody");
+    if (histTbody) {
+      if (data.recentTrades.length === 0) {
+        histTbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; padding: 1.5rem; color: var(--color-text-muted);">
+              No trade history found.
+            </td>
+          </tr>
+        `;
+      } else {
+        histTbody.innerHTML = data.recentTrades.map(trade => {
+          const pnlClass = trade.pnl >= 0 ? "change-up" : "change-down";
+          const pnlPrefix = trade.pnl >= 0 ? "+" : "";
+          const dirClass = trade.direction === "LONG" ? "change-up" : "change-down";
+          
+          // Format Date
+          const date = new Date(trade.time);
+          const timeStr = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+
+          return `
+            <tr>
+              <td style="color:var(--color-text-muted); font-size:0.75rem;">${timeStr}</td>
+              <td><span class="table-symbol">${trade.coin}</span></td>
+              <td><span class="ticker-change ${dirClass}" style="font-size:0.75rem; padding:0.15rem 0.45rem; font-weight:600; background:none;">${trade.direction}</span></td>
+              <td>${trade.size} @ $${trade.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6})}</td>
+              <td><span class="ticker-change ${pnlClass}" style="font-size:0.85rem; font-weight:600; padding:0.15rem 0.45rem;">${pnlPrefix}$${trade.pnl.toFixed(2)}</span></td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+  } catch (err) {
+    console.error("Error fetching performance/PnL data:", err);
+  }
 }
