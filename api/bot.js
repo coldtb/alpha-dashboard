@@ -93,7 +93,7 @@ function detectAutoDirection(coin, taData = null) {
 }
 
 // Level computation
-function computeStrategyLevels(coin, dir, taData) {
+function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true) {
   const price   = coin.price;
   const funding = coin.funding || 0;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -122,6 +122,7 @@ function computeStrategyLevels(coin, dir, taData) {
     }
   }
 
+  // 1. Calculate standard levels first
   if (dir === 'LONG') {
     const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
     const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
@@ -186,6 +187,114 @@ function computeStrategyLevels(coin, dir, taData) {
     }
   }
 
+  // 2. Parse Options and Derivatives data
+  let putWall = null;
+  let callWall = null;
+  let shortLiqMagnet = null;
+  let longLiqMagnet = null;
+
+  if (optionsData?.result?.content?.[0]?.text) {
+    try {
+      const parsed = JSON.parse(optionsData.result.content[0].text);
+      if (parsed?.summary?.key_levels) {
+        putWall = parsed.summary.key_levels.nearest_put_wall;
+        callWall = parsed.summary.key_levels.nearest_call_wall;
+      }
+    } catch (e) {
+      console.warn("Could not parse options report for smart levels:", e.message);
+    }
+  }
+
+  if (derivData?.derivative_data) {
+    try {
+      const sym = Object.keys(derivData.derivative_data).find(k => k !== '_metadata' && k !== 'url' && k !== 'title');
+      if (sym) {
+        const d = derivData.derivative_data[sym];
+        const liqKey = Object.keys(d).find(k => k.toLowerCase().includes('liquidation'));
+        if (liqKey) {
+          const liq = d[liqKey];
+          const shortLiqs = liq.max_liquidation_points?.max_short_liquidation_point || [];
+          const longLiqs = liq.max_liquidation_points?.max_long_liquidation_point || [];
+          if (shortLiqs.length > 0) {
+            const sortedShort = [...shortLiqs].sort((a, b) => b.liq_usd - a.liq_usd);
+            shortLiqMagnet = sortedShort[0].price;
+          }
+          if (longLiqs.length > 0) {
+            const sortedLong = [...longLiqs].sort((a, b) => b.liq_usd - a.liq_usd);
+            longLiqMagnet = sortedLong[0].price;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not parse derivatives data for smart levels:", e.message);
+    }
+  }
+
+  // 3. Apply Smart TP/SL Adjustments
+  if (useSmartSlTp) {
+    if (dir === 'LONG') {
+      let slAdjusted = false;
+    let tpAdjusted = false;
+
+    // Smart SL: Place below Put Wall if Put Wall is close enough (within 5% of entry)
+    if (putWall && putWall < entry && putWall > entry * 0.95) {
+      sl = putWall * 0.992; // 0.8% safety cushion below the put wall
+      slAdjusted = true;
+    }
+
+    // Smart TP: Target Short Liquidation Magnet or Call Wall
+    let smartTp = null;
+    if (shortLiqMagnet && shortLiqMagnet > entry) {
+      smartTp = shortLiqMagnet;
+    } else if (callWall && callWall > entry) {
+      smartTp = callWall * 0.998; // target just below call wall
+    }
+
+    // Enforce 1.5x R:R on the adjusted TP
+    if (smartTp) {
+      const minTp = entry + (entry - sl) * 1.5;
+      if (smartTp >= minTp) {
+        tp = smartTp;
+        tpAdjusted = true;
+      }
+    }
+
+    if (slAdjusted || tpAdjusted) {
+      reason += `+smart_levels(SL:${slAdjusted ? 'put_wall' : 'default'},TP:${tpAdjusted ? 'options_liq' : 'default'})`;
+    }
+  } else {
+    let slAdjusted = false;
+    let tpAdjusted = false;
+
+    // Smart SL: Place above Call Wall if within 5% of entry
+    if (callWall && callWall > entry && callWall < entry * 1.05) {
+      sl = callWall * 1.008; // 0.8% safety cushion above the call wall
+      slAdjusted = true;
+    }
+
+    // Smart TP: Target Long Liquidation Magnet or Put Wall
+    let smartTp = null;
+    if (longLiqMagnet && longLiqMagnet < entry) {
+      smartTp = longLiqMagnet;
+    } else if (putWall && putWall < entry) {
+      smartTp = putWall * 1.002; // target just above put wall
+    }
+
+    // Enforce 1.5x R:R
+    if (smartTp) {
+      const minTp = entry - (sl - entry) * 1.5;
+      if (smartTp <= minTp) {
+        tp = smartTp;
+        tpAdjusted = true;
+      }
+    }
+
+    if (slAdjusted || tpAdjusted) {
+      reason += `+smart_levels(SL:${slAdjusted ? 'call_wall' : 'default'},TP:${tpAdjusted ? 'options_liq' : 'default'})`;
+    }
+  }
+}
+
   return {
     entry: parseFloat(entry.toFixed(dec)),
     sl:    parseFloat(sl.toFixed(dec)),
@@ -195,7 +304,7 @@ function computeStrategyLevels(coin, dir, taData) {
 }
 
 // Calculate Market Score
-function calculateScore(coin) {
+function calculateScore(coin, isHyperliquidScale = false) {
   let score = 0;
   const change = Math.abs(coin.change);
   if (change <= 3.0) {
@@ -214,9 +323,17 @@ function calculateScore(coin) {
       score += 15;
     }
   }
-  if (coin.volume > 100000000) score += 20;
-  else if (coin.volume > 50000000) score += 15;
-  else if (coin.volume > 10000000) score += 10;
+
+  const vol = coin.volume;
+  if (isHyperliquidScale) {
+    if (vol > 30000000) score += 20;
+    else if (vol > 15000000) score += 15;
+    else if (vol > 5000000) score += 10;
+  } else {
+    if (vol > 100000000) score += 20;
+    else if (vol > 50000000) score += 15;
+    else if (vol > 10000000) score += 10;
+  }
 
   const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
   if (watchlist.includes(coin.symbol)) {
@@ -265,7 +382,7 @@ export default async function handler(req, res) {
     const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
     const exchange = new ExchangeClient({ transport, wallet: account });
 
-    // 4. Fetch Scanner Data directly from Hyperliquid (to avoid Binance IP block on cloud servers)
+    // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
     const [metaAndCtxs, userState, initialOpenOrders, spotState] = await Promise.all([
       info.metaAndAssetCtxs(),
       info.clearinghouseState({ user: walletAddress }),
@@ -275,34 +392,101 @@ export default async function handler(req, res) {
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
     let openOrders = initialOpenOrders;
 
-    // Map universe and contexts to standard structure and calculate scores
-    const scoredCoins = hlMeta.universe.map((asset, index) => {
-      const ctx = hlAssetCtxs[index];
-      if (!ctx) return null;
+    let binanceData = null;
+    try {
+      const [resTicker, resFunding] = await Promise.all([
+        fetch("https://fapi.binance.com/fapi/v1/ticker/24hr").then(r => r.json()),
+        fetch("https://fapi.binance.com/fapi/v1/premiumIndex").then(r => r.json())
+      ]);
+      if (Array.isArray(resTicker) && Array.isArray(resFunding)) {
+        binanceData = { tickers: resTicker, premiumData: resFunding };
+      }
+    } catch (e) {
+      console.warn("Failed to fetch from Binance, falling back to Hyperliquid data:", e.message);
+    }
 
-      const price = parseFloat(ctx.markPx || ctx.midPx || "0");
-      const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
-      const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
-      const volume = parseFloat(ctx.dayNtlVlm || "0");
-      const funding = parseFloat(ctx.funding || "0") * 8; // Convert hourly funding to 8h equivalent for scoring alignment
+    let scoredCoins = [];
+    if (binanceData) {
+      const fundingMap = {};
+      binanceData.premiumData.forEach(item => {
+        fundingMap[item.symbol] = {
+          fundingRate: parseFloat(item.lastFundingRate) || 0,
+          markPrice: parseFloat(item.markPrice) || 0
+        };
+      });
 
-      const coinData = {
-        symbol: asset.name,
-        price: price,
-        change: change,
-        volume: volume,
-        funding: funding,
-        high: price * 1.03, // estimate high
-        low: price * 0.97,  // estimate low
-      };
+      const binanceCoins = {};
+      binanceData.tickers.forEach(coin => {
+        const fundingInfo = fundingMap[coin.symbol] || { fundingRate: 0.0001, markPrice: parseFloat(coin.lastPrice) };
+        const change = parseFloat(coin.priceChangePercent) || 0;
+        const volume = parseFloat(coin.quoteVolume) || 0;
+        const price = fundingInfo.markPrice || parseFloat(coin.lastPrice);
+        const symbolBase = coin.symbol.replace("USDT", "");
+        
+        binanceCoins[symbolBase] = {
+          symbol: symbolBase,
+          price,
+          change,
+          volume,
+          funding: fundingInfo.fundingRate,
+          high: parseFloat(coin.highPrice) || price * 1.03,
+          low: parseFloat(coin.lowPrice) || price * 0.97
+        };
+      });
 
-      return {
-        ...coinData,
-        score: calculateScore(coinData),
-        assetIndex: index,
-        assetInfo: asset
-      };
-    }).filter(Boolean);
+      scoredCoins = hlMeta.universe.map((asset, index) => {
+        const binCoin = binanceCoins[asset.name];
+        if (!binCoin) return null; // Only trade coins that exist on Binance
+
+        const ctx = hlAssetCtxs[index];
+        const hlPrice = parseFloat(ctx?.markPx || ctx?.midPx || binCoin.price);
+
+        const coinData = {
+          ...binCoin,
+          price: hlPrice // Use Hyperliquid's actual live price for execution
+        };
+
+        return {
+          ...coinData,
+          score: calculateScore(coinData, false),
+          assetIndex: index,
+          assetInfo: asset
+        };
+      }).filter(Boolean);
+      
+      console.log("Using Binance scanner data. Scored coins count:", scoredCoins.length);
+    } else {
+      // Fallback: Use Hyperliquid data directly
+      scoredCoins = hlMeta.universe.map((asset, index) => {
+        const ctx = hlAssetCtxs[index];
+        if (!ctx) return null;
+
+        const price = parseFloat(ctx.markPx || ctx.midPx || "0");
+        const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
+        const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+        const volume = parseFloat(ctx.dayNtlVlm || "0");
+        const funding = parseFloat(ctx.funding || "0") * 8; // Convert hourly funding to 8h equivalent
+
+        const coinData = {
+          symbol: asset.name,
+          price: price,
+          change: change,
+          volume: volume,
+          funding: funding,
+          high: price * 1.03,
+          low: price * 0.97,
+        };
+
+        return {
+          ...coinData,
+          score: calculateScore(coinData, true),
+          assetIndex: index,
+          assetInfo: asset
+        };
+      }).filter(Boolean);
+      
+      console.log("Using Hyperliquid fallback scanner data. Scored coins count:", scoredCoins.length);
+    }
 
     // Sort by score descending, then by volume descending
     scoredCoins.sort((a, b) => {
@@ -319,22 +503,30 @@ export default async function handler(req, res) {
       volume: Math.round(c.volume)
     })));
 
-    // 5. Cancel stale unfilled limit entry orders if their score is no longer >= 90
-    const cancels = [];
-    for (const order of openOrders) {
-      // We only cancel unfilled Limit Entry orders (not TP/SL trigger orders)
-      const isLimitEntry = !order.isTrigger && (!order.triggerPx || parseFloat(order.triggerPx) === 0);
-      if (isLimitEntry) {
-        // Find current score of the coin
-        const currentCoin = scoredCoins.find(c => c.symbol === order.coin);
-        const currentScore = currentCoin ? currentCoin.score : 0;
+    const minScore = req.query.min_score ? parseInt(req.query.min_score) : (process.env.HYPERLIQUID_MIN_SCORE ? parseInt(process.env.HYPERLIQUID_MIN_SCORE) : 85);
 
-        if (currentScore < 90) {
-          const assetIndex = hlMeta.universe.findIndex(a => a.name === order.coin);
-          if (assetIndex !== -1) {
-            cancels.push({ a: assetIndex, o: order.oid });
-            console.log(`Scheduling cancellation for stale order: ${order.coin} limit entry at ${order.limitPx} (Current Score: ${currentScore})`);
-          }
+    // 5. Cancel stale unfilled limit entry orders (and their associated TP/SL) if their score is no longer >= minScore
+    const cancels = [];
+    const coinsWithPendingOrders = new Set();
+    for (const order of openOrders) {
+      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.s) !== 0);
+      if (!hasPosition) {
+        coinsWithPendingOrders.add(order.coin);
+      }
+    }
+
+    for (const coinSymbol of coinsWithPendingOrders) {
+      const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
+      const currentScore = currentCoin ? currentCoin.score : 0;
+
+      if (currentScore < minScore) {
+        const assetIndex = hlMeta.universe.findIndex(a => a.name === coinSymbol);
+        if (assetIndex !== -1) {
+          const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
+          coinOrders.forEach(o => {
+            cancels.push({ a: assetIndex, o: o.oid });
+          });
+          console.log(`Scheduling cancellation of all pending orders for stale coin ${coinSymbol} (Current Score: ${currentScore} < Min Score: ${minScore})`);
         }
       }
     }
@@ -342,7 +534,7 @@ export default async function handler(req, res) {
     if (cancels.length > 0) {
       try {
         const cancelRes = await exchange.cancel({ cancels });
-        console.log("Stale orders cancelled successfully:", JSON.stringify(cancelRes));
+        console.log("Stale/orphaned orders cancelled successfully:", JSON.stringify(cancelRes));
         // Refresh openOrders list to reflect cancellations
         openOrders = await info.frontendOpenOrders({ user: walletAddress });
       } catch (e) {
@@ -495,10 +687,178 @@ export default async function handler(req, res) {
       }
     }
 
-    // Pick top candidates (score >= 90)
-    const candidates = scoredCoins.filter(c => c.score >= 90);
+    // 5c. Limit Order Entry Level Trailing
+    const entryShiftThreshold = process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD 
+      ? parseFloat(process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD) 
+      : 0.0075; // default 0.75%
+
+    // Re-evaluate pending orders to see if they need level trailing
+    const pendingCoins = new Set();
+    for (const order of openOrders) {
+      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.s) !== 0);
+      if (!hasPosition) {
+        pendingCoins.add(order.coin);
+      }
+    }
+
+    let needsOrdersRefreshAfterTrailing = false;
+    for (const coinSymbol of pendingCoins) {
+      const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
+      if (!currentCoin) continue;
+      if (currentCoin.score < minScore) continue; // Will be or was handled by stale order check
+
+      // Find existing Limit Entry order
+      const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
+      const entryOrder = coinOrders.find(o => !o.isTrigger && (!o.triggerPx || parseFloat(o.triggerPx) === 0));
+
+      const geckoId = geckoIdMap[coinSymbol];
+      let taData = null;
+      let derivData = null;
+      let optionsData = null;
+
+      if (geckoId) {
+        try {
+          const results = await Promise.allSettled([
+            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
+            callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
+            callTrueNorthMcp('options_report', { token_address: geckoId })
+          ]);
+          
+          if (results[0].status === 'fulfilled') taData = results[0].value;
+          if (results[1].status === 'fulfilled') derivData = results[1].value;
+          if (results[2].status === 'fulfilled') optionsData = results[2].value;
+        } catch (e) {
+          console.error(`[Entry Trailing] TrueNorth MCP query failed for ${coinSymbol}:`, e.message);
+        }
+      }
+
+      const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+      const direction = detectAutoDirection(currentCoin, taData);
+      const levels = computeStrategyLevels(currentCoin, direction, taData, derivData, optionsData, useSmartSlTp);
+
+      let shouldUpdate = false;
+      let reasonText = "";
+
+      if (entryOrder) {
+        const oldEntryPx = parseFloat(entryOrder.limitPx);
+        const priceDiffPct = Math.abs(oldEntryPx - levels.entry) / levels.entry;
+
+        if (priceDiffPct >= entryShiftThreshold) {
+          shouldUpdate = true;
+          reasonText = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (from ${oldEntryPx} to ${levels.entry}), exceeding threshold of ${(entryShiftThreshold * 100).toFixed(2)}%`;
+        }
+      } else {
+        shouldUpdate = true;
+        reasonText = `Orphaned TP/SL orders found without a limit entry order`;
+      }
+
+      if (shouldUpdate) {
+        console.log(`[Entry Trailing] Updating entry levels for ${coinSymbol}. Reason: ${reasonText}`);
+        try {
+          // Cancel all existing open orders for this coin
+          const cancelsToMake = coinOrders.map(o => ({ a: currentCoin.assetIndex, o: o.oid }));
+          const cancelRes = await exchange.cancel({ cancels: cancelsToMake });
+          console.log(`[Entry Trailing] Cancelled old orders for ${coinSymbol}:`, JSON.stringify(cancelRes));
+
+          // Calculate size
+          const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
+          let withdrawableUsd = parseFloat(userState.withdrawable || "0");
+          if (withdrawableUsd === 0 && spotState && spotState.balances) {
+            const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+            if (usdcBal) {
+              withdrawableUsd = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+            }
+          }
+          const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
+          if (accountSize <= 5) {
+            console.error(`[Entry Trailing] Insufficient balance for ${coinSymbol}. Account size: $${accountSize}`);
+            continue;
+          }
+
+          const finalLeverage = 5;
+          let positionSizeUsd = (accountSize * 0.90) * finalLeverage;
+          if (positionSizeUsd < 10.5) {
+            positionSizeUsd = 10.5;
+          }
+          const positionSizeTokens = positionSizeUsd / levels.entry;
+
+          const isBuy = direction === "LONG";
+          const entrySz = formatSize(positionSizeTokens, currentCoin.assetInfo.szDecimals);
+          const entryPxStr = formatPrice(levels.entry);
+          const tpPxStr = formatPrice(levels.tp);
+          const tpWorstPxStr = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp));
+          const slPxStr = formatPrice(levels.sl);
+          const slWorstPxStr = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
+
+          // Place leverage
+          await exchange.updateLeverage({
+            asset: currentCoin.assetIndex,
+            isCross: true,
+            leverage: finalLeverage
+          });
+
+          // Place order
+          const orderRes = await exchange.order({
+            orders: [
+              {
+                a: currentCoin.assetIndex,
+                b: isBuy,
+                p: entryPxStr,
+                s: entrySz,
+                r: false,
+                t: { limit: { tif: "Gtc" } }
+              },
+              {
+                a: currentCoin.assetIndex,
+                b: !isBuy,
+                p: tpWorstPxStr,
+                s: entrySz,
+                r: true,
+                t: {
+                  trigger: {
+                    triggerPx: tpPxStr,
+                    isMarket: true,
+                    tpsl: "tp"
+                  }
+                }
+              },
+              {
+                a: currentCoin.assetIndex,
+                b: !isBuy,
+                p: slWorstPxStr,
+                s: entrySz,
+                r: true,
+                t: {
+                  trigger: {
+                    triggerPx: slPxStr,
+                    isMarket: true,
+                    tpsl: "sl"
+                  }
+                }
+              }
+            ],
+            grouping: "normalTpsl"
+          });
+          console.log(`[Entry Trailing] Placed new trailed bracket order for ${coinSymbol}:`, JSON.stringify(orderRes));
+          needsOrdersRefreshAfterTrailing = true;
+        } catch (e) {
+          console.error(`[Entry Trailing] Failed to update levels for ${coinSymbol}:`, e.message);
+        }
+      }
+    }
+
+    if (needsOrdersRefreshAfterTrailing) {
+      try {
+        openOrders = await info.frontendOpenOrders({ user: walletAddress });
+      } catch (e) {
+        console.error("Failed to refresh openOrders after entry trailing:", e.message);
+      }
+    }
+
+    // Pick top candidates (score >= minScore)
+    const candidates = scoredCoins.filter(c => c.score >= minScore);
     if (candidates.length === 0) {
-      return res.status(200).json({ status: "success", message: "No candidates with score >= 90 found at this time." });
+      return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
 
     // Filter candidates that are not currently in active positions/orders
@@ -521,17 +881,30 @@ export default async function handler(req, res) {
     const geckoId = geckoIdMap[target.symbol];
 
     let taData = null;
+    let derivData = null;
+    let optionsData = null;
+
     if (geckoId) {
       try {
-        const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' });
-        if (mcpRes) taData = mcpRes;
+        const results = await Promise.allSettled([
+          callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
+          callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
+          callTrueNorthMcp('options_report', { token_address: geckoId })
+        ]);
+        
+        if (results[0].status === 'fulfilled') taData = results[0].value;
+        if (results[1].status === 'fulfilled') derivData = results[1].value;
+        if (results[2].status === 'fulfilled') optionsData = results[2].value;
       } catch (e) {
-        console.error("TrueNorth MCP query failed, falling back to Fib levels:", e.message);
+        console.error("TrueNorth MCP query failed:", e.message);
       }
     }
 
+    const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+    console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
+
     const direction = detectAutoDirection(target, taData);
-    const levels = computeStrategyLevels(target, direction, taData);
+    const levels = computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
 
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;

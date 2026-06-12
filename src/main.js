@@ -33,7 +33,8 @@ const geckoIdMap = {
 const mcpCache = {
   technical: {},
   derivatives: {},
-  smartMoney: {}
+  smartMoney: {},
+  options: {}
 };
 
 // Generic JSON-RPC tool caller helper
@@ -310,11 +311,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Tab Event Listeners
   const tabMarket = document.getElementById("tab-market-alpha");
   const tabMyPlans = document.getElementById("tab-my-plans");
+  const tabSocial = document.getElementById("tab-social-alpha");
   
-  if (tabMarket && tabMyPlans) {
+  if (tabMarket && tabMyPlans && tabSocial) {
     tabMarket.addEventListener("click", () => {
       tabMarket.classList.add("active");
       tabMyPlans.classList.remove("active");
+      tabSocial.classList.remove("active");
       activeTab = "market";
       renderPodium();
     });
@@ -322,7 +325,16 @@ document.addEventListener("DOMContentLoaded", () => {
     tabMyPlans.addEventListener("click", () => {
       tabMyPlans.classList.add("active");
       tabMarket.classList.remove("active");
+      tabSocial.classList.remove("active");
       activeTab = "custom";
+      renderPodium();
+    });
+
+    tabSocial.addEventListener("click", () => {
+      tabSocial.classList.add("active");
+      tabMarket.classList.remove("active");
+      tabMyPlans.classList.remove("active");
+      activeTab = "social";
       renderPodium();
     });
   }
@@ -1026,16 +1038,19 @@ async function fetchDrawerDeepInsights(symbol) {
   }
   
   // Fire all 3 queries in parallel
-  const [taData, derivData, whaleData] = await Promise.all([
-    mcpCache.technical[symbol] || callMcpTool('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
-    mcpCache.derivatives[symbol] || callMcpTool('derivatives_analysis', { token_address: geckoId }),
-    mcpCache.smartMoney[symbol] || callMcpTool('hyperliquid_smart_money', { token_address: geckoId })
+  // Fire all queries in parallel, catching errors to avoid crash if one fails
+  const [taData, derivData, whaleData, optionsData] = await Promise.all([
+    mcpCache.technical[symbol] || callMcpTool('technical_analysis', { token_address: geckoId, timeframe: '1h' }).catch(() => null),
+    mcpCache.derivatives[symbol] || callMcpTool('derivatives_analysis', { token_address: geckoId }).catch(() => null),
+    mcpCache.smartMoney[symbol] || callMcpTool('hyperliquid_smart_money', { token_address: geckoId }).catch(() => null),
+    mcpCache.options[symbol] || callMcpTool('options_report', { token_address: geckoId }).catch(() => null)
   ]);
   
   // Cache results
   if (taData) mcpCache.technical[symbol] = taData;
   if (derivData) mcpCache.derivatives[symbol] = derivData;
   if (whaleData) mcpCache.smartMoney[symbol] = whaleData;
+  if (optionsData) mcpCache.options[symbol] = optionsData;
   
   // Check if drawer is still open for same symbol
   const check = document.getElementById(`mcp-deep-insights-${symbol}`);
@@ -1307,6 +1322,64 @@ async function fetchDrawerDeepInsights(symbol) {
     `;
   }
   
+  // ─── 4. Options Market Intelligence (GEX) ───
+  if (optionsData && optionsData.result && optionsData.result.content && optionsData.result.content[0] && optionsData.result.content[0].text) {
+    try {
+      const parsed = JSON.parse(optionsData.result.content[0].text);
+      if (parsed && parsed.summary) {
+        const o = parsed;
+        const s = o.summary;
+        const kl = s.key_levels;
+        const sig = s.signal_summary;
+        
+        let sentimentColor = s.sentiment === 'bullish' ? 'var(--color-green)' : (s.sentiment === 'bearish' ? 'var(--color-red)' : 'var(--color-text-muted)');
+        
+        html += `
+          <div class="insight-block">
+            <div class="insight-block-title">
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M19,3H5C3.89,3 3,3.9 3,5V19C3,20.1 3.89,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3M19,19H5V5H19V19M7,10H9V17H7V10M11,7H13V17H11V7M15,13H17V17H15V13Z"/></svg>
+              Options & Gamma (GEX) Intelligence
+              <span class="mcp-status-pill live">LIVE</span>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.4rem; font-size:0.75rem;">
+              <span>Sentiment: <span style="color:${sentimentColor}; font-weight:600; text-transform:uppercase;">${s.sentiment || 'mixed'}</span></span>
+              <span>Regime: <span style="color:${s.regime === 'negative_gamma' ? 'var(--color-red)' : 'var(--color-green)'}; font-weight:600;">${s.regime === 'negative_gamma' ? 'Negative Gamma' : 'Positive Gamma'}</span></span>
+            </div>
+            
+            <div class="liq-metrics-grid" style="margin-top:0.3rem;">
+              <div class="liq-metric">
+                <span class="w-label">GEX Flip Price</span>
+                <span class="w-val" style="color:#fff;">${kl.gex_flip != null ? formatPriceText(kl.gex_flip) : '-'}</span>
+              </div>
+              <div class="liq-metric">
+                <span class="w-label">Max Pain</span>
+                <span class="w-val" style="color:var(--color-blue);">${kl.max_pain != null ? formatPriceText(kl.max_pain) : '-'}</span>
+              </div>
+            </div>
+            
+            <div class="liq-metrics-grid" style="margin-top:0.4rem;">
+              <div class="liq-metric">
+                <span class="w-label">Nearest Put Wall (Support)</span>
+                <span class="w-val" style="color:var(--color-green);">${kl.nearest_put_wall != null ? formatPriceText(kl.nearest_put_wall) : '-'}</span>
+              </div>
+              <div class="liq-metric">
+                <span class="w-label">Nearest Call Wall (Resistance)</span>
+                <span class="w-val" style="color:var(--color-red);">${kl.nearest_call_wall != null ? formatPriceText(kl.nearest_call_wall) : '-'}</span>
+              </div>
+            </div>
+
+            <div style="font-size:0.65rem; color:var(--color-text-muted); margin-top:0.4rem; border-top: 1px dashed rgba(255,255,255,0.08); padding-top:0.4rem; line-height:1.25;">
+              <strong>Signal Summary:</strong> Risk Reversal: ${sig.risk_reversal || '-'} | P/C Ratio: ${sig.put_call_ratio || '-'} | Delta Exposure: ${sig.delta_exposure || '-'}
+            </div>
+          </div>
+        `;
+      }
+    } catch (e) {
+      console.warn("Failed to render options widget:", e.message);
+    }
+  }
+
   html += '</div>';
   
   // Final check
@@ -1421,7 +1494,7 @@ function renderPodium() {
         openDrawer(sym);
       });
     });
-  } else {
+  } else if (activeTab === "custom") {
     // Sort customTrades by score descending
     const sortedCustom = [...customTrades].sort((a, b) => b.score - a.score);
     const top3Custom = sortedCustom.slice(0, 3);
@@ -1497,6 +1570,8 @@ function renderPodium() {
         deleteCustomPlan(sym);
       });
     });
+  } else if (activeTab === "social") {
+    renderSocialAlpha();
   }
 }
 
@@ -1965,4 +2040,145 @@ function formatPriceText(price) {
   if (price < 1) return `$${price.toFixed(6)}`;
   if (price < 10) return `$${price.toFixed(4)}`;
   return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// ─── Options & Social Alpha Helpers ───
+const defaultSocialAlphaTokens = [
+  { symbol: "SAIRI", chain: "Base", mcap: "$1.24M", vol: "$320.13K", change: "88.17%", signal: "small-cap momentum watch", address: "0xde61878b0b21ce395266c44D4d548D1C72A3eB07", standout: true },
+  { symbol: "HUNCH", chain: "Base", mcap: "$133.51K", vol: "$38.42K", change: "44.40%", signal: "small-cap momentum watch", address: "0xae1F38Aee37F5bbeeded6A69b6454f4954b30Ba3", standout: true },
+  { symbol: "SURPLUS", chain: "Base", mcap: "$2.59M", vol: "$614.09K", change: "16.07%", signal: "mid-cap positive continuation", address: "0xC52aeDec3374422d7510E294cfAa90799595CBa3", standout: true },
+  { symbol: "BUTTCOIN", chain: "Solana", mcap: "$24.69M", vol: "$1.82M", change: "9.13%", signal: "notable watch", address: "Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump", standout: false },
+  { symbol: "VELVET", chain: "Ethereum", mcap: "$75.94M", vol: "$0.01", change: "N/A", signal: "notable watch", address: "0x500353D40e8cEbA7f4710E972809D03f270a0dAa", standout: true },
+  { symbol: "GSPEED", chain: "Base", mcap: "$631.60K", vol: "$154.13K", change: "-8.82%", signal: "notable watch", address: "0xA0dD634A9D3C91829081Fc66B90103A3E5c6aeeC", standout: true },
+  { symbol: "CAP", chain: "Base", mcap: "$435.51K", vol: "$6.71K", change: "-9.98%", signal: "notable watch", address: "0xbfa733702305280F066D470afDFA784fA70e2649", standout: true }
+];
+
+function showNotification(message) {
+  let toast = document.getElementById("toast-notification");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast-notification";
+    toast.style.cssText = "position: fixed; bottom: 20px; right: 20px; background: rgba(138,43,226,0.9); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 0.6rem 1.2rem; border-radius: 6px; font-size: 0.8rem; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); backdrop-filter: blur(10px); transition: opacity 0.3s ease;";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = "1";
+  setTimeout(() => {
+    toast.style.opacity = "0";
+  }, 2500);
+}
+
+async function renderSocialAlpha() {
+  const container = document.getElementById("podium-grid");
+  const gistUrl = localStorage.getItem("social_alpha_gist_url") || "";
+  
+  container.innerHTML = `
+    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0.8rem; width: 100%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 0.5rem 0.8rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+        <div style="font-size: 0.75rem; color: var(--color-text-muted);">
+          Gist/JSON URL: <input type="text" id="social-gist-input" value="${gistUrl}" placeholder="Paste public raw JSON URL here..." style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.7rem; width: 220px; margin-left: 0.5rem;">
+          <button id="save-gist-btn" style="background: var(--color-blue); color: #fff; border: none; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; cursor: pointer; margin-left: 0.3rem;">Save</button>
+        </div>
+        <div style="font-size: 0.7rem; color: var(--color-text-muted); font-style: italic;">
+          * Surf сканнерын үр дүнг харуулна
+        </div>
+      </div>
+      <div id="social-tokens-list" style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 400px; overflow-y: auto;">
+        <div style="text-align: center; padding: 1rem; color: var(--color-text-muted); font-size: 0.8rem;">Loading watchlist...</div>
+      </div>
+    </div>
+  `;
+
+  // Bind save button
+  const saveBtn = document.getElementById("save-gist-btn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      const input = document.getElementById("social-gist-input");
+      if (input) {
+        localStorage.setItem("social_alpha_gist_url", input.value.trim());
+        showNotification("Gist URL амжилттай хадгалагдлаа!");
+        renderSocialAlpha();
+      }
+    });
+  }
+
+  // Fetch and render data
+  let tokens = defaultSocialAlphaTokens;
+  if (gistUrl) {
+    try {
+      const res = await fetch(gistUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.tokens) {
+          tokens = data.tokens;
+        } else if (Array.isArray(data)) {
+          tokens = data;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch Gist data, using mock fallback:", e.message);
+    }
+  }
+
+  const listContainer = document.getElementById("social-tokens-list");
+  if (!listContainer) return;
+
+  if (tokens.length === 0) {
+    listContainer.innerHTML = `<div style="text-align: center; padding: 1.5rem; color: var(--color-text-muted); font-size: 0.8rem;">Материал олдсонгүй.</div>`;
+    return;
+  }
+
+  listContainer.innerHTML = tokens.map(t => {
+    const isStandout = t.standout ? 'border: 1px solid rgba(138, 43, 226, 0.4); background: rgba(138, 43, 226, 0.05);' : 'border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02);';
+    const standoutBadge = t.standout ? `<span style="background: var(--color-primary); color: #fff; font-size: 0.55rem; padding: 0.05rem 0.3rem; border-radius: 3px; font-weight: bold; margin-left: 0.4rem; text-transform: uppercase;">STANDOUT</span>` : '';
+    
+    // Check if change contains minus
+    const isDown = t.change && t.change.startsWith('-');
+    const isNa = t.change === 'N/A';
+    const changeColor = isNa ? 'var(--color-text-muted)' : (isDown ? 'var(--color-red)' : 'var(--color-green)');
+    
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem; border-radius: 6px; ${isStandout}">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center;">
+              <span style="font-weight: bold; color: #fff; font-size: 0.85rem;">$${t.symbol}</span>
+              <span style="font-size: 0.6rem; color: var(--color-text-muted); background: rgba(255,255,255,0.1); padding: 0.05rem 0.25rem; border-radius: 3px; margin-left: 0.4rem;">${t.chain}</span>
+              ${standoutBadge}
+            </div>
+            <span style="font-size: 0.65rem; color: var(--color-text-muted); margin-top: 0.15rem;">${t.signal || ''}</span>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div style="display: flex; flex-direction: column; align-items: flex-end;">
+            <span style="font-size: 0.75rem; color: #fff; font-weight: 500;">MCap: ${t.mcap}</span>
+            <span style="font-size: 0.65rem; color: var(--color-text-muted); margin-top: 0.1rem;">Vol: ${t.vol}</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; align-items: flex-end; min-width: 60px;">
+            <span style="font-size: 0.75rem; font-weight: 600; color: ${changeColor};">${t.change}</span>
+          </div>
+
+          <div style="display: flex; gap: 0.3rem; align-items: center;">
+            <button class="social-copy-ca" data-ca="${t.address}" title="Copy Contract Address" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.25rem; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <a href="https://dexscreener.com/${t.chain.toLowerCase()}/${t.address}" target="_blank" title="View on DEX Screener" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.25rem; border-radius: 4px; text-decoration: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind copy buttons
+  listContainer.querySelectorAll(".social-copy-ca").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const ca = btn.getAttribute("data-ca");
+      navigator.clipboard.writeText(ca);
+      showNotification("Contract Address санах ойд хуулагдлаа!");
+    });
+  });
 }
