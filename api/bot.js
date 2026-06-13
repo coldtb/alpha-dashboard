@@ -68,9 +68,9 @@ function detectAutoDirection(coin, taData = null) {
     score += 2;
   } else if (funding < 0) {
     score += 1;
-  } else if (funding > 0.001) {
+  } else if (funding > 0.0001) {
     score -= 2;
-  } else if (funding > 0.0003) {
+  } else if (funding > 0) {
     score -= 1;
   }
 
@@ -82,6 +82,8 @@ function detectAutoDirection(coin, taData = null) {
       score -= 2;
     } else if (vwapData.state === 'price_below' && vwapData.slope === 'up' && funding < 0) {
       score += 1;
+    } else if (vwapData.state === 'price_above' && vwapData.slope === 'down' && funding > 0) {
+      score -= 1;
     }
   }
 
@@ -97,7 +99,9 @@ function detectAutoDirection(coin, taData = null) {
   if (change24h > 3) score += 1;
   else if (change24h < -3) score -= 1;
 
-  return score >= 0 ? 'LONG' : 'SHORT';
+  if (score > 0) return 'LONG';
+  if (score < 0) return 'SHORT';
+  return change24h >= 0 ? 'LONG' : 'SHORT';
 }
 
 // Level computation
@@ -419,16 +423,15 @@ function calculateScore(coin, isHyperliquidScale = false) {
     score += 30;
     if (change <= 1.5) score += 10;
   }
-  if (coin.funding < 0) {
+  
+  // Symmetric funding rate scoring for both LONG and SHORT setup strength
+  const absFunding = Math.abs(coin.funding || 0);
+  if (absFunding > 0) {
     score += 20;
-    if (coin.funding <= -0.0005) {
+    if (absFunding >= 0.0005) {
       score += 15;
-    } else if (coin.funding <= -0.0002) {
+    } else if (absFunding >= 0.0002) {
       score += 10;
-    }
-  } else {
-    if (coin.funding > 0.0003 && change <= 3.0) {
-      score += 15;
     }
   }
 
