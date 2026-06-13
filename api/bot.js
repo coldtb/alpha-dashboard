@@ -1023,12 +1023,29 @@ export default async function handler(req, res) {
         let invalidBracketDetails = "";
         
         if (triggers.length > 0) {
-          const hasLower = triggers.some(o => parseFloat(o.triggerPx) < oldEntryPx);
-          const hasHigher = triggers.some(o => parseFloat(o.triggerPx) > oldEntryPx);
+          const slOrderObj = triggers.find(o => o.orderType?.includes("Stop"));
+          const tpOrderObj = triggers.find(o => o.orderType?.includes("Take Profit"));
           
-          if (!hasLower || !hasHigher) {
-            hasInvalidBracket = true;
-            invalidBracketDetails = `Triggers found on wrong side of entry. Triggers: [${triggers.map(o => o.triggerPx).join(", ")}], Entry: ${oldEntryPx}`;
+          if (slOrderObj) {
+            const slPx = parseFloat(slOrderObj.triggerPx);
+            if (direction === "LONG" && slPx >= oldEntryPx) {
+              hasInvalidBracket = true;
+              invalidBracketDetails += `Stop Loss (${slPx}) is above/equal to LONG entry (${oldEntryPx}). `;
+            } else if (direction === "SHORT" && slPx <= oldEntryPx) {
+              hasInvalidBracket = true;
+              invalidBracketDetails += `Stop Loss (${slPx}) is below/equal to SHORT entry (${oldEntryPx}). `;
+            }
+          }
+          
+          if (tpOrderObj) {
+            const tpPx = parseFloat(tpOrderObj.triggerPx);
+            if (direction === "LONG" && tpPx <= oldEntryPx) {
+              hasInvalidBracket = true;
+              invalidBracketDetails += `Take Profit (${tpPx}) is below/equal to LONG entry (${oldEntryPx}). `;
+            } else if (direction === "SHORT" && tpPx >= oldEntryPx) {
+              hasInvalidBracket = true;
+              invalidBracketDetails += `Take Profit (${tpPx}) is above/equal to SHORT entry (${oldEntryPx}). `;
+            }
           }
         }
 
