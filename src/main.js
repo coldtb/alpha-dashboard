@@ -16,6 +16,7 @@ let watchlistPrices = {
 };
 let customTrades = [];
 let activeTab = "market"; // "market" or "custom"
+let lastBacktestData = null;
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 const geckoIdMap = {
@@ -280,32 +281,40 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabMarket = document.getElementById("tab-market-alpha");
   const tabMyPlans = document.getElementById("tab-my-plans");
   const tabSocial = document.getElementById("tab-social-alpha");
+  const tabBacktest = document.getElementById("tab-backtest-strategy");
   
-  if (tabMarket && tabMyPlans && tabSocial) {
-    tabMarket.addEventListener("click", () => {
-      tabMarket.classList.add("active");
-      tabMyPlans.classList.remove("active");
-      tabSocial.classList.remove("active");
-      activeTab = "market";
-      renderPodium();
-    });
+  const podiumGrid = document.getElementById("podium-grid");
+  const backtestView = document.getElementById("backtest-view");
+
+  const switchTab = (tab) => {
+    activeTab = tab;
     
-    tabMyPlans.addEventListener("click", () => {
-      tabMyPlans.classList.add("active");
-      tabMarket.classList.remove("active");
-      tabSocial.classList.remove("active");
-      activeTab = "custom";
-      renderPodium();
+    // Toggle active class on tab buttons
+    [tabMarket, tabMyPlans, tabSocial, tabBacktest].forEach(t => {
+      if (t) {
+        if (t.getAttribute("data-tab") === tab) {
+          t.classList.add("active");
+        } else {
+          t.classList.remove("active");
+        }
+      }
     });
 
-    tabSocial.addEventListener("click", () => {
-      tabSocial.classList.add("active");
-      tabMarket.classList.remove("active");
-      tabMyPlans.classList.remove("active");
-      activeTab = "social";
+    // Toggle visibility of views
+    if (tab === "backtest") {
+      if (podiumGrid) podiumGrid.style.display = "none";
+      if (backtestView) backtestView.style.display = "flex";
+    } else {
+      if (backtestView) backtestView.style.display = "none";
+      if (podiumGrid) podiumGrid.style.display = "flex";
       renderPodium();
-    });
-  }
+    }
+  };
+
+  if (tabMarket) tabMarket.addEventListener("click", () => switchTab("market"));
+  if (tabMyPlans) tabMyPlans.addEventListener("click", () => switchTab("custom"));
+  if (tabSocial) tabSocial.addEventListener("click", () => switchTab("social"));
+  if (tabBacktest) tabBacktest.addEventListener("click", () => switchTab("backtest"));
   
   // Planner Form Event Listeners
   const planSymbolInput = document.getElementById("plan-symbol");
@@ -334,6 +343,28 @@ document.addEventListener("DOMContentLoaded", () => {
     plannerForm.addEventListener("submit", (e) => {
       e.preventDefault();
       saveCustomPlan();
+    });
+  }
+
+  const backtestForm = document.getElementById("backtest-form");
+  if (backtestForm) {
+    backtestForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      handleBacktestSubmit();
+    });
+  }
+
+  const viewLogBtn = document.getElementById("bt-view-log-btn");
+  if (viewLogBtn) {
+    viewLogBtn.addEventListener("click", () => {
+      if (lastBacktestData) {
+        openBacktestLogDrawer(
+          lastBacktestData.trades,
+          lastBacktestData.coin,
+          lastBacktestData.days,
+          lastBacktestData.minScore
+        );
+      }
     });
   }
   
@@ -2460,4 +2491,222 @@ async function fetchPerformanceData() {
   } catch (err) {
     console.error("Error fetching performance/PnL data:", err);
   }
+}
+
+// Backtester UI Logic
+async function handleBacktestSubmit() {
+  const coin = document.getElementById("bt-coin").value;
+  const days = document.getElementById("bt-days").value;
+  const minScore = document.getElementById("bt-minscore").value;
+
+  const runBtn = document.getElementById("run-backtest-btn");
+  const loadingOverlay = document.getElementById("bt-loading");
+  const resultsContainer = document.getElementById("bt-results");
+
+  // UI Loading state
+  if (runBtn) runBtn.disabled = true;
+  if (loadingOverlay) loadingOverlay.style.display = "flex";
+  if (resultsContainer) resultsContainer.style.display = "none";
+
+  try {
+    const response = await fetch(`/api/backtest?coin=${coin}&days=${days}&min_score=${minScore}`);
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || "Failed to execute backtest");
+    }
+
+    const data = await response.json();
+    lastBacktestData = data;
+
+    // Update metrics display
+    const retEl = document.getElementById("bt-metric-return");
+    const wrEl = document.getElementById("bt-metric-winrate");
+    const ddEl = document.getElementById("bt-metric-drawdown");
+    const countEl = document.getElementById("bt-trade-count");
+
+    if (retEl) {
+      retEl.textContent = `${data.summary.totalReturnPct >= 0 ? '+' : ''}${data.summary.totalReturnPct}%`;
+      retEl.className = "bt-metric-value " + (data.summary.totalReturnPct >= 0 ? "change-up" : "change-down");
+    }
+    if (wrEl) {
+      wrEl.textContent = `${data.summary.winRate}%`;
+      wrEl.className = "bt-metric-value " + (data.summary.winRate >= 50 ? "change-up" : "change-down");
+    }
+    if (ddEl) {
+      ddEl.textContent = `-${data.summary.maxDrawdown}%`;
+      ddEl.className = "bt-metric-value change-down";
+    }
+    if (countEl) {
+      countEl.textContent = data.summary.totalTrades;
+    }
+
+    // Render canvas chart
+    drawBacktestChart(data.equityCurve);
+
+    // Show results
+    if (loadingOverlay) loadingOverlay.style.display = "none";
+    if (resultsContainer) resultsContainer.style.display = "flex";
+  } catch (e) {
+    alert("Backtest failed: " + e.message);
+    if (loadingOverlay) loadingOverlay.style.display = "none";
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+function drawBacktestChart(equityData) {
+  const canvas = document.getElementById("bt-chart");
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  const width = rect.width;
+  const height = rect.height;
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!equityData || equityData.length === 0) return;
+
+  const balances = equityData.map(d => d.balance);
+  const maxBal = Math.max(...balances);
+  const minBal = Math.min(...balances);
+  const range = maxBal - minBal || 1;
+
+  const paddingLeft = 10;
+  const paddingRight = 10;
+  const paddingTop = 20;
+  const paddingBottom = 15;
+
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+
+  // Background Grid
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = paddingTop + (chartHeight * i / 3);
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - paddingRight, y);
+    ctx.stroke();
+  }
+
+  // Line path
+  ctx.beginPath();
+  equityData.forEach((d, idx) => {
+    const x = paddingLeft + (chartWidth * idx / (equityData.length - 1));
+    const y = paddingTop + chartHeight - (chartHeight * (d.balance - minBal) / range);
+    if (idx === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+
+  const strokeGrad = ctx.createLinearGradient(0, 0, width, 0);
+  strokeGrad.addColorStop(0, "#3b82f6");
+  strokeGrad.addColorStop(1, "#8b5cf6");
+  ctx.strokeStyle = strokeGrad;
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = "rgba(139, 92, 246, 0.4)";
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  
+  ctx.shadowBlur = 0; // reset shadow
+
+  // Area path
+  ctx.beginPath();
+  equityData.forEach((d, idx) => {
+    const x = paddingLeft + (chartWidth * idx / (equityData.length - 1));
+    const y = paddingTop + chartHeight - (chartHeight * (d.balance - minBal) / range);
+    if (idx === 0) {
+      ctx.moveTo(x, paddingTop + chartHeight);
+      ctx.lineTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  ctx.lineTo(paddingLeft + chartWidth, paddingTop + chartHeight);
+  ctx.closePath();
+
+  const fillGrad = ctx.createLinearGradient(0, paddingTop, 0, paddingTop + chartHeight);
+  fillGrad.addColorStop(0, "rgba(59, 130, 246, 0.2)");
+  fillGrad.addColorStop(1, "rgba(139, 92, 246, 0.0)");
+  ctx.fillStyle = fillGrad;
+  ctx.fill();
+
+  // Labels
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.font = "9px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`$${equityData[0].balance.toFixed(0)}`, paddingLeft, paddingTop + chartHeight + 12);
+  ctx.textAlign = "right";
+  const lastBal = equityData[equityData.length - 1].balance;
+  const lastY = paddingTop + chartHeight - (chartHeight * (lastBal - minBal) / range);
+  ctx.fillText(`$${lastBal.toFixed(0)}`, width - paddingRight, lastY - 6);
+}
+
+function openBacktestLogDrawer(trades, coin, days, minScore) {
+  const backdrop = document.getElementById("drawer-backdrop");
+  const drawer = document.getElementById("drawer");
+  const content = document.getElementById("drawer-content");
+
+  let tradesHtml = "";
+  if (!trades || trades.length === 0) {
+    tradesHtml = `<div style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No trades executed.</div>`;
+  } else {
+    tradesHtml = `
+      <div style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 70vh; overflow-y: auto; padding-right: 0.2rem;">
+        ${trades.map((t, idx) => {
+          const dirClass = t.dir === 'LONG' ? 'change-up' : 'change-down';
+          const pnlClass = t.pnlUsd >= 0 ? 'change-up' : 'change-down';
+          const pnlPrefix = t.pnlUsd >= 0 ? '+' : '';
+          const entryTimeStr = new Date(t.entryTime).toLocaleDateString() + ' ' + new Date(t.entryTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          const exitTimeStr = new Date(t.exitTime).toLocaleDateString() + ' ' + new Date(t.exitTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+          return `
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-light); border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 700; font-size: 0.95rem;">Trade #${idx + 1} <span class="plan-type-badge ${dirClass}" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">${t.dir}</span></span>
+                <span class="${pnlClass}" style="font-weight: 700; font-size: 0.95rem;">${pnlPrefix}${t.returnPct}% ($${t.pnlUsd.toFixed(2)})</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.4rem; font-size: 0.75rem; color: var(--color-text-muted);">
+                <div>Entry Px: <strong style="color: #fff;">$${t.entryPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4})}</strong></div>
+                <div>Exit Px: <strong style="color: #fff;">$${t.exitPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4})}</strong></div>
+                <div>Entry: <strong style="color: #fff;">${entryTimeStr}</strong></div>
+                <div>Exit: <strong style="color: #fff;">${exitTimeStr} (${t.exitType})</strong></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  content.innerHTML = `
+    <div class="drawer-header">
+      <div class="drawer-symbol">
+        ${coin} Backtest Log
+      </div>
+      <div style="font-size: 0.95rem; color: var(--color-text-muted); margin-bottom: 0.5rem;">
+        Period: ${days} days — Score Threshold: ${minScore}
+      </div>
+    </div>
+    
+    <div class="trade-plan-details" style="display: flex; flex-direction: column; gap: 1rem;">
+      <div>
+        <h4 style="font-family: var(--font-title); margin-bottom: 0.5rem; color: var(--color-primary);">Executed Trade History</h4>
+        ${tradesHtml}
+      </div>
+    </div>
+  `;
+
+  backdrop.classList.add("open");
+  drawer.classList.add("open");
 }

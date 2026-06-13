@@ -101,11 +101,89 @@
           <button class="tab-btn" id="tab-social-alpha" data-tab="social">
             Social Alpha
           </button>
+          <button class="tab-btn" id="tab-backtest-strategy" data-tab="backtest">
+            Backtest
+          </button>
         </div>
         <div class="podium-container" id="podium-grid">
           <!-- Top 3 ranked signals will load here dynamically -->
           <div class="ticker-card" style="justify-content: center; align-items: center; min-height: 120px;">
             <div style="font-size: 0.9rem; color: var(--color-text-muted);">Calculating setups...</div>
+          </div>
+        </div>
+        <div id="backtest-view" style="display: none; flex-direction: column; gap: 0.8rem; height: 100%;">
+          <!-- Form controls -->
+          <form id="backtest-form" onsubmit="return false;" style="display: flex; flex-direction: column; gap: 0.6rem;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bt-coin" style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 2px;">Asset</label>
+                <select id="bt-coin" style="background: var(--bg-input); border: 1px solid var(--border-light); color: var(--color-text); padding: 0.4rem; border-radius: 0.5rem; outline: none; font-size: 0.85rem;">
+                  <option value="BTC">BTC</option>
+                  <option value="ETH">ETH</option>
+                  <option value="SOL">SOL</option>
+                  <option value="HYPE">HYPE</option>
+                  <option value="LINK">LINK</option>
+                  <option value="XRP">XRP</option>
+                  <option value="INJ">INJ</option>
+                  <option value="WLD">WLD</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="bt-days" style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 2px;">Period</label>
+                <select id="bt-days" style="background: var(--bg-input); border: 1px solid var(--border-light); color: var(--color-text); padding: 0.4rem; border-radius: 0.5rem; outline: none; font-size: 0.85rem;">
+                  <option value="7">7 Days</option>
+                  <option value="14">14 Days</option>
+                  <option value="30" selected>30 Days</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row" style="align-items: flex-end;">
+              <div class="form-group">
+                <label for="bt-minscore" style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 2px;">Min Score</label>
+                <input type="number" id="bt-minscore" value="85" min="50" max="100" style="background: var(--bg-input); border: 1px solid var(--border-light); color: var(--color-text); padding: 0.4rem; border-radius: 0.5rem; outline: none; font-size: 0.85rem;">
+              </div>
+              <button type="submit" id="run-backtest-btn" style="background: linear-gradient(135deg, var(--color-blue), var(--color-primary)); color: white; border: none; padding: 0.45rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600; font-size: 0.85rem; height: 32px; transition: opacity 0.2s;">
+                Run Backtest
+              </button>
+            </div>
+          </form>
+
+          <!-- Backtest Loading overlay -->
+          <div id="bt-loading" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 0.8rem; padding: 2rem 1rem; text-align: center;">
+            <div class="bt-spinner" style="width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--color-blue); border-radius: 50%; animation: bt-spin 1s linear infinite;"></div>
+            <span style="font-size: 0.85rem; color: var(--color-text-muted);">Fetching history & running backtest...</span>
+          </div>
+
+          <!-- Backtest results -->
+          <div id="bt-results" style="display: none; flex-direction: column; gap: 0.8rem;">
+            <!-- Metrics Row -->
+            <div class="bt-metrics-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+              <div class="bt-metric-card" style="background: var(--bg-input); border: 1px solid var(--border-light); padding: 0.5rem; border-radius: 0.6rem; text-align: center; display: flex; flex-direction: column; gap: 2px;">
+                <span class="bt-metric-label" style="font-size: 0.65rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Return</span>
+                <span class="bt-metric-value" id="bt-metric-return" style="font-size: 1rem; font-weight: 700; color: var(--color-green);">0.0%</span>
+              </div>
+              <div class="bt-metric-card" style="background: var(--bg-input); border: 1px solid var(--border-light); padding: 0.5rem; border-radius: 0.6rem; text-align: center; display: flex; flex-direction: column; gap: 2px;">
+                <span class="bt-metric-label" style="font-size: 0.65rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Win Rate</span>
+                <span class="bt-metric-value" id="bt-metric-winrate" style="font-size: 1rem; font-weight: 700; color: var(--color-blue);">0.0%</span>
+              </div>
+              <div class="bt-metric-card" style="background: var(--bg-input); border: 1px solid var(--border-light); padding: 0.5rem; border-radius: 0.6rem; text-align: center; display: flex; flex-direction: column; gap: 2px;">
+                <span class="bt-metric-label" style="font-size: 0.65rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Max DD</span>
+                <span class="bt-metric-value" id="bt-metric-drawdown" style="font-size: 1rem; font-weight: 700; color: var(--color-red);">0.0%</span>
+              </div>
+            </div>
+
+            <!-- Canvas Chart -->
+            <div class="bt-chart-container" style="background: var(--bg-input); border: 1px solid var(--border-light); border-radius: 0.75rem; padding: 0.4rem; position: relative; height: 150px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+              <canvas id="bt-chart" style="width: 100%; height: 100%; display: block;"></canvas>
+            </div>
+
+            <!-- Detailed Log Trigger -->
+            <button id="bt-view-log-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); color: var(--color-text); padding: 0.5rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: middle;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+              </svg>
+              View Detailed Trade Log (<span id="bt-trade-count">0</span>)
+            </button>
           </div>
         </div>
       </section>

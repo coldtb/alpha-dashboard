@@ -1170,4 +1170,14 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
+@keyframes bt-spin {
+  to { transform: rotate(360deg); }
+}
 
+#bt-view-log-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+#run-backtest-btn:hover {
+  opacity: 0.9;
+}
