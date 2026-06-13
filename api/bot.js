@@ -141,6 +141,16 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       sl = nearSupport.lo * 0.985;
       reason = 'sr_channel';
 
+      // If the coin score is extremely high (>= 95), pullbacks are usually very shallow.
+      // We adjust the entry closer to the current price (0.3% pullback) to ensure fills.
+      if (coin.score >= 90) {
+        const shallowEntry = price * 0.997;
+        if (shallowEntry > entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       if (resistances.length > 0) {
         const rr1target = entry + (entry - sl) * 1.5;
         tp = resistances[0].lo >= rr1target ? resistances[0].lo : rr1target;
@@ -155,9 +165,19 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     } else {
       entry = high - (high - low) * 0.618;
       sl    = low * 0.985;
+      reason = 'fib_fallback';
+
+      // If the coin score is extremely high (>= 95), pullbacks are usually very shallow.
+      if (coin.score >= 90) {
+        const shallowEntry = price * 0.997;
+        if (shallowEntry > entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       const minTp = entry + (entry - sl) * 1.5;
       tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
-      reason = 'fib_fallback';
     }
 
     if (funding < -0.0005) {
@@ -174,6 +194,16 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       sl = nearRes.hi * 1.015;
       reason = 'sr_channel';
 
+      // If the coin score is extremely high (>= 95), pullbacks/rises are usually very shallow.
+      // We adjust the entry closer to the current price (0.3% rise) to ensure fills.
+      if (coin.score >= 90) {
+        const shallowEntry = price * 1.003;
+        if (shallowEntry < entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       if (supports.length > 0) {
         const rr1target = entry - (sl - entry) * 1.5;
         tp = supports[0].hi <= rr1target ? supports[0].hi : rr1target;
@@ -188,9 +218,19 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     } else {
       entry = high - (high - low) * 0.382;
       sl    = high * 1.015;
+      reason = 'fib_fallback';
+
+      // If the coin score is extremely high (>= 95), pullbacks/rises are usually very shallow.
+      if (coin.score >= 90) {
+        const shallowEntry = price * 1.003;
+        if (shallowEntry < entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       const minTp = entry - (sl - entry) * 1.5;
       tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
-      reason = 'fib_fallback';
     }
 
     if (funding > 0.001) {
