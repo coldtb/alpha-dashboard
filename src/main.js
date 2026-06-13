@@ -107,82 +107,48 @@ async function fetchTrueNorthPlannerData(symbol) {
 
 // Auto-detect trade direction based on funding rate, VWAP, S/R, momentum
 function detectAutoDirection(coin, taData = null) {
-  const funding = coin.funding || 0;  // already in decimal (e.g. 0.0001)
+  const funding = coin.funding || 0;
   const change24h = coin.change || 0;
-  let score = 0; // positive = LONG bias, negative = SHORT bias
-  let reasons = [];
+  let score = 0;
 
-  // ── Rule 1: Funding Rate ──
-  // Negative funding = shorts paying longs → squeeze candidate → LONG
-  // High positive funding = longs overextended → SHORT
   if (funding < -0.0001) {
     score += 2;
-    reasons.push('neg_funding');
   } else if (funding < 0) {
     score += 1;
-    reasons.push('slight_neg_funding');
-  } else if (funding > 0.001) {
+  } else if (funding > 0.0001) {
     score -= 2;
-    reasons.push('high_pos_funding');
-  } else if (funding > 0.0003) {
+  } else if (funding > 0) {
     score -= 1;
-    reasons.push('pos_funding');
   }
 
-  // ── Rule 2: Price vs VWAP ──
-  if (taData && taData.support_resistance && taData.support_resistance.vwap) {
+  if (taData?.support_resistance?.vwap?.cumulative) {
     const vwapData = taData.support_resistance.vwap.cumulative;
-    if (vwapData) {
-      if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
-        score += 2; // price above rising VWAP = bullish
-        reasons.push('above_rising_vwap');
-      } else if (vwapData.state === 'price_above' && vwapData.slope === 'down') {
-        score += 0; // above but weakening
-      } else if (vwapData.state === 'price_below' && vwapData.slope === 'down') {
-        score -= 2; // below falling VWAP = bearish
-        reasons.push('below_falling_vwap');
-      } else if (vwapData.state === 'price_below' && vwapData.slope === 'up') {
-        // Below VWAP but recovering → bounce candidate
-        if (funding < 0) {
-          score += 1; // squeeze setup
-          reasons.push('below_vwap_squeeze');
-        } else {
-          score -= 1;
-        }
-      }
+    if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
+      score += 2;
+    } else if (vwapData.state === 'price_below' && vwapData.slope === 'down') {
+      score -= 2;
+    } else if (vwapData.state === 'price_below' && vwapData.slope === 'up' && funding < 0) {
+      score += 1;
+    } else if (vwapData.state === 'price_above' && vwapData.slope === 'down' && funding > 0) {
+      score -= 1;
     }
   }
 
-  // ── Rule 3: S/R Channel position ──
-  if (taData && taData.support_resistance && taData.support_resistance['support and resistance channel']) {
-    const channels = [...(taData.support_resistance['support and resistance channel'].channels || [])];
-    const currentPrice = coin.price;
-    channels.sort((a, b) => b.strength - a.strength);
-    
-    // Find nearest strong support below price
-    const strongSupport = channels.find(c => c.hi <= currentPrice && c.strength >= 80);
-    // Find nearest strong resistance above price
-    const strongResistance = channels.find(c => c.lo >= currentPrice && c.strength >= 80);
-    
-    if (strongSupport && !strongResistance) {
-      score += 1; // sitting on support with no resistance overhead → LONG
-      reasons.push('at_support');
-    } else if (strongResistance && !strongSupport) {
-      score -= 1; // near resistance with no support → SHORT
-      reasons.push('at_resistance');
-    }
+  if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+    const channels = [...taData.support_resistance['support and resistance channel'].channels]
+      .sort((a, b) => b.strength - a.strength);
+    const strongSupport = channels.find(c => c.hi <= coin.price && c.strength >= 80);
+    const strongResistance = channels.find(c => c.lo >= coin.price && c.strength >= 80);
+    if (strongSupport && !strongResistance) score += 1;
+    else if (strongResistance && !strongSupport) score -= 1;
   }
 
-  // ── Rule 4: 24h Momentum (weakest signal, tiebreaker) ──
-  if (change24h > 3) {
-    score += 1;
-    reasons.push('bullish_momentum');
-  } else if (change24h < -3) {
-    score -= 1;
-    reasons.push('bearish_momentum');
-  }
+  if (change24h > 3) score += 1;
+  else if (change24h < -3) score -= 1;
 
-  return score >= 0 ? 'LONG' : 'SHORT';
+  if (score > 0) return 'LONG';
+  if (score < 0) return 'SHORT';
+  return change24h >= 0 ? 'LONG' : 'SHORT';
 }
 
 // Hand-crafted professional trade plans from Wiki
@@ -1396,43 +1362,40 @@ async function fetchDrawerDeepInsights(symbol) {
 }
 
 // Calculate conviction score for a coin
-function calculateScore(coin) {
+function calculateScore(coin, isHyperliquidScale = false) {
   let score = 0;
-  
-  // 1. Squeeze Setup (Derivatives Divergence) -> max 50 points
   const change = Math.abs(coin.change);
   if (change <= 3.0) {
-    score += 30; // Consolidating price
-    if (change <= 1.5) score += 10; // Extra tight price consolidation
+    score += 30;
+    if (change <= 1.5) score += 10;
   }
   
-  // Funding rate factor
-  if (coin.funding < 0) {
-    score += 20; // Negative funding
-    if (coin.funding <= -0.0005) {
-      score += 15; // Deep negative funding
-    } else if (coin.funding <= -0.0002) {
+  // Symmetric funding rate scoring for both LONG and SHORT setup strength
+  const absFunding = Math.abs(coin.funding || 0);
+  if (absFunding > 0) {
+    score += 20;
+    if (absFunding >= 0.0005) {
+      score += 15;
+    } else if (absFunding >= 0.0002) {
       score += 10;
     }
-  } else {
-    // Highly positive funding: if price is flat, it's froth, which has high mean reversion potential
-    if (coin.funding > 0.0003 && change <= 3.0) {
-      score += 15; // Mean reversion potential
-    }
   }
-  
-  // 2. Volume Factor (Liquidity / Interest) -> max 20 points
-  if (coin.volume > 100000000) score += 20; // >100M volume
-  else if (coin.volume > 50000000) score += 15; // >50M volume
-  else if (coin.volume > 10000000) score += 10;
-  
-  // 3. Conviction Watchlist Bonus -> 15 points
+
+  const vol = coin.volume;
+  if (isHyperliquidScale) {
+    if (vol > 30000000) score += 20;
+    else if (vol > 15000000) score += 15;
+    else if (vol > 5000000) score += 10;
+  } else {
+    if (vol > 100000000) score += 20;
+    else if (vol > 50000000) score += 15;
+    else if (vol > 10000000) score += 10;
+  }
+
   const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
   if (watchlist.includes(coin.symbol)) {
     score += 15;
   }
-  
-  // Cap at 100
   return Math.min(score, 100);
 }
 
@@ -1753,10 +1716,11 @@ function handleSymbolInput(e) {
 //  5. Liquidation cluster magnets used as TP targets when stronger
 //  6. Funding rule overlay: >+0.1% → SHORT bias, <-0.05% → LONG bias
 // ─────────────────────────────────────────────────────────────────────────────
-function computeStrategyLevels(coin, dir, taData) {
+function computeStrategyLevels(coin, dir, taData, derivData = null, optionsData = null, useSmartSlTp = true) {
   const price   = coin.price;
   const funding = coin.funding || 0;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
+  const score   = coin.score || calculateScore(coin);
 
   let high = coin.high || price * 1.03;
   let low  = coin.low  || price * 0.97;
@@ -1768,102 +1732,284 @@ function computeStrategyLevels(coin, dir, taData) {
   let tp    = dir === 'LONG' ? price * 1.06 : price * 0.94;
   let reason = 'fallback';
 
-  if (taData && taData.support_resistance) {
+  if (taData?.support_resistance) {
     const sr = taData.support_resistance;
-    if (sr.vwap && sr.vwap.cumulative) vwap = sr.vwap.cumulative.value;
-    if (sr.recent_high_low && sr.recent_high_low.calendar) {
+    if (sr.vwap?.cumulative) vwap = sr.vwap.cumulative.value;
+    if (sr.recent_high_low?.calendar) {
       const hl = sr.recent_high_low.calendar;
       if (hl.high_24h) high = hl.high_24h;
       if (hl.low_24h)  low  = hl.low_24h;
     }
-    if (sr['support and resistance channel'] && sr['support and resistance channel'].channels) {
+    if (sr['support and resistance channel']?.channels) {
       channels = [...sr['support and resistance channel'].channels]
         .sort((a, b) => b.strength - a.strength);
     }
   }
 
+  // 1. Calculate standard levels first
   if (dir === 'LONG') {
-    // ── LONG: Entry near strongest support below price ────────────────────
     const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
     const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
 
     if (supports.length > 0) {
       const nearSupport = supports[0];
-      // Entry = top of support channel (hi edge — optimal entry)
       entry = nearSupport.hi;
-      // SL = 1.5% below the bottom of that channel (beyond invalidation)
       sl = nearSupport.lo * 0.985;
       reason = 'sr_channel';
 
-      // TP1 = nearest resistance above (R:R check)
+      // If the coin score is extremely high (>= 90), pullbacks are usually very shallow.
+      // We adjust the entry closer to the current price (0.3% pullback) to ensure fills.
+      if (score >= 90) {
+        const shallowEntry = price * 0.997;
+        if (shallowEntry > entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       if (resistances.length > 0) {
         const rr1target = entry + (entry - sl) * 1.5;
-        // Use actual resistance if it gives ≥1:1.5 R:R, else use 1:1.5
         tp = resistances[0].lo >= rr1target ? resistances[0].lo : rr1target;
-
-        // TP2 (better level) = second resistance or 1:2.5 R:R
         if (resistances.length > 1) {
           const rr2target = entry + (entry - sl) * 2.5;
-          const r2 = resistances[1].lo;
-          tp = r2 >= rr2target ? r2 : rr2target; // use TP2 as the main field
+          tp = resistances[1].lo >= rr2target ? resistances[1].lo : rr2target;
         }
       } else {
-        // No resistance → use VWAP as TP1 if above entry, else 1:2 R:R
-        tp = vwap > entry ? vwap : entry + (entry - sl) * 2;
+        const minTp = entry + (entry - sl) * 1.5;
+        tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
       }
     } else {
-      // No support channel found → Fib 0.618 from 24h range
       entry = high - (high - low) * 0.618;
       sl    = low * 0.985;
-      tp    = vwap > entry ? vwap : entry + (entry - sl) * 2;
       reason = 'fib_fallback';
+
+      // If the coin score is extremely high (>= 90), pullbacks are usually very shallow.
+      if (score >= 90) {
+        const shallowEntry = price * 0.997;
+        if (shallowEntry > entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
+      const minTp = entry + (entry - sl) * 1.5;
+      tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
     }
 
-    // ── Funding override (wiki rule: <-0.05% → strong LONG, entry = current) ──
     if (funding < -0.0005) {
-      // Short squeeze setup: enter at market (shorts are paying, squeeze imminent)
       entry = price;
       reason += '+squeeze_entry';
     }
-
   } else {
-    // ── SHORT: Entry near strongest resistance above price ────────────────
     const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
     const supports    = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
 
     if (resistances.length > 0) {
       const nearRes = resistances[0];
-      // Entry = bottom of resistance channel (lo edge — optimal short entry)
       entry = nearRes.lo;
-      // SL = 1.5% above top of resistance channel
       sl = nearRes.hi * 1.015;
       reason = 'sr_channel';
 
-      // TP1/TP2 = nearest support below
+      // If the coin score is extremely high (>= 90), pullbacks/rises are usually very shallow.
+      // We adjust the entry closer to the current price (0.3% rise) to ensure fills.
+      if (score >= 90) {
+        const shallowEntry = price * 1.003;
+        if (shallowEntry < entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
       if (supports.length > 0) {
         const rr1target = entry - (sl - entry) * 1.5;
         tp = supports[0].hi <= rr1target ? supports[0].hi : rr1target;
-
         if (supports.length > 1) {
           const rr2target = entry - (sl - entry) * 2.5;
-          const s2 = supports[1].hi;
-          tp = s2 <= rr2target ? s2 : rr2target;
+          tp = supports[1].hi <= rr2target ? supports[1].hi : rr2target;
         }
       } else {
-        tp = vwap < entry ? vwap : entry - (sl - entry) * 2;
+        const minTp = entry - (sl - entry) * 1.5;
+        tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
       }
     } else {
-      // No resistance → Fib 0.382 (shorts enter near top)
       entry = high - (high - low) * 0.382;
       sl    = high * 1.015;
-      tp    = vwap < entry ? vwap : entry - (sl - entry) * 2;
       reason = 'fib_fallback';
+
+      // If the coin score is extremely high (>= 90), pullbacks/rises are usually very shallow.
+      if (score >= 90) {
+        const shallowEntry = price * 1.003;
+        if (shallowEntry < entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
+      const minTp = entry - (sl - entry) * 1.5;
+      tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
     }
 
-    // ── Funding override (wiki rule: >+0.1% → strong SHORT bias, enter market) ──
     if (funding > 0.001) {
       entry = price;
       reason += '+overextended_long';
+    }
+  }
+
+  // 2. Parse Options and Derivatives data
+  let putWall = null;
+  let callWall = null;
+  let shortLiqMagnet = null;
+  let longLiqMagnet = null;
+
+  if (optionsData?.result?.content?.[0]?.text) {
+    try {
+      const parsed = JSON.parse(optionsData.result.content[0].text);
+      if (parsed?.summary?.key_levels) {
+        putWall = parsed.summary.key_levels.nearest_put_wall;
+        callWall = parsed.summary.key_levels.nearest_call_wall;
+      }
+    } catch (e) {
+      console.warn("Could not parse options report for smart levels:", e.message);
+    }
+  }
+
+  // Squeeze-aware SL Adjustment
+  if (useSmartSlTp && derivData?.derivative_data?.[coin.symbol]) {
+    try {
+      const deriv = derivData.derivative_data[coin.symbol];
+      const liqKey = Object.keys(deriv).find(k => k.toLowerCase().includes('liquidation'));
+      if (liqKey) {
+        const liqMap = deriv[liqKey];
+        if (dir === 'LONG') {
+          const longLiqs = liqMap.max_liquidation_points?.max_long_liquidation_point || [];
+          const sortedLiqs = longLiqs
+            .filter(l => l.liq_usd >= 2000000)
+            .sort((a, b) => b.price - a.price);
+          
+          if (sortedLiqs.length > 0) {
+            const nearestLiq = sortedLiqs[0].price;
+            if (nearestLiq > sl && nearestLiq < entry) {
+              const oldSl = sl;
+              sl = nearestLiq * 1.002;
+              reason += `+squeeze_sl_long(old:${oldSl.toFixed(dec)}->new:${sl.toFixed(dec)}@liq:${nearestLiq})`;
+            }
+          }
+        } else {
+          const shortLiqs = liqMap.max_liquidation_points?.max_short_liquidation_point || [];
+          const sortedLiqs = shortLiqs
+            .filter(l => l.liq_usd >= 2000000)
+            .sort((a, b) => a.price - b.price);
+          
+          if (sortedLiqs.length > 0) {
+            const nearestLiq = sortedLiqs[0].price;
+            if (nearestLiq < sl && nearestLiq > entry) {
+              const oldSl = sl;
+              sl = nearestLiq * 0.998;
+              reason += `+squeeze_sl_short(old:${oldSl.toFixed(dec)}->new:${sl.toFixed(dec)}@liq:${nearestLiq})`;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not calculate liquidation squeeze levels:", e.message);
+    }
+  }
+
+  if (derivData?.derivative_data) {
+    try {
+      const sym = Object.keys(derivData.derivative_data).find(k => k !== '_metadata' && k !== 'url' && k !== 'title');
+      if (sym) {
+        const d = derivData.derivative_data[sym];
+        const liqKey = Object.keys(d).find(k => k.toLowerCase().includes('liquidation'));
+        if (liqKey) {
+          const liq = d[liqKey];
+          const shortLiqs = liq.max_liquidation_points?.max_short_liquidation_point || [];
+          const longLiqs = liq.max_liquidation_points?.max_long_liquidation_point || [];
+          if (shortLiqs.length > 0) {
+            const sortedShort = [...shortLiqs].sort((a, b) => b.liq_usd - a.liq_usd);
+            shortLiqMagnet = sortedShort[0].price;
+          }
+          if (longLiqs.length > 0) {
+            const sortedLong = [...longLiqs].sort((a, b) => b.liq_usd - a.liq_usd);
+            longLiqMagnet = sortedLong[0].price;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not parse derivatives data for smart levels:", e.message);
+    }
+  }
+
+  // 3. Apply Smart TP/SL Adjustments
+  if (useSmartSlTp) {
+    if (dir === 'LONG') {
+      let slAdjusted = false;
+      let tpAdjusted = false;
+
+      if (putWall && putWall < entry && putWall > entry * 0.95) {
+        sl = putWall * 0.992;
+        slAdjusted = true;
+      }
+
+      let smartTp = null;
+      if (shortLiqMagnet && shortLiqMagnet > entry) {
+        smartTp = shortLiqMagnet;
+      } else if (callWall && callWall > entry) {
+        smartTp = callWall * 0.998;
+      }
+
+      if (smartTp) {
+        const minTp = entry + (entry - sl) * 1.5;
+        const maxTpLimit = Math.min(entry * 1.04, entry + (entry - sl) * 3.0);
+        
+        if (smartTp >= minTp) {
+          if (smartTp > maxTpLimit) {
+            tp = Math.min(entry * 1.03, entry + (entry - sl) * 2.0);
+            reason += `_tp_capped(old:${smartTp.toFixed(dec)})`;
+          } else {
+            tp = smartTp;
+          }
+          tpAdjusted = true;
+        }
+      }
+
+      if (slAdjusted || tpAdjusted) {
+        reason += `+smart_levels(SL:${slAdjusted ? 'put_wall' : 'default'},TP:${tpAdjusted ? 'options_liq' : 'default'})`;
+      }
+    } else {
+      let slAdjusted = false;
+      let tpAdjusted = false;
+
+      if (callWall && callWall > entry && callWall < entry * 1.05) {
+        sl = callWall * 1.008;
+        slAdjusted = true;
+      }
+
+      let smartTp = null;
+      if (longLiqMagnet && longLiqMagnet < entry) {
+        smartTp = longLiqMagnet;
+      } else if (putWall && putWall < entry) {
+        smartTp = putWall * 1.002;
+      }
+
+      if (smartTp) {
+        const minTp = entry - (sl - entry) * 1.5;
+        const maxTpLimit = Math.max(entry * 0.96, entry - (sl - entry) * 3.0);
+        
+        if (smartTp <= minTp) {
+          if (smartTp < maxTpLimit) {
+            tp = Math.max(entry * 0.97, entry - (sl - entry) * 2.0);
+            reason += `_tp_capped(old:${smartTp.toFixed(dec)})`;
+          } else {
+            tp = smartTp;
+          }
+          tpAdjusted = true;
+        }
+      }
+
+      if (slAdjusted || tpAdjusted) {
+        reason += `+smart_levels(SL:${slAdjusted ? 'call_wall' : 'default'},TP:${tpAdjusted ? 'options_liq' : 'default'})`;
+      }
     }
   }
 
