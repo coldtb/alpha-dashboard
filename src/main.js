@@ -2013,6 +2013,31 @@ function computeStrategyLevels(coin, dir, taData, derivData = null, optionsData 
     }
   }
 
+  // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
+  if (dir === 'LONG') {
+    // Stop Loss must be at least 0.8% below entry
+    const maxSlAllowed = entry * 0.992;
+    if (sl > maxSlAllowed) {
+      sl = maxSlAllowed;
+    }
+    // Take Profit must be at least 1.0% above entry
+    const minTpAllowed = entry * 1.01;
+    if (tp < minTpAllowed) {
+      tp = minTpAllowed;
+    }
+  } else {
+    // Stop Loss must be at least 0.8% above entry
+    const minSlAllowed = entry * 1.008;
+    if (sl < minSlAllowed) {
+      sl = minSlAllowed;
+    }
+    // Take Profit must be at least 1.0% below entry
+    const maxTpAllowed = entry * 0.99;
+    if (tp > maxTpAllowed) {
+      tp = maxTpAllowed;
+    }
+  }
+
   return {
     entry: parseFloat(entry.toFixed(dec)),
     sl:    parseFloat(sl.toFixed(dec)),

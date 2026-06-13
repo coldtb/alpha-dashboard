@@ -407,6 +407,31 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   }
 }
 
+  // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
+  if (dir === 'LONG') {
+    // Stop Loss must be at least 0.8% below entry
+    const maxSlAllowed = entry * 0.992;
+    if (sl > maxSlAllowed) {
+      sl = maxSlAllowed;
+    }
+    // Take Profit must be at least 1.0% above entry
+    const minTpAllowed = entry * 1.01;
+    if (tp < minTpAllowed) {
+      tp = minTpAllowed;
+    }
+  } else {
+    // Stop Loss must be at least 0.8% above entry
+    const minSlAllowed = entry * 1.008;
+    if (sl < minSlAllowed) {
+      sl = minSlAllowed;
+    }
+    // Take Profit must be at least 1.0% below entry
+    const maxTpAllowed = entry * 0.99;
+    if (tp > maxTpAllowed) {
+      tp = maxTpAllowed;
+    }
+  }
+
   return {
     entry: parseFloat(entry.toFixed(dec)),
     sl:    parseFloat(sl.toFixed(dec)),
@@ -991,9 +1016,26 @@ export default async function handler(req, res) {
         const oldEntryPx = parseFloat(entryOrder.limitPx);
         const priceDiffPct = Math.abs(oldEntryPx - levels.entry) / levels.entry;
 
-        if (priceDiffPct >= entryShiftThreshold) {
+        // Verify if active TP/SL trigger orders are positioned correctly relative to the entry price
+        const triggers = coinOrders.filter(o => o.isTrigger && o.triggerPx && parseFloat(o.triggerPx) !== 0);
+        let hasInvalidBracket = false;
+        let invalidBracketDetails = "";
+        
+        if (triggers.length > 0) {
+          const hasLower = triggers.some(o => parseFloat(o.triggerPx) < oldEntryPx);
+          const hasHigher = triggers.some(o => parseFloat(o.triggerPx) > oldEntryPx);
+          
+          if (!hasLower || !hasHigher) {
+            hasInvalidBracket = true;
+            invalidBracketDetails = `Triggers found on wrong side of entry. Triggers: [${triggers.map(o => o.triggerPx).join(", ")}], Entry: ${oldEntryPx}`;
+          }
+        }
+
+        if (priceDiffPct >= entryShiftThreshold || hasInvalidBracket) {
           shouldUpdate = true;
-          reasonText = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (from ${oldEntryPx} to ${levels.entry}), exceeding threshold of ${(entryShiftThreshold * 100).toFixed(2)}%`;
+          reasonText = hasInvalidBracket 
+            ? `Invalid TP/SL bracket detected: ${invalidBracketDetails}`
+            : `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (from ${oldEntryPx} to ${levels.entry}), exceeding threshold of ${(entryShiftThreshold * 100).toFixed(2)}%`;
         }
       } else {
         shouldUpdate = true;
