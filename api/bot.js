@@ -304,11 +304,18 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       smartTp = callWall * 0.998; // target just below call wall
     }
 
-    // Enforce 1.5x R:R on the adjusted TP
+    // Enforce 1.5x R:R on the adjusted TP and cap excessive TP (R:R > 3.0 or > 4% gain)
     if (smartTp) {
       const minTp = entry + (entry - sl) * 1.5;
+      const maxTpLimit = Math.min(entry * 1.04, entry + (entry - sl) * 3.0);
+      
       if (smartTp >= minTp) {
-        tp = smartTp;
+        if (smartTp > maxTpLimit) {
+          tp = Math.min(entry * 1.03, entry + (entry - sl) * 2.0);
+          reason += `_tp_capped(old:${smartTp.toFixed(dec)})`;
+        } else {
+          tp = smartTp;
+        }
         tpAdjusted = true;
       }
     }
@@ -334,11 +341,18 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       smartTp = putWall * 1.002; // target just above put wall
     }
 
-    // Enforce 1.5x R:R
+    // Enforce 1.5x R:R and cap excessive TP (R:R > 3.0 or > 4% gain)
     if (smartTp) {
       const minTp = entry - (sl - entry) * 1.5;
+      const maxTpLimit = Math.max(entry * 0.96, entry - (sl - entry) * 3.0);
+      
       if (smartTp <= minTp) {
-        tp = smartTp;
+        if (smartTp < maxTpLimit) {
+          tp = Math.max(entry * 0.97, entry - (sl - entry) * 2.0);
+          reason += `_tp_capped(old:${smartTp.toFixed(dec)})`;
+        } else {
+          tp = smartTp;
+        }
         tpAdjusted = true;
       }
     }
