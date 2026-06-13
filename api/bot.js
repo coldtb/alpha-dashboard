@@ -949,13 +949,15 @@ export default async function handler(req, res) {
           // Calculate size
           const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
           let withdrawableUsd = parseFloat(userState.withdrawable || "0");
+          let accountValueUsd = parseFloat(userState.marginSummary?.accountValue || "0");
           if (withdrawableUsd === 0 && spotState && spotState.balances) {
             const usdcBal = spotState.balances.find(b => b.coin === "USDC");
             if (usdcBal) {
               withdrawableUsd = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
             }
           }
-          const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
+          const baseBalance = Math.max(withdrawableUsd, accountValueUsd);
+          const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : baseBalance;
           if (accountSize <= 5) {
             console.error(`[Entry Trailing] Insufficient balance for ${coinSymbol}. Account size: $${accountSize}`);
             continue;
