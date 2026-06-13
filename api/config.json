@@ -1,0 +1,7 @@
+{
+  "minScore": 90,
+  "minSlBuffer": 0.006,
+  "minTpBuffer": 0.01,
+  "entryShiftThreshold": 0.0075,
+  "replacementScoreDiff": 5
+}
