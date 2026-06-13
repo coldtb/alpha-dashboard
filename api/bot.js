@@ -966,6 +966,7 @@ export default async function handler(req, res) {
 
       // Find existing Limit Entry order
       const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
+      console.log(`[Entry Trailing Debug] ${coinSymbol} open orders:`, JSON.stringify(coinOrders));
       const entryOrder = coinOrders.find(o => !o.isTrigger && (!o.triggerPx || parseFloat(o.triggerPx) === 0));
       console.log(`[Entry Trailing] Found pending coin ${coinSymbol} with ${coinOrders.length} open orders. Existing entry order: ${entryOrder ? entryOrder.limitPx : 'None'}`);
 
