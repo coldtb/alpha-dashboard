@@ -17,6 +17,13 @@ let watchlistPrices = {
 let customTrades = [];
 let activeTab = "market"; // "market" or "custom"
 let lastBacktestData = null;
+let activeBotConfig = {
+  minScore: 85,
+  minSlBuffer: 0.008,
+  minTpBuffer: 0.010,
+  entryShiftThreshold: 0.0075,
+  replacementScoreDiff: 5
+};
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 const geckoIdMap = {
@@ -370,6 +377,9 @@ document.addEventListener("DOMContentLoaded", () => {
   
   document.getElementById("drawer-close").addEventListener("click", closeDrawer);
   document.getElementById("drawer-backdrop").addEventListener("click", closeDrawer);
+  
+  // Load active config on startup
+  fetchActiveBotConfig();
 });
 
 // Render prompts in the Clipboard Hub
@@ -2046,24 +2056,24 @@ function computeStrategyLevels(coin, dir, taData, derivData = null, optionsData 
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   if (dir === 'LONG') {
-    // Stop Loss must be at least 0.8% below entry
-    const maxSlAllowed = entry * 0.992;
+    // Stop Loss must be at least activeBotConfig.minSlBuffer below entry
+    const maxSlAllowed = entry * (1 - activeBotConfig.minSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Take Profit must be at least 1.0% above entry
-    const minTpAllowed = entry * 1.01;
+    // Take Profit must be at least activeBotConfig.minTpBuffer above entry
+    const minTpAllowed = entry * (1 + activeBotConfig.minTpBuffer);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
   } else {
-    // Stop Loss must be at least 0.8% above entry
-    const minSlAllowed = entry * 1.008;
+    // Stop Loss must be at least activeBotConfig.minSlBuffer above entry
+    const minSlAllowed = entry * (1 + activeBotConfig.minSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Take Profit must be at least 1.0% below entry
-    const maxTpAllowed = entry * 0.99;
+    // Take Profit must be at least activeBotConfig.minTpBuffer below entry
+    const maxTpAllowed = entry * (1 - activeBotConfig.minTpBuffer);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
     }
@@ -2709,4 +2719,27 @@ function openBacktestLogDrawer(trades, coin, days, minScore) {
 
   backdrop.classList.add("open");
   drawer.classList.add("open");
+}
+
+async function fetchActiveBotConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      const data = await res.json();
+      activeBotConfig = { ...activeBotConfig, ...data };
+      
+      // Update labels
+      const scoreEl = document.getElementById("bt-param-score");
+      const slEl = document.getElementById("bt-param-sl");
+      const tpEl = document.getElementById("bt-param-tp");
+      const inputScore = document.getElementById("bt-minscore");
+      
+      if (scoreEl) scoreEl.textContent = activeBotConfig.minScore;
+      if (slEl) slEl.textContent = (activeBotConfig.minSlBuffer * 100).toFixed(1);
+      if (tpEl) tpEl.textContent = (activeBotConfig.minTpBuffer * 100).toFixed(1);
+      if (inputScore) inputScore.value = activeBotConfig.minScore;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch active bot config:", e.message);
+  }
 }

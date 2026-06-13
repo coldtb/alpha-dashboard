@@ -1,6 +1,27 @@
 import { ExchangeClient, InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+
+let config = {
+  minScore: 85,
+  minSlBuffer: 0.008,
+  minTpBuffer: 0.010,
+  entryShiftThreshold: 0.0075,
+  replacementScoreDiff: 5
+};
+
+try {
+  const configPath = path.join(process.cwd(), 'api', 'config.json');
+  if (fs.existsSync(configPath)) {
+    const rawConfig = fs.readFileSync(configPath, 'utf8');
+    config = { ...config, ...JSON.parse(rawConfig) };
+    console.log("Loaded config.json at startup:", config);
+  }
+} catch (e) {
+  console.warn("Failed to load config.json at startup, using defaults:", e.message);
+}
 
 function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
@@ -409,24 +430,24 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   if (dir === 'LONG') {
-    // Stop Loss must be at least 0.8% below entry
-    const maxSlAllowed = entry * 0.992;
+    // Stop Loss must be at least config.minSlBuffer below entry
+    const maxSlAllowed = entry * (1 - config.minSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Take Profit must be at least 1.0% above entry
-    const minTpAllowed = entry * 1.01;
+    // Take Profit must be at least config.minTpBuffer above entry
+    const minTpAllowed = entry * (1 + config.minTpBuffer);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
   } else {
-    // Stop Loss must be at least 0.8% above entry
-    const minSlAllowed = entry * 1.008;
+    // Stop Loss must be at least config.minSlBuffer above entry
+    const minSlAllowed = entry * (1 + config.minSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Take Profit must be at least 1.0% below entry
-    const maxTpAllowed = entry * 0.99;
+    // Take Profit must be at least config.minTpBuffer below entry
+    const maxTpAllowed = entry * (1 - config.minTpBuffer);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
     }
@@ -641,10 +662,10 @@ export default async function handler(req, res) {
       volume: Math.round(c.volume)
     })));
 
-    const minScore = req.query.min_score ? parseInt(req.query.min_score) : (process.env.HYPERLIQUID_MIN_SCORE ? parseInt(process.env.HYPERLIQUID_MIN_SCORE) : 85);
+    const minScore = req.query.min_score ? parseInt(req.query.min_score) : (process.env.HYPERLIQUID_MIN_SCORE ? parseInt(process.env.HYPERLIQUID_MIN_SCORE) : config.minScore);
     const replacementScoreDiff = process.env.HYPERLIQUID_REPLACEMENT_SCORE_DIFF 
       ? parseInt(process.env.HYPERLIQUID_REPLACEMENT_SCORE_DIFF) 
-      : 5; // default 5 points
+      : config.replacementScoreDiff;
 
     // 5. Cancel stale unfilled limit entry orders (and their associated TP/SL) if their score is no longer >= minScore
     const cancels = [];
@@ -941,7 +962,7 @@ export default async function handler(req, res) {
     // 5c. Limit Order Entry Level Trailing
     const entryShiftThreshold = process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD 
       ? parseFloat(process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD) 
-      : 0.0075; // default 0.75%
+      : config.entryShiftThreshold;
 
     // Re-evaluate pending orders to see if they need level trailing
     const pendingCoins = new Set();
