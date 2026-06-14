@@ -477,6 +477,8 @@ function getTriggerLimitPrice(isBuyTrigger, triggerPx) {
 }
 
 export default async function handler(req, res) {
+  const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
+
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && process.env.NODE_ENV !== 'development') {
@@ -679,7 +681,7 @@ export default async function handler(req, res) {
 
     if (cancels.length > 0) {
       try {
-        if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+        if (isDryRun) {
           console.log("[DRY RUN] Bypassed stale cancels:", JSON.stringify(cancels));
         } else {
           const cancelRes = await exchange.cancel({ cancels });
@@ -729,7 +731,7 @@ export default async function handler(req, res) {
       const geckoIdActive = geckoIdMap[coin];
       if (geckoIdActive) {
         try {
-          const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdActive, timeframe: '4h' });
+          const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdActive, timeframe: '1h' });
           if (mcpRes?.result?.content?.[0]?.text) {
             taDataActive = JSON.parse(mcpRes.result.content[0].text);
           }
@@ -753,7 +755,7 @@ export default async function handler(req, res) {
             const entryPxStr = formatPrice(entryPx);
             const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
-            if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+            if (isDryRun) {
               console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
               console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
             } else {
@@ -798,7 +800,7 @@ export default async function handler(req, res) {
           const entryPxStr = formatPrice(entryPx);
           const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
-          if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+          if (isDryRun) {
             console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
             console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
           } else {
@@ -853,7 +855,7 @@ export default async function handler(req, res) {
             const newSlPxStr = formatPrice(newSlPx);
             const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
 
-            if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+            if (isDryRun) {
               console.log(`[DRY RUN] Bypassed TP/SL cancellation for ${coin}`);
               console.log(`[DRY RUN] Bypassed placing new trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`);
             } else {
@@ -961,7 +963,7 @@ export default async function handler(req, res) {
         try {
           console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`);
           const results = await Promise.allSettled([
-            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '4h' }),
+            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
             callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
             callTrueNorthMcp('options_report', { token_address: geckoId })
           ]);
@@ -1107,7 +1109,7 @@ export default async function handler(req, res) {
     const slPx = formatPrice(levels.sl);
     const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
 
-    if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
+    if (isDryRun) {
       console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to 5x`);
       console.log(`[DRY RUN] Bypassed placing bracket order for ${target.symbol}: Entry=${entryPx} (Market Worst: ${entryMarketWorstPx}), TP=${tpPx}, SL=${slPx}, Size=${entrySz}`);
       return res.status(200).json({

@@ -3,5 +3,6 @@
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.050,
   "entryShiftThreshold": 0.0075,
-  "replacementScoreDiff": 5
+  "replacementScoreDiff": 5,
+  "dryRun": true
 }
