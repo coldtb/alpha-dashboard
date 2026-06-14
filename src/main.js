@@ -252,6 +252,7 @@ Select top 2, define SL below the flush wick and reversion targets in Mongolian.
 
 // Initialize application
 document.addEventListener("DOMContentLoaded", () => {
+  initFallingDollars();
   renderPromptsHub();
   
   // Load custom trades from localStorage
@@ -2690,4 +2691,44 @@ async function fetchActiveBotConfig() {
   } catch (e) {
     console.warn("Failed to fetch active bot config:", e.message);
   }
+}
+
+// Spawns glowing green falling dollar bill particles in the background
+function initFallingDollars() {
+  const container = document.getElementById("falling-dollars-container");
+  if (!container) return;
+
+  function spawnDollar() {
+    const dollar = document.createElement("div");
+    dollar.className = "falling-dollar";
+    dollar.textContent = "$";
+
+    const size = Math.random() * 16 + 12; // 12px to 28px
+    const startX = Math.random() * 100; // 0vw to 100vw
+    const duration = Math.random() * 7 + 5; // 5s to 12s
+    const opacity = Math.random() * 0.15 + 0.05; // 0.05 to 0.20
+    const sway = Math.random() * 100 - 50; // -50px to 50px
+    const rotate = Math.random() * 360; // 0deg to 360deg
+
+    dollar.style.left = `${startX}vw`;
+    dollar.style.fontSize = `${size}px`;
+    dollar.style.animationDuration = `${duration}s`;
+    dollar.style.setProperty("--dollar-opacity", opacity);
+    dollar.style.setProperty("--sway-distance", `${sway}px`);
+    dollar.style.setProperty("--rotate-degree", `${rotate}deg`);
+
+    container.appendChild(dollar);
+
+    dollar.addEventListener("animationend", () => {
+      dollar.remove();
+    });
+  }
+
+  // Create initial scattered particles
+  for (let i = 0; i < 15; i++) {
+    setTimeout(spawnDollar, Math.random() * 8000);
+  }
+
+  // Keep spawning particles
+  setInterval(spawnDollar, 700);
 }
