@@ -1,0 +1,18 @@
+[
+  {
+    "timestamp": "2026-06-14T06:04:47.226Z",
+    "coin": "BTC",
+    "days": 14,
+    "minScore": 85,
+    "summary": {
+      "totalTrades": 4,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 4,
+      "totalReturnPct": -14.83,
+      "finalBalance": 8516.95,
+      "maxDrawdown": 14.83,
+      "profitFactor": 0
+    }
+  }
+]

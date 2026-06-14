@@ -1,4 +1,6 @@
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
+import fs from "fs";
+import path from "path";
 
 // Re-implement or import the pure strategy helper functions to match api/bot.js
 
@@ -438,6 +440,35 @@ async function runBacktest(coinSymbol, days, minScore) {
   console.log(`Total Return: ${totalReturnPct.toFixed(2)}% (Final Balance: $${balance.toFixed(2)})`);
   console.log(`Max Drawdown: ${maxDrawdown.toFixed(2)}%`);
   console.log(`Profit Factor: ${profitFactor.toFixed(2)}`);
+
+  // Save to history file
+  try {
+    const historyPath = path.join(process.cwd(), "scratch", "backtest-history.json");
+    let history = [];
+    if (fs.existsSync(historyPath)) {
+      history = JSON.parse(fs.readFileSync(historyPath, "utf8") || "[]");
+    }
+    history.push({
+      timestamp: new Date().toISOString(),
+      coin: coinSymbol,
+      days,
+      minScore,
+      summary: {
+        totalTrades: trades.length,
+        winRate: parseFloat(winRate.toFixed(2)),
+        wins: winTrades.length,
+        losses: lossTrades.length,
+        totalReturnPct: parseFloat(totalReturnPct.toFixed(2)),
+        finalBalance: parseFloat(balance.toFixed(2)),
+        maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
+        profitFactor: parseFloat(profitFactor.toFixed(2))
+      }
+    });
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+    console.log(`Saved backtest results to history log: ${historyPath}`);
+  } catch (e) {
+    console.warn("Failed to save backtest history log:", e.message);
+  }
 }
 
 // Extract CLI arguments
