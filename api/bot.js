@@ -44,7 +44,7 @@ const geckoIdMap = {
 
 // Generic JSON-RPC tool caller helper for TrueNorth
 async function callTrueNorthMcp(toolName, args) {
-  const token = 'ak_6bab536248be4a1896a4ea54de7b8377';
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
   
   const response = await fetch(url, {
@@ -80,7 +80,7 @@ async function callTrueNorthMcp(toolName, args) {
 }
 
 // Direction detection
-function detectAutoDirection(coin, taData = null) {
+function detectAutoDirection(coin, taData = null, sma24 = null) {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -120,9 +120,23 @@ function detectAutoDirection(coin, taData = null) {
   if (change24h > 3) score += 1;
   else if (change24h < -3) score -= 1;
 
-  if (score > 0) return 'LONG';
-  if (score < 0) return 'SHORT';
-  return change24h >= 0 ? 'LONG' : 'SHORT';
+  let dir = 'LONG';
+  if (score > 0) dir = 'LONG';
+  else if (score < 0) dir = 'SHORT';
+  else dir = change24h >= 0 ? 'LONG' : 'SHORT';
+
+  // Apply Trend Filter: Only align with the 24h SMA trend
+  if (sma24 !== null) {
+    const price = coin.price;
+    if (dir === 'LONG' && price < sma24) {
+      return 'SKIP'; // Filter out counter-trend longs
+    }
+    if (dir === 'SHORT' && price > sma24) {
+      return 'SKIP'; // Filter out counter-trend shorts
+    }
+  }
+
+  return dir;
 }
 
 // Level computation
@@ -162,19 +176,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
     if (supports.length > 0) {
       const nearSupport = supports[0];
-      entry = nearSupport.hi;
       sl = nearSupport.lo * 0.985;
       reason = 'sr_channel';
-
-      // If the coin score is extremely high (>= 95), pullbacks are usually very shallow.
-      // We adjust the entry closer to the current price (0.3% pullback) to ensure fills.
-      if (coin.score >= 90) {
-        const shallowEntry = price * 0.997;
-        if (shallowEntry > entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
 
       if (resistances.length > 0) {
         const rr1target = entry + (entry - sl) * 1.5;
@@ -188,26 +191,11 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
       }
     } else {
-      entry = high - (high - low) * 0.618;
       sl    = low * 0.985;
       reason = 'fib_fallback';
 
-      // If the coin score is extremely high (>= 95), pullbacks are usually very shallow.
-      if (coin.score >= 90) {
-        const shallowEntry = price * 0.997;
-        if (shallowEntry > entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
-
       const minTp = entry + (entry - sl) * 1.5;
       tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
-    }
-
-    if (funding < -0.0005) {
-      entry = price;
-      reason += '+squeeze_entry';
     }
   } else {
     const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
@@ -215,19 +203,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
     if (resistances.length > 0) {
       const nearRes = resistances[0];
-      entry = nearRes.lo;
       sl = nearRes.hi * 1.015;
       reason = 'sr_channel';
-
-      // If the coin score is extremely high (>= 95), pullbacks/rises are usually very shallow.
-      // We adjust the entry closer to the current price (0.3% rise) to ensure fills.
-      if (coin.score >= 90) {
-        const shallowEntry = price * 1.003;
-        if (shallowEntry < entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
 
       if (supports.length > 0) {
         const rr1target = entry - (sl - entry) * 1.5;
@@ -241,26 +218,11 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
       }
     } else {
-      entry = high - (high - low) * 0.382;
       sl    = high * 1.015;
       reason = 'fib_fallback';
 
-      // If the coin score is extremely high (>= 95), pullbacks/rises are usually very shallow.
-      if (coin.score >= 90) {
-        const shallowEntry = price * 1.003;
-        if (shallowEntry < entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
-
       const minTp = entry - (sl - entry) * 1.5;
       tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
-    }
-
-    if (funding > 0.001) {
-      entry = price;
-      reason += '+overextended_long';
     }
   }
 
@@ -767,7 +729,7 @@ export default async function handler(req, res) {
       const geckoIdActive = geckoIdMap[coin];
       if (geckoIdActive) {
         try {
-          const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdActive, timeframe: '1h' });
+          const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdActive, timeframe: '4h' });
           if (mcpRes?.result?.content?.[0]?.text) {
             taDataActive = JSON.parse(mcpRes.result.content[0].text);
           }
@@ -959,243 +921,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5c. Limit Order Entry Level Trailing
-    const entryShiftThreshold = process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD 
-      ? parseFloat(process.env.HYPERLIQUID_ENTRY_SHIFT_THRESHOLD) 
-      : config.entryShiftThreshold;
+    // 5c. Limit Order Entry Level Trailing: No longer needed as we use instant market (taker) entry.
 
-    // Re-evaluate pending orders to see if they need level trailing
-    const pendingCoins = new Set();
-    for (const order of openOrders) {
-      const hasPosition = userState.assetPositions.some(p => p.position.coin === order.coin && parseFloat(p.position.szi) !== 0);
-      if (!hasPosition) {
-        pendingCoins.add(order.coin);
-      }
-    }
 
-    let needsOrdersRefreshAfterTrailing = false;
-    for (const coinSymbol of pendingCoins) {
-      const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
-      if (!currentCoin) {
-        console.log(`[Entry Trailing] Skip check for ${coinSymbol}: coin not found in scanner.`);
-        continue;
-      }
-      if (currentCoin.score < minScore) {
-        console.log(`[Entry Trailing] Skip check for ${coinSymbol}: score ${currentCoin.score} is below min ${minScore}.`);
-        continue;
-      }
-
-      // Find existing Limit Entry order
-      const coinOrders = openOrders.filter(o => o.coin === coinSymbol);
-      const entryOrder = coinOrders.find(o => !o.isTrigger && (!o.triggerPx || parseFloat(o.triggerPx) === 0));
-      console.log(`[Entry Trailing] Found pending coin ${coinSymbol} with ${coinOrders.length} open orders. Existing entry order: ${entryOrder ? entryOrder.limitPx : 'None'}`);
-
-      const geckoId = geckoIdMap[coinSymbol];
-      let taData = null;
-      let derivData = null;
-      let optionsData = null;
-
-      if (geckoId) {
-        try {
-          const results = await Promise.allSettled([
-            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
-            callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
-            callTrueNorthMcp('options_report', { token_address: geckoId })
-          ]);
-          
-          if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
-            try {
-              taData = JSON.parse(results[0].value.result.content[0].text);
-            } catch (e) {
-              console.error(`[Entry Trailing] Failed to parse taData for ${coinSymbol}:`, e.message);
-            }
-          }
-          if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
-            try {
-              derivData = JSON.parse(results[1].value.result.content[0].text);
-            } catch (e) {
-              console.error(`[Entry Trailing] Failed to parse derivData for ${coinSymbol}:`, e.message);
-            }
-          }
-          if (results[2].status === 'fulfilled') {
-            optionsData = results[2].value;
-          }
-        } catch (e) {
-          console.error(`[Entry Trailing] TrueNorth MCP query failed for ${coinSymbol}:`, e.message);
-        }
-      }
-
-      const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
-      const direction = detectAutoDirection(currentCoin, taData);
-      const levels = computeStrategyLevels(currentCoin, direction, taData, derivData, optionsData, useSmartSlTp);
-      console.log(`[Entry Trailing] Calculated levels for ${coinSymbol} - Direction: ${direction}, New Entry: ${levels.entry}, TP: ${levels.tp}, SL: ${levels.sl}`);
-
-      let shouldUpdate = false;
-      let reasonText = "";
-
-      if (entryOrder) {
-        const oldEntryPx = parseFloat(entryOrder.limitPx);
-        const priceDiffPct = Math.abs(oldEntryPx - levels.entry) / levels.entry;
-
-        // Verify if active TP/SL trigger orders are positioned correctly relative to the entry price
-        const triggers = coinOrders.filter(o => o.isTrigger && o.triggerPx && parseFloat(o.triggerPx) !== 0);
-        let hasInvalidBracket = false;
-        let invalidBracketDetails = "";
-        
-        if (triggers.length > 0) {
-          const slOrderObj = triggers.find(o => o.orderType?.includes("Stop"));
-          const tpOrderObj = triggers.find(o => o.orderType?.includes("Take Profit"));
-          
-          if (slOrderObj) {
-            const slPx = parseFloat(slOrderObj.triggerPx);
-            if (direction === "LONG" && slPx >= oldEntryPx) {
-              hasInvalidBracket = true;
-              invalidBracketDetails += `Stop Loss (${slPx}) is above/equal to LONG entry (${oldEntryPx}). `;
-            } else if (direction === "SHORT" && slPx <= oldEntryPx) {
-              hasInvalidBracket = true;
-              invalidBracketDetails += `Stop Loss (${slPx}) is below/equal to SHORT entry (${oldEntryPx}). `;
-            }
-          }
-          
-          if (tpOrderObj) {
-            const tpPx = parseFloat(tpOrderObj.triggerPx);
-            if (direction === "LONG" && tpPx <= oldEntryPx) {
-              hasInvalidBracket = true;
-              invalidBracketDetails += `Take Profit (${tpPx}) is below/equal to LONG entry (${oldEntryPx}). `;
-            } else if (direction === "SHORT" && tpPx >= oldEntryPx) {
-              hasInvalidBracket = true;
-              invalidBracketDetails += `Take Profit (${tpPx}) is above/equal to SHORT entry (${oldEntryPx}). `;
-            }
-          }
-        }
-
-        if (priceDiffPct >= entryShiftThreshold || hasInvalidBracket) {
-          shouldUpdate = true;
-          reasonText = hasInvalidBracket 
-            ? `Invalid TP/SL bracket detected: ${invalidBracketDetails}`
-            : `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (from ${oldEntryPx} to ${levels.entry}), exceeding threshold of ${(entryShiftThreshold * 100).toFixed(2)}%`;
-        }
-      } else {
-        shouldUpdate = true;
-        reasonText = `Orphaned TP/SL orders found without a limit entry order`;
-      }
-
-      if (shouldUpdate) {
-        console.log(`[Entry Trailing] Updating entry levels for ${coinSymbol}. Reason: ${reasonText}`);
-        try {
-          // Calculate size
-          const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
-          let withdrawableUsd = parseFloat(userState.withdrawable || "0");
-          let accountValueUsd = parseFloat(userState.marginSummary?.accountValue || "0");
-          if (withdrawableUsd === 0 && spotState && spotState.balances) {
-            const usdcBal = spotState.balances.find(b => b.coin === "USDC");
-            if (usdcBal) {
-              withdrawableUsd = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
-            }
-          }
-          const baseBalance = Math.max(withdrawableUsd, accountValueUsd);
-          const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : baseBalance;
-          if (accountSize <= 5) {
-            console.error(`[Entry Trailing] Insufficient balance for ${coinSymbol}. Account size: $${accountSize}`);
-            continue;
-          }
-
-          const finalLeverage = 5;
-          let positionSizeUsd = (accountSize * 0.90) * finalLeverage;
-          if (positionSizeUsd < 10.5) {
-            positionSizeUsd = 10.5;
-          }
-          const positionSizeTokens = positionSizeUsd / levels.entry;
-
-          const isBuy = direction === "LONG";
-          const entrySz = formatSize(positionSizeTokens, currentCoin.assetInfo.szDecimals);
-          const entryPxStr = formatPrice(levels.entry);
-          const tpPxStr = formatPrice(levels.tp);
-          const tpWorstPxStr = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp));
-          const slPxStr = formatPrice(levels.sl);
-          const slWorstPxStr = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
-
-          if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
-            console.log(`[DRY RUN] Bypassed entry trailing cancellation of ${coinOrders.length} orders for ${coinSymbol}`);
-            console.log(`[DRY RUN] Bypassed placing trailed bracket order for ${coinSymbol}: Entry=${entryPxStr}, TP=${tpPxStr}, SL=${slPxStr}`);
-          } else {
-            // Cancel all existing open orders for this coin
-            const cancelsToMake = coinOrders.map(o => ({ a: currentCoin.assetIndex, o: o.oid }));
-            const cancelRes = await exchange.cancel({ cancels: cancelsToMake });
-            console.log(`[Entry Trailing] Cancelled old orders for ${coinSymbol}:`, JSON.stringify(cancelRes));
-
-            // Place leverage
-            await exchange.updateLeverage({
-              asset: currentCoin.assetIndex,
-              isCross: true,
-              leverage: finalLeverage
-            });
-
-            // Place order
-            const orderRes = await exchange.order({
-              orders: [
-                {
-                  a: currentCoin.assetIndex,
-                  b: isBuy,
-                  p: entryPxStr,
-                  s: entrySz,
-                  r: false,
-                  t: { limit: { tif: "Gtc" } },
-                  c: generateBotCloid()
-                },
-                {
-                  a: currentCoin.assetIndex,
-                  b: !isBuy,
-                  p: tpWorstPxStr,
-                  s: entrySz,
-                  r: true,
-                  t: {
-                    trigger: {
-                      triggerPx: tpPxStr,
-                      isMarket: true,
-                      tpsl: "tp"
-                    }
-                  },
-                  c: generateBotCloid()
-                },
-                {
-                  a: currentCoin.assetIndex,
-                  b: !isBuy,
-                  p: slWorstPxStr,
-                  s: entrySz,
-                  r: true,
-                  t: {
-                    trigger: {
-                      triggerPx: slPxStr,
-                      isMarket: true,
-                      tpsl: "sl"
-                    }
-                  },
-                  c: generateBotCloid()
-                }
-              ],
-              grouping: "normalTpsl"
-            });
-            console.log(`[Entry Trailing] Placed new trailed bracket order for ${coinSymbol}:`, JSON.stringify(orderRes));
-          }
-          needsOrdersRefreshAfterTrailing = true;
-        } catch (e) {
-          console.error(`[Entry Trailing] Failed to update levels for ${coinSymbol}:`, e.message);
-        }
-      } else {
-        console.log(`[Entry Trailing] No update needed for ${coinSymbol}. Calculated entry: ${levels.entry}, existing order price: ${entryOrder ? entryOrder.limitPx : 'None'}. Price shift: ${entryOrder ? (Math.abs(parseFloat(entryOrder.limitPx) - levels.entry) / levels.entry * 100).toFixed(4) + '%' : 'N/A'}`);
-      }
-    }
-
-    if (needsOrdersRefreshAfterTrailing) {
-      try {
-        openOrders = await info.frontendOpenOrders({ user: walletAddress });
-      } catch (e) {
-        console.error("Failed to refresh openOrders after entry trailing:", e.message);
-      }
-    }
-
-    // Pick top candidates (score >= minScore)
+    // Pick top candidates (score >= minScore) across all Hyperliquid coins
     const candidates = scoredCoins.filter(c => c.score >= minScore);
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
@@ -1232,7 +961,7 @@ export default async function handler(req, res) {
         try {
           console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`);
           const results = await Promise.allSettled([
-            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
+            callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '4h' }),
             callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
             callTrueNorthMcp('options_report', { token_address: geckoId })
           ]);
@@ -1251,8 +980,27 @@ export default async function handler(req, res) {
             parsedOpt = results[2].value;
           }
 
+          // Calculate 24h SMA for trend filter
+          let sma24 = cand.price;
+          try {
+            const endTime = Date.now();
+            const startTime = endTime - 30 * 60 * 60 * 1000;
+            const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
+            if (candles && candles.length >= 25) {
+              const last25 = candles.slice(-25);
+              const sumClose = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
+              sma24 = sumClose / 25;
+            }
+          } catch (e) {
+            console.error(`Failed to calculate 24h SMA for candidate ${cand.symbol}:`, e.message);
+          }
+
           // Evaluate direction to contextualize funding checks
-          const direction = detectAutoDirection(cand, parsedTa);
+          const direction = detectAutoDirection(cand, parsedTa, sma24);
+          if (direction === 'SKIP') {
+            console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by 24h SMA Trend Filter (Price: ${cand.price}, SMA: ${sma24})`);
+            continue;
+          }
 
           // Crowded Trade Filter
           if (parsedDeriv?.derivative_data?.[cand.symbol]) {
@@ -1351,6 +1099,7 @@ export default async function handler(req, res) {
     const isBuy = direction === "LONG";
     const entrySz = formatSize(positionSizeTokens, target.assetInfo.szDecimals);
     const entryPx = formatPrice(levels.entry);
+    const entryMarketWorstPx = formatPrice(isBuy ? levels.entry * 1.02 : levels.entry * 0.98);
 
     const tpPx = formatPrice(levels.tp);
     const tpWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp));
@@ -1360,7 +1109,7 @@ export default async function handler(req, res) {
 
     if (process.env.DRY_RUN === "true" || req.query.dry_run === "true") {
       console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to 5x`);
-      console.log(`[DRY RUN] Bypassed placing bracket order for ${target.symbol}: Entry=${entryPx}, TP=${tpPx}, SL=${slPx}, Size=${entrySz}`);
+      console.log(`[DRY RUN] Bypassed placing bracket order for ${target.symbol}: Entry=${entryPx} (Market Worst: ${entryMarketWorstPx}), TP=${tpPx}, SL=${slPx}, Size=${entrySz}`);
       return res.status(200).json({
         status: "success",
         message: "[DRY RUN] Simulated trade execution succeeded",
@@ -1384,17 +1133,17 @@ export default async function handler(req, res) {
         leverage: finalLeverage
       });
 
-      // B. Place Bracket Order
+      // B. Place Bracket Order (Market Entry + TP/SL bracket)
       const orderResult = await exchange.order({
         orders: [
-          // Limit Entry
+          // Market Taker Entry (FrontendMarket)
           {
             a: target.assetIndex,
             b: isBuy,
-            p: entryPx,
+            p: entryMarketWorstPx,
             s: entrySz,
             r: false,
-            t: { limit: { tif: "Gtc" } },
+            t: { limit: { tif: "FrontendMarket" } },
             c: generateBotCloid()
           },
           // Take Profit Trigger Order (Market Trigger to guarantee fill)

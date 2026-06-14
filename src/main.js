@@ -18,9 +18,9 @@ let customTrades = [];
 let activeTab = "market"; // "market" or "custom"
 let lastBacktestData = null;
 let activeBotConfig = {
-  minScore: 85,
-  minSlBuffer: 0.008,
-  minTpBuffer: 0.010,
+  minScore: 90,
+  minSlBuffer: 0.010,
+  minTpBuffer: 0.050,
   entryShiftThreshold: 0.0075,
   replacementScoreDiff: 5
 };

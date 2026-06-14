@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const token = 'ak_6bab536248be4a1896a4ea54de7b8377';
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
 
   try {

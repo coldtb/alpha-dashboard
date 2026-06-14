@@ -2,6 +2,25 @@ import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import fs from "fs";
 import path from "path";
 
+let config = {
+  minScore: 85,
+  minSlBuffer: 0.012,
+  minTpBuffer: 0.024,
+  entryShiftThreshold: 0.0075,
+  replacementScoreDiff: 5
+};
+
+try {
+  const configPath = path.join(process.cwd(), 'api', 'config.json');
+  if (fs.existsSync(configPath)) {
+    const rawConfig = fs.readFileSync(configPath, 'utf8');
+    config = { ...config, ...JSON.parse(rawConfig) };
+    console.log("Loaded config.json in backtest handler:", config);
+  }
+} catch (e) {
+  console.warn("Failed to load config.json in backtest, using defaults:", e.message);
+}
+
 function calculateScore(coin, isHyperliquidScale = true) {
   let score = 0;
   const change = Math.abs(coin.change);
@@ -38,7 +57,7 @@ function calculateScore(coin, isHyperliquidScale = true) {
   return Math.min(score, 100);
 }
 
-function detectAutoDirection(coin) {
+function detectAutoDirection(coin, sma24 = null) {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -56,12 +75,26 @@ function detectAutoDirection(coin) {
   if (change24h > 3) score += 1;
   else if (change24h < -3) score -= 1;
 
-  if (score > 0) return 'LONG';
-  if (score < 0) return 'SHORT';
-  return change24h >= 0 ? 'LONG' : 'SHORT';
+  let dir = 'LONG';
+  if (score > 0) dir = 'LONG';
+  else if (score < 0) dir = 'SHORT';
+  else dir = change24h >= 0 ? 'LONG' : 'SHORT';
+
+  // Apply Trend Filter: Only align with the 24h SMA trend
+  if (sma24 !== null) {
+    const price = coin.price;
+    if (dir === 'LONG' && price < sma24) {
+      return 'SKIP'; // Filter out counter-trend longs
+    }
+    if (dir === 'SHORT' && price > sma24) {
+      return 'SKIP'; // Filter out counter-trend shorts
+    }
+  }
+
+  return dir;
 }
 
-function computeStrategyLevels(coin, dir) {
+function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null) {
   const price = coin.price;
   const funding = coin.funding || 0;
   const dec = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -115,15 +148,19 @@ function computeStrategyLevels(coin, dir) {
     }
   }
 
+  // Safety bounds
+  const activeSlBuffer = slBuffer !== null ? slBuffer : config.minSlBuffer;
+  const activeTpBuffer = tpBuffer !== null ? tpBuffer : config.minTpBuffer;
+
   if (dir === 'LONG') {
-    const maxSlAllowed = entry * 0.992;
+    const maxSlAllowed = entry * (1 - activeSlBuffer);
     if (sl > maxSlAllowed) sl = maxSlAllowed;
-    const minTpAllowed = entry * 1.01;
+    const minTpAllowed = entry * (1 + activeTpBuffer);
     if (tp < minTpAllowed) tp = minTpAllowed;
   } else {
-    const minSlAllowed = entry * 1.008;
+    const minSlAllowed = entry * (1 + activeSlBuffer);
     if (sl < minSlAllowed) sl = minSlAllowed;
-    const maxTpAllowed = entry * 0.99;
+    const maxTpAllowed = entry * (1 - activeTpBuffer);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
   }
 
@@ -138,7 +175,9 @@ function computeStrategyLevels(coin, dir) {
 export default async function handler(req, res) {
   const coinSymbol = req.query.coin || "BTC";
   const days = parseInt(req.query.days) || 30;
-  const minScore = parseInt(req.query.min_score) || 85;
+  const minScore = parseInt(req.query.min_score) || config.minScore;
+  const qSlBuffer = req.query.sl_buffer ? parseFloat(req.query.sl_buffer) : config.minSlBuffer;
+  const qTpBuffer = req.query.tp_buffer ? parseFloat(req.query.tp_buffer) : config.minTpBuffer;
 
   try {
     const transport = new HttpTransport();
@@ -159,12 +198,22 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `Not enough historical candles found for ${coinSymbol}.` });
     }
 
-    // Fetch funding rate history
-    const fundingHistory = await info.fundingHistory({
-      coin: coinSymbol,
-      startTime,
-      endTime
-    });
+    // Fetch funding rate history in chunks to avoid API limit truncation
+    const fundingHistory = [];
+    const chunkMs = 150 * 24 * 60 * 60 * 1000;
+    let currentStart = startTime;
+    while (currentStart < endTime) {
+      const currentEnd = Math.min(currentStart + chunkMs, endTime);
+      const chunk = await info.fundingHistory({
+        coin: coinSymbol,
+        startTime: currentStart,
+        endTime: currentEnd
+      });
+      if (chunk && chunk.length > 0) {
+        fundingHistory.push(...chunk);
+      }
+      currentStart += chunkMs;
+    }
 
     // Map funding rates by hour timestamp
     const fundingMap = {};
@@ -209,6 +258,7 @@ export default async function handler(req, res) {
       let high24h = low;
       let low24h = high;
       let volume24hUsd = 0;
+      let sumClose24 = 0;
 
       for (let j = i - 24; j <= i; j++) {
         const cj = candles[j];
@@ -217,7 +267,9 @@ export default async function handler(req, res) {
         if (cjHigh > high24h) high24h = cjHigh;
         if (cjLow < low24h) low24h = cjLow;
         volume24hUsd += parseFloat(cj.v) * parseFloat(cj.c);
+        sumClose24 += parseFloat(cj.c);
       }
+      const sma24 = sumClose24 / 25;
 
       const hourKey = Math.floor(timestamp / 3600000) * 3600000;
       const fundingRateRaw = fundingMap[hourKey] || 0.0000125; 
@@ -294,90 +346,19 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Pending Order Handling
-      if (pendingOrder) {
-        const isLong = pendingOrder.dir === 'LONG';
-        let filled = false;
-
-        if (isLong && low <= pendingOrder.entryPrice) {
-          filled = true;
-        } else if (!isLong && high >= pendingOrder.entryPrice) {
-          filled = true;
-        }
-
-        if (filled) {
+      // No position: Enter instantly at market price if score is high and trend matches
+      if (score >= minScore) {
+        const direction = detectAutoDirection(coinData, sma24);
+        if (direction !== 'SKIP') {
+          const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
           position = {
-            ...pendingOrder,
-            fillTime: timestamp,
-            slMovedToEntry: false
-          };
-          pendingOrder = null;
-
-          let hitSl = false;
-          let hitTp = false;
-          if (isLong) {
-            if (low <= position.sl) hitSl = true;
-            else if (high >= position.tp) hitTp = true;
-          } else {
-            if (high >= position.sl) hitSl = true;
-            else if (low <= position.tp) hitTp = true;
-          }
-
-          if (hitSl || hitTp) {
-            const exitPrice = hitSl ? position.sl : position.tp;
-            const priceReturn = isLong 
-              ? (exitPrice - position.entryPrice) / position.entryPrice
-              : (position.entryPrice - exitPrice) / position.entryPrice;
-            
-            const leveragedReturn = priceReturn * leverage;
-            const netReturn = leveragedReturn - roundTripFeePct;
-            const tradePnl = balance * netReturn;
-
-            balance += tradePnl;
-            trades.push({
-              dir: position.dir,
-              entryPrice: position.entryPrice,
-              exitPrice,
-              exitType: hitSl ? 'SL' : 'TP',
-              entryTime: position.fillTime,
-              exitTime: timestamp,
-              returnPct: parseFloat((netReturn * 100).toFixed(2)),
-              pnlUsd: parseFloat(tradePnl.toFixed(2)),
-              balanceAfter: parseFloat(balance.toFixed(2)),
-              score: position.score
-            });
-            position = null;
-          }
-        } else {
-          const direction = detectAutoDirection(coinData);
-          const levels = computeStrategyLevels(coinData, direction);
-          const entryDiffPct = Math.abs(pendingOrder.entryPrice - levels.entry) / levels.entry;
-
-          if (score < minScore) {
-            pendingOrder = null;
-          } else if (entryDiffPct >= entryShiftThreshold) {
-            pendingOrder = {
-              dir: direction,
-              entryPrice: levels.entry,
-              tp: levels.tp,
-              sl: levels.sl,
-              score,
-              setupTime: timestamp
-            };
-          }
-        }
-      } else {
-        if (score >= minScore) {
-          const direction = detectAutoDirection(coinData);
-          const levels = computeStrategyLevels(coinData, direction);
-
-          pendingOrder = {
             dir: direction,
-            entryPrice: levels.entry,
+            entryPrice: currentPrice,
             tp: levels.tp,
             sl: levels.sl,
             score,
-            setupTime: timestamp
+            fillTime: timestamp,
+            slMovedToEntry: false
           };
         }
       }
