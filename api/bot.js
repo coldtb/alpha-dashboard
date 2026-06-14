@@ -13,7 +13,7 @@ let config = {
 };
 
 try {
-  const configPath = path.join(process.cwd(), 'api', 'config.json');
+  const configPath = path.join(process.cwd(), 'config.json');
   if (fs.existsSync(configPath)) {
     const rawConfig = fs.readFileSync(configPath, 'utf8');
     config = { ...config, ...JSON.parse(rawConfig) };

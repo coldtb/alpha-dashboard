@@ -3,7 +3,7 @@ import path from "path";
 
 export default async function handler(req, res) {
   try {
-    const configPath = path.join(process.cwd(), "api", "config.json");
+    const configPath = path.join(process.cwd(), "config.json");
     if (fs.existsSync(configPath)) {
       const rawConfig = fs.readFileSync(configPath, "utf8");
       return res.status(200).json(JSON.parse(rawConfig));
