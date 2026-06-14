@@ -2705,17 +2705,59 @@ function initFallingDollars() {
     const inner = document.createElement("div");
     inner.className = "falling-dollar-inner";
 
+    // 1. Blue vertical security ribbon
+    const ribbon = document.createElement("div");
+    ribbon.className = "falling-dollar-ribbon";
+    inner.appendChild(ribbon);
+
+    // 2. Borderless portrait silhouette (Franklin)
     const portrait = document.createElement("div");
-    portrait.className = "falling-dollar-portrait";
+    portrait.className = "falling-dollar-portrait-new";
     inner.appendChild(portrait);
 
-    const centerValue = document.createElement("div");
-    centerValue.className = "falling-dollar-value";
-    centerValue.textContent = "$100";
-    inner.appendChild(centerValue);
+    // 3. Top-left corner '100'
+    const cornerTl = document.createElement("div");
+    cornerTl.className = "falling-dollar-corner-tl";
+    cornerTl.textContent = "100";
+    inner.appendChild(cornerTl);
 
+    // 4. Bottom-left corner '100'
+    const cornerBl = document.createElement("div");
+    cornerBl.className = "falling-dollar-corner-bl";
+    cornerBl.textContent = "100";
+    inner.appendChild(cornerBl);
+
+    // 5. Top-right corner '100'
+    const cornerTr = document.createElement("div");
+    cornerTr.className = "falling-dollar-corner-tr";
+    cornerTr.textContent = "100";
+    inner.appendChild(cornerTr);
+
+    // 6. Large gold '100' in bottom-right corner
+    const gold100 = document.createElement("div");
+    gold100.className = "falling-dollar-gold-100";
+    gold100.textContent = "100";
+    inner.appendChild(gold100);
+
+    // 7. Central Title Text
+    const title = document.createElement("div");
+    title.className = "falling-dollar-title";
+    title.textContent = "THE UNITED STATES OF AMERICA";
+    inner.appendChild(title);
+
+    // 8. Faint gold quill symbol
+    const quill = document.createElement("div");
+    quill.className = "falling-dollar-quill";
+    inner.appendChild(quill);
+
+    // 9. Copper inkwell with Liberty Bell
+    const inkwell = document.createElement("div");
+    inkwell.className = "falling-dollar-inkwell";
+    inner.appendChild(inkwell);
+
+    // 10. Green treasury seal
     const seal = document.createElement("div");
-    seal.className = "falling-dollar-seal";
+    seal.className = "falling-dollar-seal-green";
     inner.appendChild(seal);
 
     dollar.appendChild(inner);
