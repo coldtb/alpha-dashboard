@@ -2702,78 +2702,18 @@ function initFallingDollars() {
     const dollar = document.createElement("div");
     dollar.className = "falling-dollar";
 
-    const inner = document.createElement("div");
-    inner.className = "falling-dollar-inner";
-
-    // 1. Blue vertical security ribbon
-    const ribbon = document.createElement("div");
-    ribbon.className = "falling-dollar-ribbon";
-    inner.appendChild(ribbon);
-
-    // 2. Borderless portrait silhouette (Franklin)
-    const portrait = document.createElement("div");
-    portrait.className = "falling-dollar-portrait-new";
-    inner.appendChild(portrait);
-
-    // 3. Top-left corner '100'
-    const cornerTl = document.createElement("div");
-    cornerTl.className = "falling-dollar-corner-tl";
-    cornerTl.textContent = "100";
-    inner.appendChild(cornerTl);
-
-    // 4. Bottom-left corner '100'
-    const cornerBl = document.createElement("div");
-    cornerBl.className = "falling-dollar-corner-bl";
-    cornerBl.textContent = "100";
-    inner.appendChild(cornerBl);
-
-    // 5. Top-right corner '100'
-    const cornerTr = document.createElement("div");
-    cornerTr.className = "falling-dollar-corner-tr";
-    cornerTr.textContent = "100";
-    inner.appendChild(cornerTr);
-
-    // 6. Large gold '100' in bottom-right corner
-    const gold100 = document.createElement("div");
-    gold100.className = "falling-dollar-gold-100";
-    gold100.textContent = "100";
-    inner.appendChild(gold100);
-
-    // 7. Central Title Text
-    const title = document.createElement("div");
-    title.className = "falling-dollar-title";
-    title.textContent = "THE UNITED STATES OF AMERICA";
-    inner.appendChild(title);
-
-    // 8. Faint gold quill symbol
-    const quill = document.createElement("div");
-    quill.className = "falling-dollar-quill";
-    inner.appendChild(quill);
-
-    // 9. Copper inkwell with Liberty Bell
-    const inkwell = document.createElement("div");
-    inkwell.className = "falling-dollar-inkwell";
-    inner.appendChild(inkwell);
-
-    // 10. Green treasury seal
-    const seal = document.createElement("div");
-    seal.className = "falling-dollar-seal-green";
-    inner.appendChild(seal);
-
-    dollar.appendChild(inner);
-
     const startX = Math.random() * 100; // 0vw to 100vw
-    const duration = Math.random() * 8 + 6; // 6s to 14s (slower fall looks more natural for paper bills)
-    const opacity = Math.random() * 0.18 + 0.07; // 0.07 to 0.25 opacity range
-    const sway = Math.random() * 140 - 70; // -70px to 70px sway
+    const duration = Math.random() * 9 + 7; // 7s to 16s (realistic fluttering speed)
+    const opacity = Math.random() * 0.22 + 0.12; // 0.12 to 0.34 opacity (visible but not distracting)
+    const sway = Math.random() * 160 - 80; // -80px to 80px sway
     
     // Random rotations for a rich 3D tumble
-    const rotateX = Math.random() * 720 + 360; // 360deg to 1080deg
-    const rotateY = Math.random() * 720 + 360; // 360deg to 1080deg
+    const rotateX = Math.random() * 1080 + 360; // 360deg to 1440deg
+    const rotateY = Math.random() * 1080 + 360; // 360deg to 1440deg
     const rotateZ = Math.random() * 360 - 180; // -180deg to 180deg
     
     // Scale factor for depth perspective
-    const scale = Math.random() * 0.4 + 0.8; // 0.8 to 1.2 scale factor
+    const scale = Math.random() * 0.45 + 0.75; // 0.75 to 1.2 scale factor
 
     dollar.style.left = `${startX}vw`;
     dollar.style.animationDuration = `${duration}s`;
@@ -2793,9 +2733,9 @@ function initFallingDollars() {
 
   // Create initial scattered particles
   for (let i = 0; i < 15; i++) {
-    setTimeout(spawnDollar, Math.random() * 8000);
+    setTimeout(spawnDollar, Math.random() * 9000);
   }
 
   // Keep spawning particles
-  setInterval(spawnDollar, 700);
+  setInterval(spawnDollar, 800);
 }
