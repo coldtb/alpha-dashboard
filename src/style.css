@@ -1253,22 +1253,109 @@ tbody tr:hover {
   pointer-events: none;
   z-index: -1;
   overflow: hidden;
+  perspective: 800px; /* Enables 3D flipping effects */
 }
 
 .falling-dollar {
   position: absolute;
-  color: var(--color-green);
-  font-family: var(--font-title);
-  font-weight: 700;
-  text-shadow: 0 0 8px var(--color-green-glow);
+  width: 80px;
+  height: 34px;
+  background: linear-gradient(135deg, #e2ebd5 0%, #c2d1b2 100%);
+  border: 1px solid #7c946b;
+  border-radius: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
+  transform-style: preserve-3d;
   animation: fall linear forwards;
+}
+
+/* Corner value labels */
+.falling-dollar::before {
+  content: '100';
+  position: absolute;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 6px;
+  font-weight: bold;
+  color: #4a5e43;
+  top: 1px;
+  left: 3px;
+}
+
+.falling-dollar::after {
+  content: '100';
+  position: absolute;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 6px;
+  font-weight: bold;
+  color: #4a5e43;
+  bottom: 1px;
+  right: 3px;
+}
+
+.falling-dollar-inner {
+  width: 88%;
+  height: 86%;
+  border: 1px dashed rgba(74, 94, 67, 0.4);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.falling-dollar-portrait {
+  width: 15px;
+  height: 19px;
+  border-radius: 50%;
+  background: rgba(74, 94, 67, 0.2);
+  border: 1px solid rgba(74, 94, 67, 0.35);
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  overflow: hidden;
+}
+
+.falling-dollar-portrait::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: rgba(74, 94, 67, 0.5);
+  border-radius: 50% 50% 0 0;
+  position: absolute;
+  bottom: 0;
+  left: 2px;
+}
+
+.falling-dollar-seal {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(74, 94, 67, 0.25);
+  border: 1px dashed rgba(74, 94, 67, 0.5);
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.falling-dollar-value {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 9px;
+  font-weight: bold;
+  color: #4a5e43;
+  margin-left: 16px; /* offset to center visually alongside portrait */
+  letter-spacing: -0.5px;
 }
 
 @keyframes fall {
   0% {
-    top: -50px;
-    transform: translateX(0) rotate(0deg);
+    top: -60px;
+    transform: translateX(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(var(--dollar-scale, 1));
     opacity: 0;
   }
   10% {
@@ -1279,7 +1366,7 @@ tbody tr:hover {
   }
   100% {
     top: 105vh;
-    transform: translateX(var(--sway-distance, 50px)) rotate(var(--rotate-degree, 360deg));
+    transform: translateX(var(--sway-distance, 50px)) rotateX(var(--rotate-x, 720deg)) rotateY(var(--rotate-y, 360deg)) rotateZ(var(--rotate-z, 180deg)) scale(var(--dollar-scale, 1));
     opacity: 0;
   }
 }

@@ -2693,7 +2693,7 @@ async function fetchActiveBotConfig() {
   }
 }
 
-// Spawns glowing green falling dollar bill particles in the background
+// Spawns U.S. paper 100$ bill particles in the background
 function initFallingDollars() {
   const container = document.getElementById("falling-dollars-container");
   if (!container) return;
@@ -2701,21 +2701,46 @@ function initFallingDollars() {
   function spawnDollar() {
     const dollar = document.createElement("div");
     dollar.className = "falling-dollar";
-    dollar.textContent = "$";
 
-    const size = Math.random() * 16 + 12; // 12px to 28px
+    const inner = document.createElement("div");
+    inner.className = "falling-dollar-inner";
+
+    const portrait = document.createElement("div");
+    portrait.className = "falling-dollar-portrait";
+    inner.appendChild(portrait);
+
+    const centerValue = document.createElement("div");
+    centerValue.className = "falling-dollar-value";
+    centerValue.textContent = "$100";
+    inner.appendChild(centerValue);
+
+    const seal = document.createElement("div");
+    seal.className = "falling-dollar-seal";
+    inner.appendChild(seal);
+
+    dollar.appendChild(inner);
+
     const startX = Math.random() * 100; // 0vw to 100vw
-    const duration = Math.random() * 7 + 5; // 5s to 12s
-    const opacity = Math.random() * 0.15 + 0.05; // 0.05 to 0.20
-    const sway = Math.random() * 100 - 50; // -50px to 50px
-    const rotate = Math.random() * 360; // 0deg to 360deg
+    const duration = Math.random() * 8 + 6; // 6s to 14s (slower fall looks more natural for paper bills)
+    const opacity = Math.random() * 0.18 + 0.07; // 0.07 to 0.25 opacity range
+    const sway = Math.random() * 140 - 70; // -70px to 70px sway
+    
+    // Random rotations for a rich 3D tumble
+    const rotateX = Math.random() * 720 + 360; // 360deg to 1080deg
+    const rotateY = Math.random() * 720 + 360; // 360deg to 1080deg
+    const rotateZ = Math.random() * 360 - 180; // -180deg to 180deg
+    
+    // Scale factor for depth perspective
+    const scale = Math.random() * 0.4 + 0.8; // 0.8 to 1.2 scale factor
 
     dollar.style.left = `${startX}vw`;
-    dollar.style.fontSize = `${size}px`;
     dollar.style.animationDuration = `${duration}s`;
     dollar.style.setProperty("--dollar-opacity", opacity);
     dollar.style.setProperty("--sway-distance", `${sway}px`);
-    dollar.style.setProperty("--rotate-degree", `${rotate}deg`);
+    dollar.style.setProperty("--rotate-x", `${rotateX}deg`);
+    dollar.style.setProperty("--rotate-y", `${rotateY}deg`);
+    dollar.style.setProperty("--rotate-z", `${rotateZ}deg`);
+    dollar.style.setProperty("--dollar-scale", scale);
 
     container.appendChild(dollar);
 
