@@ -1,8 +1,19 @@
 {
-  "minScore": 90,
+  "minScore": 85,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.050,
   "entryShiftThreshold": 0.0075,
   "replacementScoreDiff": 5,
-  "dryRun": false
+  "nansenBuilderAddress": "",
+  "nansenBuilderFeeRate": 80,
+  "dryRun": false,
+  "blacklist": [],
+  "enableSupportRebound": true,
+  "minSupportDropPct": 0.015,
+  "supportMinStrength": 50,
+  "enableResistanceRebound": true,
+  "minResistanceRisePct": 0.015,
+  "resistanceMinStrength": 50,
+  "entryBufferPct": 0.005,
+  "maxReboundDistancePct": 0.025
 }

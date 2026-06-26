@@ -9,7 +9,18 @@ let config = {
   minSlBuffer: 0.008,
   minTpBuffer: 0.010,
   entryShiftThreshold: 0.0075,
-  replacementScoreDiff: 5
+  replacementScoreDiff: 5,
+  nansenBuilderAddress: "",
+  nansenBuilderFeeRate: 80,
+  blacklist: [],
+  enableSupportRebound: true,
+  minSupportDropPct: 0.015,
+  supportMinStrength: 50,
+  enableResistanceRebound: true,
+  minResistanceRisePct: 0.015,
+  resistanceMinStrength: 50,
+  entryBufferPct: 0.005,
+  maxReboundDistancePct: 0.025
 };
 
 try {
@@ -36,11 +47,165 @@ const geckoIdMap = {
   "LINK": "chainlink",
   "XRP": "ripple",
   "INJ": "injective-protocol",
-  "WLD": "worldcoin-org",
+  "WLD": "worldcoin-wld",
   "ZEC": "zcash",
   "XLM": "stellar",
   "TRX": "tron"
 };
+
+const nansenContractMap = {
+  "BTC": { chain: "ethereum", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" },
+  "ETH": { chain: "ethereum", address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" },
+  "SOL": { chain: "solana", address: "So11111111111111111111111111111111111111112" },
+  "WLD": { chain: "ethereum", address: "0x163f8c2467924be0ae7b5347228cabf260318753" },
+  "LINK": { chain: "ethereum", address: "0x514910771af9ca656af840dff83e8264ecf986ca" },
+  "XRP": { chain: "ethereum", address: "0x1d2f0da169ce246c8562d41288c7c9803a6bc41c" },
+  "INJ": { chain: "ethereum", address: "0xe28b3b32b6c3ef5a950105ad7457a79794706e55" },
+  "WIF": { chain: "solana", address: "EKpQGSJtjMFqKZ9KQGWjh69zXGV3whwd2CHMwb5j74yi" },
+  "BONK": { chain: "solana", address: "DezXAZ8z7PnrnRJjz3wJaRix35C1ONNFwExao6GP8G1m" },
+  "POPCAT": { chain: "solana", address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr" },
+  "JUP": { chain: "solana", address: "JUPyiwrEEZJ9ToEPJVhuGAMFB6hTE14t4a4y8y7kGDE" },
+  "PYTH": { chain: "solana", address: "HZ128229z6D7TM8mIGZbmxSyd1ADy6fgGUuknKBMST4F" },
+  "RENDER": { chain: "solana", address: "rndrizKT3MK1iimdxZ6ecSgiEsP34G1mDeYbh35xB2d" },
+  "ENA": { chain: "ethereum", address: "0x57e114b691db790c352f8b262a3479b128522643" },
+  "PENDLE": { chain: "ethereum", address: "0x808507081b8f63fd5117a957205440027609934e" },
+  "LDO": { chain: "ethereum", address: "0x5a98fc80d23026f40767289d4d819673c69212bc" },
+  "UNI": { chain: "ethereum", address: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984" },
+  "AAVE": { chain: "ethereum", address: "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9" }
+};
+
+async function callNansenMcp(toolName, args) {
+  const token = process.env.NANSEN_API_KEY || 'nsn_b3223fcf67f7a26107844001b57b7822';
+  const url = `https://mcp.nansen.ai/ra/mcp`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+      'NANSEN-API-KEY': token
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: {
+        name: toolName,
+        arguments: args
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Nansen MCP Server error: ${response.statusText}`);
+  }
+
+  const text = await response.text();
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const dataStr = line.substring(6).trim();
+      return JSON.parse(dataStr);
+    }
+  }
+  throw new Error("Invalid Nansen SSE response format");
+}
+
+async function getNansenTokenAddress(symbol) {
+  if (nansenContractMap[symbol]) {
+    return nansenContractMap[symbol];
+  }
+  try {
+    const searchRes = await callNansenMcp('general_search', { query: symbol, max_results: 5 });
+    const content = searchRes?.result?.content?.[0]?.text || searchRes?.result?.structuredContent?.result || "";
+    const lines = content.split('\n');
+    for (const line of lines) {
+      if (line.includes('|') && !line.includes('Contract Address') && !line.includes('---')) {
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 6) {
+          const sym = parts[2];
+          const address = parts[3];
+          const chain = parts[4];
+          if (sym.toLowerCase() === symbol.toLowerCase() && address && address.toLowerCase() !== symbol.toLowerCase()) {
+            return { chain, address };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`Failed to resolve Nansen address for ${symbol}:`, e.message);
+  }
+  return null;
+}
+
+async function getSmartMoneyBonus(chain, tokenAddress) {
+  let bonus = 0;
+  let details = "";
+  let nansenSmartMoney = 0;
+  let nansenWhale = 0;
+  let nansenExchange = 0;
+  
+  try {
+    const res = await callNansenMcp('token_recent_flows_summary', {
+      request: { chain, tokenAddress }
+    });
+    const text = res?.result?.content?.[0]?.text || res?.result?.structuredContent?.result || "";
+    if (text) {
+      details = text;
+      // Parse Smart Trader flow
+      const smartTraderMatch = text.match(/Smart Trader wallets:\s*Net inflow of\s*\$([\d\.]+[kMB]?)/i);
+      const smartTraderOutflow = text.match(/Smart Trader wallets:\s*Net outflow of\s*\$([\d\.]+[kMB]?)/i);
+      
+      // Parse Exchange flow
+      const exchangeOutflow = text.match(/Exchange wallets:\s*Net outflow of\s*\$([\d\.]+[kMB]?)/i);
+      const exchangeInflow = text.match(/Exchange wallets:\s*Net inflow of\s*\$([\d\.]+[kMB]?)/i);
+      
+      // Parse Whale flow
+      const whaleInflow = text.match(/Whale wallets:\s*Net inflow of\s*\$([\d\.]+[kMB]?)/i);
+      const whaleOutflow = text.match(/Whale wallets:\s*Net outflow of\s*\$([\d\.]+[kMB]?)/i);
+
+      if (smartTraderMatch) {
+        bonus += 15;
+        nansenSmartMoney = 1;
+      } else if (smartTraderOutflow) {
+        bonus -= 10;
+        nansenSmartMoney = 2;
+      }
+      
+      if (whaleInflow) {
+        bonus += 10;
+        nansenWhale = 1;
+      } else if (whaleOutflow) {
+        nansenWhale = 2;
+      }
+      
+      if (exchangeOutflow) {
+        bonus += 10;
+        nansenExchange = 2;
+      } else if (exchangeInflow) {
+        bonus -= 10;
+        nansenExchange = 1;
+      }
+    }
+  } catch (e) {
+    console.error(`Failed to get Nansen flows for ${tokenAddress}:`, e.message);
+  }
+  return { bonus, details, nansenSmartMoney, nansenWhale, nansenExchange };
+}
+
+function generateEncodedCloid(details) {
+  const prefix = Buffer.from("bot_");
+  const data = Buffer.alloc(12);
+  data.writeUInt8(details.score || 0, 0);
+  data.writeUInt8(details.nansenSmartMoney || 0, 1);
+  data.writeUInt8(details.nansenWhale || 0, 2);
+  data.writeUInt8(details.nansenExchange || 0, 3);
+  data.writeUInt8(details.tnVwap || 0, 4);
+  data.writeUInt8(details.direction === "LONG" ? 1 : 2, 5);
+  crypto.randomBytes(6).copy(data, 6);
+  return "0x" + Buffer.concat([prefix, data]).toString("hex");
+}
+
 
 // Generic JSON-RPC tool caller helper for TrueNorth
 async function callTrueNorthMcp(toolName, args) {
@@ -125,14 +290,48 @@ function detectAutoDirection(coin, taData = null, sma24 = null) {
   else if (score < 0) dir = 'SHORT';
   else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
-  // Apply Trend Filter: Only align with the 24h SMA trend
+  // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
-    if (dir === 'LONG' && price < sma24) {
-      return 'SKIP'; // Filter out counter-trend longs
+    const maxDistancePct = process.env.SMA_MAX_DISTANCE_PCT 
+      ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) 
+      : 0.015; // 1.5% max pullback
+
+    if (dir === 'LONG') {
+      if (price < sma24) {
+        return 'SKIP'; // Filter out counter-trend longs
+      }
+      if (price > sma24 * (1 + maxDistancePct)) {
+        console.log(`[SMA Distance Filter] Skip LONG candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% above 24h SMA (${sma24.toFixed(4)})`);
+        return 'SKIP'; // Filter out overextended longs
+      }
+
+      // Check if TrueNorth cumulative VWAP is bearish
+      if (taData?.support_resistance?.vwap?.cumulative) {
+        const vwapData = taData.support_resistance.vwap.cumulative;
+        if (vwapData.state === 'price_below' || vwapData.slope === 'down') {
+          console.log(`[VWAP Trend Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP is Bearish (Price below VWAP or slope down)`);
+          return 'SKIP';
+        }
+      }
     }
-    if (dir === 'SHORT' && price > sma24) {
-      return 'SKIP'; // Filter out counter-trend shorts
+    if (dir === 'SHORT') {
+      if (price > sma24) {
+        return 'SKIP'; // Filter out counter-trend shorts
+      }
+      if (price < sma24 * (1 - maxDistancePct)) {
+        console.log(`[SMA Distance Filter] Skip SHORT candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% below 24h SMA (${sma24.toFixed(4)})`);
+        return 'SKIP'; // Filter out overextended shorts
+      }
+
+      // Check if TrueNorth cumulative VWAP is bullish
+      if (taData?.support_resistance?.vwap?.cumulative) {
+        const vwapData = taData.support_resistance.vwap.cumulative;
+        if (vwapData.state === 'price_above' || vwapData.slope === 'up') {
+          console.log(`[VWAP Trend Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP is Bullish (Price above VWAP or slope up)`);
+          return 'SKIP';
+        }
+      }
     }
   }
 
@@ -151,8 +350,6 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   let channels = [];
 
   let entry = price;
-  let sl    = dir === 'LONG' ? price * 0.97 : price * 1.03;
-  let tp    = dir === 'LONG' ? price * 1.06 : price * 0.94;
   let reason = 'fallback';
 
   if (taData?.support_resistance) {
@@ -169,16 +366,98 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     }
   }
 
+  // Calculate Entry Price: Check for Support/Resistance Rebound first, else fall back to VWAP
+  let strongSupport = null;
+  let strongResistance = null;
+  const buffer = config.entryBufferPct !== undefined ? config.entryBufferPct : 0.005;
+
+  if (dir === 'LONG' && config.enableSupportRebound !== false && channels.length > 0) {
+    const minStrength = config.supportMinStrength !== undefined ? config.supportMinStrength : 50;
+    const validSupports = channels.filter(c => c.hi <= price && c.lo < price && c.strength >= minStrength);
+    if (validSupports.length > 0) {
+      // Sort by proximity to current price (highest 'hi' level first)
+      validSupports.sort((a, b) => b.hi - a.hi);
+      const candSupport = validSupports[0];
+      const candEntry = Math.min(candSupport.hi * (1 + buffer), price);
+      const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
+      const dist = (price - candEntry) / price;
+      
+      if (dist <= maxDist) {
+        strongSupport = candSupport;
+        entry = candEntry;
+        reason = 'support_rebound_limit';
+      } else {
+        console.log(`[Support Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
+      }
+    }
+  } else if (dir === 'SHORT' && config.enableResistanceRebound !== false && channels.length > 0) {
+    const minStrength = config.resistanceMinStrength !== undefined ? config.resistanceMinStrength : 50;
+    const validResistances = channels.filter(c => c.lo >= price && c.hi > price && c.strength >= minStrength);
+    if (validResistances.length > 0) {
+      // Sort by proximity to current price (lowest 'lo' level first)
+      validResistances.sort((a, b) => a.lo - b.lo);
+      const candResistance = validResistances[0];
+      const candEntry = Math.max(candResistance.lo * (1 - buffer), price);
+      const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
+      const dist = (candEntry - price) / price;
+
+      if (dist <= maxDist) {
+        strongResistance = candResistance;
+        entry = candEntry;
+        reason = 'resistance_rebound_limit';
+      } else {
+        console.log(`[Resistance Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
+      }
+    }
+  }
+
+  if (reason !== 'support_rebound_limit' && reason !== 'resistance_rebound_limit') {
+    // Calculate VWAP-based Limit Entry Price using TrueNorth data
+    if (taData?.support_resistance?.vwap?.cumulative?.value) {
+      const tnVwap = taData.support_resistance.vwap.cumulative.value;
+      const maxPullbackPct = process.env.SMA_MAX_DISTANCE_PCT 
+        ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) 
+        : 0.015; // 1.5% max pullback bounds to guarantee fill probability
+        
+      if (dir === 'LONG') {
+        if (price > tnVwap) {
+          // If current price is above VWAP, buy at VWAP (bounded by max 1.5% pullback)
+          entry = Math.max(tnVwap, price * (1 - maxPullbackPct));
+          reason = 'tn_vwap_limit';
+        } else {
+          // If current price is already below VWAP, buy at current market price (cheaper)
+          entry = price;
+          reason = 'tn_vwap_below_market';
+        }
+      } else { // SHORT
+        if (price < tnVwap) {
+          // If current price is below VWAP, sell at VWAP (bounded by max 1.5% pullback)
+          entry = Math.min(tnVwap, price * (1 + maxPullbackPct));
+          reason = 'tn_vwap_limit';
+        } else {
+          // If current price is already above VWAP, sell at current market price (more expensive)
+          entry = price;
+          reason = 'tn_vwap_above_market';
+        }
+      }
+    } else {
+      // Fallback limit entry at 0.5% pullback from current price if VWAP is missing
+      entry = dir === 'LONG' ? price * 0.995 : price * 1.005;
+      reason = 'fallback_pullback_limit';
+    }
+  }
+
+  // Initial TP/SL are relative to calculated Limit Entry price
+  let sl    = dir === 'LONG' ? entry * 0.97 : entry * 1.03;
+  let tp    = dir === 'LONG' ? entry * 1.06 : entry * 0.94;
+
   // 1. Calculate standard levels first
   if (dir === 'LONG') {
-    const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
-    const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
+    if (strongSupport) {
+      sl = strongSupport.lo * 0.985;
+      reason = 'support_rebound_limit+sr_channel';
 
-    if (supports.length > 0) {
-      const nearSupport = supports[0];
-      sl = nearSupport.lo * 0.985;
-      reason = 'sr_channel';
-
+      const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
       if (resistances.length > 0) {
         const rr1target = entry + (entry - sl) * 1.5;
         tp = resistances[0].lo >= rr1target ? resistances[0].lo : rr1target;
@@ -191,21 +470,39 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
       }
     } else {
-      sl    = low * 0.985;
-      reason = 'fib_fallback';
+      const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
+      const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
 
-      const minTp = entry + (entry - sl) * 1.5;
-      tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
+      if (supports.length > 0) {
+        const nearSupport = supports[0];
+        sl = nearSupport.lo * 0.985;
+        reason = 'sr_channel';
+
+        if (resistances.length > 0) {
+          const rr1target = entry + (entry - sl) * 1.5;
+          tp = resistances[0].lo >= rr1target ? resistances[0].lo : rr1target;
+          if (resistances.length > 1) {
+            const rr2target = entry + (entry - sl) * 2.5;
+            tp = resistances[1].lo >= rr2target ? resistances[1].lo : rr2target;
+          }
+        } else {
+          const minTp = entry + (entry - sl) * 1.5;
+          tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
+        }
+      } else {
+        sl    = low * 0.985;
+        reason = 'fib_fallback';
+
+        const minTp = entry + (entry - sl) * 1.5;
+        tp    = vwap > minTp ? vwap : entry + (entry - sl) * 2;
+      }
     }
   } else {
-    const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
-    const supports    = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
+    if (strongResistance) {
+      sl = strongResistance.hi * 1.015;
+      reason = 'resistance_rebound_limit+sr_channel';
 
-    if (resistances.length > 0) {
-      const nearRes = resistances[0];
-      sl = nearRes.hi * 1.015;
-      reason = 'sr_channel';
-
+      const supports = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
       if (supports.length > 0) {
         const rr1target = entry - (sl - entry) * 1.5;
         tp = supports[0].hi <= rr1target ? supports[0].hi : rr1target;
@@ -218,11 +515,32 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
       }
     } else {
-      sl    = high * 1.015;
-      reason = 'fib_fallback';
+      const resistances = channels.filter(c => c.lo >= price).sort((a, b) => a.lo - b.lo);
+      const supports    = channels.filter(c => c.hi <= price).sort((a, b) => b.hi - a.hi);
 
-      const minTp = entry - (sl - entry) * 1.5;
-      tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
+      if (resistances.length > 0) {
+        const nearRes = resistances[0];
+        sl = nearRes.hi * 1.015;
+        reason = 'sr_channel';
+
+        if (supports.length > 0) {
+          const rr1target = entry - (sl - entry) * 1.5;
+          tp = supports[0].hi <= rr1target ? supports[0].hi : rr1target;
+          if (supports.length > 1) {
+            const rr2target = entry - (sl - entry) * 2.5;
+            tp = supports[1].hi <= rr2target ? supports[1].hi : rr2target;
+          }
+        } else {
+          const minTp = entry - (sl - entry) * 1.5;
+          tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
+        }
+      } else {
+        sl    = high * 1.015;
+        reason = 'fib_fallback';
+
+        const minTp = entry - (sl - entry) * 1.5;
+        tp    = vwap < minTp ? vwap : entry - (sl - entry) * 2;
+      }
     }
   }
 
@@ -392,26 +710,32 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   if (dir === 'LONG') {
-    // Stop Loss must be at least config.minSlBuffer below entry
+    // Take Profit is exactly +3% (+15% ROE at 5x)
+    tp = entry * 1.03;
+
+    // Stop Loss must be at least config.minSlBuffer below entry (e.g. 1%)
     const maxSlAllowed = entry * (1 - config.minSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Take Profit must be at least config.minTpBuffer above entry
-    const minTpAllowed = entry * (1 + config.minTpBuffer);
-    if (tp < minTpAllowed) {
-      tp = minTpAllowed;
+    // Stop Loss is capped at a maximum of -4% (-20% ROE at 5x)
+    const minSlAllowed = entry * 0.96;
+    if (sl < minSlAllowed) {
+      sl = minSlAllowed;
     }
   } else {
-    // Stop Loss must be at least config.minSlBuffer above entry
+    // Take Profit is exactly -3% (+15% ROE at 5x)
+    tp = entry * 0.97;
+
+    // Stop Loss must be at least config.minSlBuffer above entry (e.g. 1%)
     const minSlAllowed = entry * (1 + config.minSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Take Profit must be at least config.minTpBuffer below entry
-    const maxTpAllowed = entry * (1 - config.minTpBuffer);
-    if (tp > maxTpAllowed) {
-      tp = maxTpAllowed;
+    // Stop Loss is capped at a maximum of +4% (-20% ROE at 5x)
+    const maxSlAllowed = entry * 1.04;
+    if (sl > maxSlAllowed) {
+      sl = maxSlAllowed;
     }
   }
 
@@ -476,8 +800,37 @@ function getTriggerLimitPrice(isBuyTrigger, triggerPx) {
   return isBuyTrigger ? triggerPx * 1.10 : triggerPx * 0.90;
 }
 
+function attachBuilderFee(orders) {
+  if (config.nansenBuilderAddress && config.nansenBuilderAddress !== "") {
+    const builderFeeObj = {
+      b: config.nansenBuilderAddress,
+      f: config.nansenBuilderFeeRate || 80
+    };
+    orders.forEach(o => {
+      o.builder = builderFeeObj;
+    });
+    console.log(`[Builder Fee] Attached builder address ${config.nansenBuilderAddress} with fee ${builderFeeObj.f} to ${orders.length} orders.`);
+  }
+  return orders;
+}
+
+async function safeCancelOrders(exchange, cancels) {
+  if (!cancels || cancels.length === 0) return;
+  try {
+    const res = await exchange.cancel({ cancels });
+    return res;
+  } catch (e) {
+    console.warn(`[Safe Cancel] Cancel request returned an error (might be already cancelled/filled):`, e.message);
+    if (e.message.includes("already canceled") || e.message.includes("never placed") || e.message.includes("filled")) {
+      return null;
+    }
+    throw e;
+  }
+}
+
 export default async function handler(req, res) {
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
+  const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
 
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
@@ -504,11 +857,12 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({ transport, wallet: account });
 
     // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
-    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState] = await Promise.all([
+    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
       info.metaAndAssetCtxs(),
       info.clearinghouseState({ user: walletAddress }),
       info.frontendOpenOrders({ user: walletAddress }),
-      info.spotClearinghouseState({ user: walletAddress }).catch(() => null)
+      info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
+      info.userFills({ user: walletAddress }).catch(() => [])
     ]);
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
     let openOrders = initialOpenOrders;
@@ -645,6 +999,7 @@ export default async function handler(req, res) {
     // Find the highest score among all tradeable candidates (no positions, no open orders)
     const potentialCandidates = scoredCoins.filter(c => 
       c.score >= minScore && 
+      !(config.blacklist || []).includes(c.symbol) && 
       !openOrders.some(o => o.coin === c.symbol) && 
       !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0)
     );
@@ -662,6 +1017,9 @@ export default async function handler(req, res) {
       if (currentScore < minScore) {
         shouldCancel = true;
         cancelReason = `Current Score ${currentScore} is below Min Score ${minScore}`;
+      } else if ((config.blacklist || []).includes(coinSymbol)) {
+        shouldCancel = true;
+        cancelReason = `Coin ${coinSymbol} has been blacklisted`;
       } else if (bestCandScore - currentScore >= replacementScoreDiff) {
         shouldCancel = true;
         cancelReason = `A better candidate exists: ${bestCand.symbol} (Score: ${bestCandScore}) has a score higher than ${coinSymbol} (Score: ${currentScore}) by >= ${replacementScoreDiff} points`;
@@ -701,6 +1059,16 @@ export default async function handler(req, res) {
 
     // 5b. Active Position Trailing (Breakeven & Profit Trailing)
     let needsOrdersRefresh = false;
+    const activeAccountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
+    let withdrawableUsdForActive = parseFloat(userState.withdrawable || "0");
+    if (withdrawableUsdForActive === 0 && spotState && spotState.balances) {
+      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcBal) {
+        withdrawableUsdForActive = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+      }
+    }
+    const activeAccountSize = activeAccountSizeEnv ? parseFloat(activeAccountSizeEnv) : withdrawableUsdForActive;
+
     for (const pos of userState.assetPositions) {
       const size = parseFloat(pos.position.szi || "0");
       if (size === 0) continue;
@@ -720,11 +1088,11 @@ export default async function handler(req, res) {
       // Find active trigger orders for this coin
       const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
       
-      // Stop Loss is a trigger order whose price is on the loss side of the entry
-      let slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < entryPx : parseFloat(o.triggerPx) > entryPx));
+      // Stop Loss is a trigger order whose price is on the loss side of the currentPrice
+      let slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < currentPrice : parseFloat(o.triggerPx) > currentPrice));
       
-      // Take Profit is a trigger order whose price is on the profit side of the entry
-      const tpOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) > entryPx : parseFloat(o.triggerPx) < entryPx));
+      // Take Profit is a trigger order whose price is on the profit side of the currentPrice
+      const tpOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) > currentPrice : parseFloat(o.triggerPx) < currentPrice));
 
       // Fetch TrueNorth technical analysis for divergence check
       let taDataActive = null;
@@ -740,60 +1108,222 @@ export default async function handler(req, res) {
         }
       }
 
-      // Divergence-based SL tightening
-      if (taDataActive?.support_resistance?.rsi_divergence) {
-        const divInfo = taDataActive.support_resistance.rsi_divergence;
-        const divType = divInfo.latest_signal?.type || "";
-        const isCounterDivergence = isLong 
-          ? (divType.includes("bear_hidden") || divType.includes("bear_classic"))
-          : (divType.includes("bull_hidden") || divType.includes("bull_classic"));
+      // 1. Calculate recovery levels in case TP/SL are missing
+      const mockCoinForLevels = { ...currentCoin, price: entryPx };
+      const recoveryLevels = computeStrategyLevels(mockCoinForLevels, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp);
 
-        if (isCounterDivergence && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
-          console.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry price (breakeven): ${entryPx}`);
-          try {
-            const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
-            const entryPxStr = formatPrice(entryPx);
-            const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
+      // 2. Self-healing recovery: if TP or SL order is missing, recreate them!
+      if (!tpOrder || !slOrder) {
+        console.warn(`[Self-Healing] Missing TP or SL for active position ${coin}! (TP: ${!!tpOrder}, SL: ${!!slOrder})`);
+        if (!isDryRun) {
+          const ordersToPlace = [];
+          const posSizeAbs = Math.abs(size);
+          const posSizeStr = formatSize(posSizeAbs, currentCoin.assetInfo.szDecimals);
 
-            if (isDryRun) {
-              console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
-              console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
-            } else {
-              // Cancel old SL
-              await exchange.cancel({
-                cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
-              });
-              // Place new SL at entry price
+          if (!tpOrder) {
+            const tpPxStr = formatPrice(recoveryLevels.tp);
+            const tpWorstPxStr = formatPrice(getTriggerLimitPrice(!isLong, recoveryLevels.tp));
+            ordersToPlace.push({
+              a: currentCoin.assetIndex,
+              b: !isLong,
+              p: tpWorstPxStr,
+              s: posSizeStr,
+              r: true,
+              t: { trigger: { triggerPx: tpPxStr, isMarket: true, tpsl: "tp" } },
+              c: generateBotCloid()
+            });
+            console.log(`[Self-Healing] Queueing TP restore for ${coin} at ${tpPxStr}`);
+          }
+
+          if (!slOrder) {
+            const slPxStr = formatPrice(recoveryLevels.sl);
+            const slWorstPxStr = formatPrice(getTriggerLimitPrice(!isLong, recoveryLevels.sl));
+            ordersToPlace.push({
+              a: currentCoin.assetIndex,
+              b: !isLong,
+              p: slWorstPxStr,
+              s: posSizeStr,
+              r: true,
+              t: { trigger: { triggerPx: slPxStr, isMarket: true, tpsl: "sl" } },
+              c: generateBotCloid()
+            });
+            console.log(`[Self-Healing] Queueing SL restore for ${coin} at ${slPxStr}`);
+          }
+
+          if (ordersToPlace.length > 0) {
+            try {
               const orderRes = await exchange.order({
-                orders: [{
+                orders: attachBuilderFee(ordersToPlace)
+              });
+              console.log(`[Self-Healing] Successfully restored missing TP/SL orders for ${coin}:`, JSON.stringify(orderRes));
+              needsOrdersRefresh = true;
+            } catch (e) {
+              console.error(`[Self-Healing] Failed to restore missing TP/SL for ${coin}:`, e.message);
+            }
+          }
+        } else {
+          console.log(`[DRY RUN] Bypassed Self-Healing TP/SL restoration for ${coin}. TP target: ${recoveryLevels.tp}, SL target: ${recoveryLevels.sl}`);
+        }
+        // Skip further trailing logic in this cycle to let the newly placed orders settle
+        continue;
+      }
+
+      // 3. Hierarchical active trailing logic
+      const tpPx = parseFloat(tpOrder.triggerPx);
+      const isNearTp = isLong ? currentPrice >= tpPx * 0.992 : currentPrice <= tpPx * 1.008;
+      
+      const slIsWorseThanEntry = slOrder && (isLong ? parseFloat(slOrder.triggerPx) < entryPx : parseFloat(slOrder.triggerPx) > entryPx);
+
+      // Check A: Profit Trailing (highest priority)
+      if (isNearTp) {
+        const newTpPx = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // trail TP by another 2%
+        const newSlPx = isLong ? tpPx * 0.990 : tpPx * 1.010;
+
+        console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)} and locking SL at ${newSlPx.toFixed(4)}.`);
+        try {
+          // Pyramiding check and calculation
+          const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
+          const finalLeverage = Math.min(5, maxLeverage);
+          let targetSizeUsd = (activeAccountSize * 0.90) * finalLeverage;
+          if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
+          const targetSizeTokens = targetSizeUsd / entryPx;
+          const targetSize = parseFloat(formatSize(targetSizeTokens, currentCoin.assetInfo.szDecimals));
+          
+          const currentSizeAbs = Math.abs(size);
+          const isAlreadyPyramided = currentSizeAbs > targetSize * 1.5;
+
+          let newTotalSize = currentSizeAbs;
+
+          if (!isAlreadyPyramided) {
+            console.log(`[Profit Trailing] Executing Pyramided Market Order for ${coin}: Size=${targetSize}...`);
+            if (isDryRun) {
+              console.log(`[DRY RUN] Bypassed placing Pyramided Market Order for ${coin}: Size=${targetSize}`);
+              newTotalSize = currentSizeAbs + targetSize;
+            } else {
+              try {
+                const pyramidWorstPxStr = formatPrice(isLong ? currentPrice * 1.02 : currentPrice * 0.98);
+                const marketOrderRes = await exchange.order({
+                  orders: attachBuilderFee([{
+                    a: currentCoin.assetIndex,
+                    b: isLong,
+                    p: pyramidWorstPxStr,
+                    s: formatSize(targetSize, currentCoin.assetInfo.szDecimals),
+                    r: false
+                  }])
+                });
+                console.log(`[Profit Trailing] Pyramided Market Order filled successfully:`, JSON.stringify(marketOrderRes));
+                newTotalSize = currentSizeAbs + targetSize;
+              } catch (e) {
+                console.error(`[Profit Trailing] Pyramided Market Order failed (likely insufficient margin):`, e.message);
+                console.log(`[Profit Trailing] Falling back to standard trailing without pyramiding.`);
+              }
+            }
+          } else {
+            console.log(`[Profit Trailing] Position ${coin} is already pyramided. Skipping pyramiding.`);
+          }
+
+          const newTotalSzStr = formatSize(newTotalSize, currentCoin.assetInfo.szDecimals);
+          const newTpPxStr = formatPrice(newTpPx);
+          const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newTpPx));
+
+          const newSlPxStr = formatPrice(newSlPx);
+          const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
+
+          if (isDryRun) {
+            console.log(`[DRY RUN] Bypassed trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`);
+          } else {
+            // Cancel old TP and SL (using safe helper to avoid crashes if already cancelled)
+            const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
+            if (slOrder) cancelsToMake.push({ a: currentCoin.assetIndex, o: slOrder.oid });
+            
+            await safeCancelOrders(exchange, cancelsToMake);
+
+            // Place new TP and SL
+            const orderRes = await exchange.order({
+              orders: attachBuilderFee([
+                {
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: tpWorstPx,
+                  s: newTotalSzStr,
+                  r: true,
+                  t: { trigger: { triggerPx: newTpPxStr, isMarket: true, tpsl: "tp" } },
+                  c: generateBotCloid()
+                },
+                {
                   a: currentCoin.assetIndex,
                   b: !isLong,
                   p: slWorstPx,
+                  s: newTotalSzStr,
+                  r: true,
+                  t: { trigger: { triggerPx: newSlPxStr, isMarket: true, tpsl: "sl" } },
+                  c: generateBotCloid()
+                }
+              ])
+            });
+            console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin} with Size=${newTotalSzStr}:`, JSON.stringify(orderRes));
+          }
+          needsOrdersRefresh = true;
+        } catch (e) {
+          console.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}:`, e.message);
+        }
+      }
+      
+      // Check B: Smart TP Adjustment (nearest resistance/support)
+      else if (taDataActive?.support_resistance?.['support and resistance channel']?.channels) {
+        const srChannels = [...taDataActive.support_resistance['support and resistance channel'].channels]
+          .sort((a, b) => b.strength - a.strength);
+
+        const minTpAllowed = isLong
+          ? entryPx * (1 + config.minTpBuffer)
+          : entryPx * (1 - config.minTpBuffer);
+
+        let smartTpTarget = null;
+        if (isLong) {
+          const resistances = srChannels
+            .filter(c => c.lo >= minTpAllowed && c.lo < tpPx)
+            .sort((a, b) => b.lo - a.lo); // nearest valid resistance
+          if (resistances.length > 0) smartTpTarget = resistances[0].lo;
+        } else {
+          const supports = srChannels
+            .filter(c => c.hi <= minTpAllowed && c.hi > tpPx)
+            .sort((a, b) => b.hi - a.hi); // nearest valid support
+          if (supports.length > 0) smartTpTarget = supports[0].hi;
+        }
+
+        if (smartTpTarget) {
+          console.log(`[Smart TP] ${coin}: Adjusting TP from ${tpPx} to nearest key level at ${smartTpTarget.toFixed(4)}.`);
+          try {
+            const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+            const newTpPxStr = formatPrice(smartTpTarget);
+            const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, smartTpTarget));
+
+            if (isDryRun) {
+              console.log(`[DRY RUN] Bypassed Smart TP adjustment for ${coin}: old TP=${tpPx}, new TP=${smartTpTarget}`);
+            } else {
+              await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: tpOrder.oid }]);
+              const orderRes = await exchange.order({
+                orders: attachBuilderFee([{
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: tpWorstPx,
                   s: entrySz,
                   r: true,
-                  t: {
-                    trigger: {
-                      triggerPx: entryPxStr,
-                      isMarket: true,
-                      tpsl: "sl"
-                    }
-                  },
+                  t: { trigger: { triggerPx: newTpPxStr, isMarket: true, tpsl: "tp" } },
                   c: generateBotCloid()
-                }]
+                }])
               });
-              console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
+              console.log(`[Smart TP] Successfully adjusted TP for ${coin}:`, JSON.stringify(orderRes));
             }
             needsOrdersRefresh = true;
-            // Update local slOrder reference to reflect the new triggerPx
-            slOrder = { ...slOrder, triggerPx: entryPxStr };
           } catch (e) {
-            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
+            console.error(`[Smart TP] Failed to adjust TP for ${coin}:`, e.message);
           }
         }
       }
 
-      // A. Breakeven Stop Loss: if in profit >= 1.5%, move SL to entry
-      if (returnPct >= 0.015 && slOrder && parseFloat(slOrder.triggerPx) !== entryPx) {
+      // Check C: Breakeven Stop Loss (in profit >= 1.5%)
+      if (returnPct >= 0.015 && slOrder && slIsWorseThanEntry && !isNearTp) {
         console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}%. Moving SL to entry: ${entryPx}`);
         try {
           const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
@@ -801,32 +1331,19 @@ export default async function handler(req, res) {
           const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
           if (isDryRun) {
-            console.log(`[DRY RUN] Bypassed SL cancellation for ${coin}:`, slOrder.oid);
-            console.log(`[DRY RUN] Bypassed placing new SL at entry for ${coin}: Size=${entrySz}, triggerPx=${entryPxStr}`);
+            console.log(`[DRY RUN] Bypassed SL cancellation and recreation at entry for ${coin}`);
           } else {
-            // Cancel old SL
-            const cancelRes = await exchange.cancel({
-              cancels: [{ a: currentCoin.assetIndex, o: slOrder.oid }]
-            });
-            console.log(`[Breakeven] Cancelled old SL order ${slOrder.oid}:`, JSON.stringify(cancelRes));
-
-            // Place new SL at entry price
+            await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: slOrder.oid }]);
             const orderRes = await exchange.order({
-              orders: [{
+              orders: attachBuilderFee([{
                 a: currentCoin.assetIndex,
                 b: !isLong,
                 p: slWorstPx,
                 s: entrySz,
                 r: true,
-                t: {
-                  trigger: {
-                    triggerPx: entryPxStr,
-                    isMarket: true,
-                    tpsl: "sl"
-                  }
-                },
+                t: { trigger: { triggerPx: entryPxStr, isMarket: true, tpsl: "sl" } },
                 c: generateBotCloid()
-              }]
+              }])
             });
             console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
           }
@@ -836,80 +1353,41 @@ export default async function handler(req, res) {
         }
       }
 
-      // B. Profit Trailing: if price gets within 0.8% of TP and score is high (>= 90), trail TP higher
-      if (tpOrder && currentCoin.score >= 90) {
-        const tpPx = parseFloat(tpOrder.triggerPx);
-        const isNearTp = isLong ? currentPrice >= tpPx * 0.992 : currentPrice <= tpPx * 1.008;
+      // Check D: Counter-Divergence SL Tightening
+      else if (taDataActive?.support_resistance?.rsi_divergence && slOrder && slIsWorseThanEntry) {
+        const divInfo = taDataActive.support_resistance.rsi_divergence;
+        const divType = divInfo.latest_signal?.type || "";
+        const isCounterDivergence = isLong 
+          ? (divType.includes("bear_hidden") || divType.includes("bear_classic"))
+          : (divType.includes("bull_hidden") || divType.includes("bull_classic"));
 
-        if (isNearTp) {
-          const newTpPx = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // trail by another 2%
-          const newSlPx = tpPx; // Lock in original TP profit!
-
-          console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Score is ${currentCoin.score}. Trailing TP to ${newTpPx.toFixed(4)} and raising SL to ${newSlPx.toFixed(4)}`);
+        if (isCounterDivergence) {
+          console.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry: ${entryPx}`);
           try {
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
-            
-            const newTpPxStr = formatPrice(newTpPx);
-            const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newTpPx));
-
-            const newSlPxStr = formatPrice(newSlPx);
-            const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
+            const entryPxStr = formatPrice(entryPx);
+            const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
             if (isDryRun) {
-              console.log(`[DRY RUN] Bypassed TP/SL cancellation for ${coin}`);
-              console.log(`[DRY RUN] Bypassed placing new trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`);
+              console.log(`[DRY RUN] Bypassed divergence SL tightening for ${coin}`);
             } else {
-              // Cancel old TP and SL
-              const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
-              if (slOrder) {
-                cancelsToMake.push({ a: currentCoin.assetIndex, o: slOrder.oid });
-              }
-              await exchange.cancel({ cancels: cancelsToMake });
-              console.log(`[Profit Trailing] Cancelled old TP/SL orders for ${coin}`);
-
-              // Place new TP and SL
+              await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: slOrder.oid }]);
               const orderRes = await exchange.order({
-                orders: [
-                  // New TP
-                  {
-                    a: currentCoin.assetIndex,
-                    b: !isLong,
-                    p: tpWorstPx,
-                    s: entrySz,
-                    r: true,
-                    t: {
-                      trigger: {
-                        triggerPx: newTpPxStr,
-                        isMarket: true,
-                        tpsl: "tp"
-                      }
-                    },
-                    c: generateBotCloid()
-                  },
-                  // New SL (Locking in original TP price)
-                  {
-                    a: currentCoin.assetIndex,
-                    b: !isLong,
-                    p: slWorstPx,
-                    s: entrySz,
-                    r: true,
-                    t: {
-                      trigger: {
-                        triggerPx: newSlPxStr,
-                        isMarket: true,
-                        tpsl: "sl"
-                      }
-                    },
-                    c: generateBotCloid()
-                  }
-                ],
-                grouping: "normalTpsl"
+                orders: attachBuilderFee([{
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: slWorstPx,
+                  s: entrySz,
+                  r: true,
+                  t: { trigger: { triggerPx: entryPxStr, isMarket: true, tpsl: "sl" } },
+                  c: generateBotCloid()
+                }])
               });
-              console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin}:`, JSON.stringify(orderRes));
+              console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
             }
             needsOrdersRefresh = true;
           } catch (e) {
-            console.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}:`, e.message);
+            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
           }
         }
       }
@@ -927,7 +1405,7 @@ export default async function handler(req, res) {
 
 
     // Pick top candidates (score >= minScore) across all Hyperliquid coins
-    const candidates = scoredCoins.filter(c => c.score >= minScore);
+    const candidates = scoredCoins.filter(c => c.score >= minScore && !(config.blacklist || []).includes(c.symbol));
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
@@ -947,6 +1425,64 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "success", message: "Candidates found but all already have open positions or orders." });
     }
 
+    // Fetch BTC technical analysis and Nansen flows in parallel
+    let btcTrend = 'UNKNOWN';
+    const topN = Math.min(tradeableCandidates.length, 3);
+    console.log(`[Nansen & BTC Check] Fetching global BTC trend and Nansen flows in parallel...`);
+    
+    await Promise.all([
+      // 1. Fetch BTC trend
+      (async () => {
+        try {
+          console.log("[BTC Trend Filter] Querying BTC technical analysis from TrueNorth...");
+          const btcTaRes = await callTrueNorthMcp('technical_analysis', { token_address: 'bitcoin', timeframe: '1h' });
+          if (btcTaRes?.result?.content?.[0]?.text) {
+            const btcTa = JSON.parse(btcTaRes.result.content[0].text);
+            const vwap = btcTa?.support_resistance?.vwap?.cumulative;
+            if (vwap) {
+              if (vwap.state === 'price_above' && vwap.slope === 'up') {
+                btcTrend = 'BULLISH';
+              } else if (vwap.state === 'price_below' && vwap.slope === 'down') {
+                btcTrend = 'BEARISH';
+              } else {
+                btcTrend = 'NEUTRAL';
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[BTC Trend Filter] Failed to fetch or parse BTC TA from TrueNorth:", e.message);
+        }
+        console.log(`[BTC Trend Filter] Global BTC Trend determined: ${btcTrend}`);
+      })(),
+      // 2. Fetch Nansen flows
+      (async () => {
+        console.log(`[Nansen Integration] Querying Nansen Smart Money flows for top ${topN} candidates...`);
+        await Promise.all(tradeableCandidates.slice(0, topN).map(async (cand) => {
+          const nansenInfo = await getNansenTokenAddress(cand.symbol);
+          if (nansenInfo) {
+            console.log(`[Nansen Integration] Resolved address for ${cand.symbol}: ${nansenInfo.address} (${nansenInfo.chain})`);
+            const { bonus, details, nansenSmartMoney, nansenWhale, nansenExchange } = await getSmartMoneyBonus(nansenInfo.chain, nansenInfo.address);
+            cand.nansenSmartMoney = nansenSmartMoney;
+            cand.nansenWhale = nansenWhale;
+            cand.nansenExchange = nansenExchange;
+            // Bypassing Nansen scoring adjustments (only tracking indicators for informational justification)
+            console.log(`[Nansen Integration] Candidate ${cand.symbol} flow tracked (Score adjustment bypassed). Flow details: ${details.replace(/\n/g, ' ')}`);
+          } else {
+            console.log(`[Nansen Integration] Could not resolve Nansen address/chain for ${cand.symbol}`);
+            cand.nansenSmartMoney = 0;
+            cand.nansenWhale = 0;
+            cand.nansenExchange = 0;
+          }
+        }));
+      })()
+    ]);
+
+    // Re-sort tradeableCandidates since scores might have changed after Nansen check
+    tradeableCandidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.volume - a.volume;
+    });
+
     // Process tradeable candidates through the Crowded Trade Filter
     let target = null;
     let taData = null;
@@ -957,8 +1493,32 @@ export default async function handler(req, res) {
       ? parseInt(process.env.HYPERLIQUID_CROWDED_PERCENTILE) 
       : 90;
 
+    // Cooldown map calculation
+    const lastFillTimeMap = {};
+    if (Array.isArray(userFills)) {
+      userFills.forEach(f => {
+        if (!lastFillTimeMap[f.coin] || f.time > lastFillTimeMap[f.coin]) {
+          lastFillTimeMap[f.coin] = f.time;
+        }
+      });
+    }
+    const cooldownMs = 2 * 60 * 60 * 1000; // 2 hour cooldown
+
     for (const cand of tradeableCandidates) {
+      const lastFillTime = lastFillTimeMap[cand.symbol];
+      if (lastFillTime) {
+        const timeSinceLastTrade = Date.now() - lastFillTime;
+        if (timeSinceLastTrade < cooldownMs) {
+          console.log(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: 120 mins)`);
+          continue;
+        }
+      }
+
       const geckoId = geckoIdMap[cand.symbol];
+      let parsedTa = null;
+      let parsedDeriv = null;
+      let parsedOpt = null;
+
       if (geckoId) {
         try {
           console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`);
@@ -968,12 +1528,22 @@ export default async function handler(req, res) {
             callTrueNorthMcp('options_report', { token_address: geckoId })
           ]);
           
-          let parsedTa = null;
-          let parsedDeriv = null;
-          let parsedOpt = null;
-
           if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
-            try { parsedTa = JSON.parse(results[0].value.result.content[0].text); } catch (e) { console.error("Failed to parse taData:", e.message); }
+            try { 
+              parsedTa = JSON.parse(results[0].value.result.content[0].text); 
+              let tnVwapVal = 0;
+              if (parsedTa?.support_resistance?.vwap?.cumulative) {
+                const vwapData = parsedTa.support_resistance.vwap.cumulative;
+                if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
+                  tnVwapVal = 1;
+                } else if (vwapData.state === 'price_below' && vwapData.slope === 'down') {
+                  tnVwapVal = 2;
+                }
+              }
+              cand.tnVwap = tnVwapVal;
+            } catch (e) { 
+              console.error("Failed to parse taData:", e.message); 
+            }
           }
           if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
             try { parsedDeriv = JSON.parse(results[1].value.result.content[0].text); } catch (e) { console.error("Failed to parse derivData:", e.message); }
@@ -981,73 +1551,114 @@ export default async function handler(req, res) {
           if (results[2].status === 'fulfilled') {
             parsedOpt = results[2].value;
           }
-
-          // Calculate 24h SMA for trend filter
-          let sma24 = cand.price;
-          try {
-            const endTime = Date.now();
-            const startTime = endTime - 30 * 60 * 60 * 1000;
-            const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
-            if (candles && candles.length >= 25) {
-              const last25 = candles.slice(-25);
-              const sumClose = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
-              sma24 = sumClose / 25;
-            }
-          } catch (e) {
-            console.error(`Failed to calculate 24h SMA for candidate ${cand.symbol}:`, e.message);
-          }
-
-          // Evaluate direction to contextualize funding checks
-          const direction = detectAutoDirection(cand, parsedTa, sma24);
-          if (direction === 'SKIP') {
-            console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by 24h SMA Trend Filter (Price: ${cand.price}, SMA: ${sma24})`);
-            continue;
-          }
-
-          // Crowded Trade Filter
-          if (parsedDeriv?.derivative_data?.[cand.symbol]) {
-            const deriv = parsedDeriv.derivative_data[cand.symbol];
-            const fundingInfo = deriv["1h Aggregated OI weighted funding rate"];
-            if (fundingInfo) {
-              const percentile = fundingInfo.current_funding_percentile_7d || 50;
-              const fundingRate = fundingInfo.current_funding_rate_in_percentage || 0;
-              
-              let isCrowded = false;
-              let crowdedReason = "";
-
-              if (direction === 'LONG') {
-                if (fundingRate > 0 && percentile >= crowdedPercentileLimit) {
-                  isCrowded = true;
-                  crowdedReason = `Long funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
-                }
-              } else {
-                if (fundingRate < 0 && percentile >= crowdedPercentileLimit) {
-                  isCrowded = true;
-                  crowdedReason = `Short funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
-                }
-              }
-
-              if (isCrowded) {
-                console.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Crowded Trade! Reason: ${crowdedReason}`);
-                continue;
-              }
-            }
-          }
-
-          // Valid candidate found
-          target = cand;
-          taData = parsedTa;
-          derivData = parsedDeriv;
-          optionsData = parsedOpt;
-          break;
         } catch (e) {
           console.error(`TrueNorth MCP query failed for candidate ${cand.symbol}:`, e.message);
         }
       } else {
-        // Fallback candidate if no TrueNorth mappings exist
-        target = cand;
-        break;
+        console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`);
       }
+
+      // Calculate 24h SMA for trend filter
+      let sma24 = cand.price;
+      try {
+        const endTime = Date.now();
+        const startTime = endTime - 30 * 60 * 60 * 1000;
+        const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
+        if (candles && candles.length >= 25) {
+          const last25 = candles.slice(-25);
+          const sumClose = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
+          sma24 = sumClose / 25;
+        }
+      } catch (e) {
+        console.error(`Failed to calculate 24h SMA for candidate ${cand.symbol}:`, e.message);
+      }
+
+      // Evaluate raw direction (without SMA/VWAP trend filters)
+      const rawDirection = detectAutoDirection(cand, parsedTa, null);
+
+      // Pre-calculate candidate levels using raw direction
+      const useSmartSlTpForCand = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+      const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand);
+      
+      let bypassTrendFilter = false;
+      if (rawDirection === 'LONG' && levels.reason.includes('support_rebound')) {
+        const minDrop = config.minSupportDropPct !== undefined ? config.minSupportDropPct : 0.015;
+        if (levels.entry <= cand.price * (1 - minDrop)) {
+          bypassTrendFilter = true;
+          console.log(`[Support Rebound Bypass] Candidate ${cand.symbol} qualifies for Support Rebound limit buy (Entry: ${levels.entry} is >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}). Bypassing trend filters.`);
+        } else {
+          console.log(`[Support Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}`);
+        }
+      } else if (rawDirection === 'SHORT' && levels.reason.includes('resistance_rebound')) {
+        const minRise = config.minResistanceRisePct !== undefined ? config.minResistanceRisePct : 0.015;
+        if (levels.entry >= cand.price * (1 + minRise)) {
+          bypassTrendFilter = true;
+          console.log(`[Resistance Rebound Bypass] Candidate ${cand.symbol} qualifies for Resistance Rebound limit sell (Entry: ${levels.entry} is >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}). Bypassing trend filters.`);
+        } else {
+          console.log(`[Resistance Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}`);
+        }
+      }
+
+      // Evaluate direction with trend filters applied (if not bypassed)
+      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24);
+      if (direction === 'SKIP') {
+        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by 24h SMA/VWAP Trend Filter (Price: ${cand.price}, SMA: ${sma24})`);
+        continue;
+      }
+
+      // BTC Trend Filter Check
+      if (!bypassTrendFilter) {
+        if (btcTrend === 'BULLISH' && direction === 'SHORT') {
+          console.log(`[BTC Trend Filter] Skip SHORT candidate ${cand.symbol}: BTC is Bullish (Current BTC Trend: ${btcTrend})`);
+          continue;
+        }
+        if (btcTrend === 'BEARISH' && direction === 'LONG') {
+          console.log(`[BTC Trend Filter] Skip LONG candidate ${cand.symbol}: BTC is Bearish (Current BTC Trend: ${btcTrend})`);
+          continue;
+        }
+        if (btcTrend === 'NEUTRAL') {
+          console.log(`[BTC Trend Filter] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral (No clear trend)`);
+          continue;
+        }
+      }
+
+      // Crowded Trade Filter
+      if (parsedDeriv?.derivative_data?.[cand.symbol]) {
+        const deriv = parsedDeriv.derivative_data[cand.symbol];
+        const fundingInfo = deriv["1h Aggregated OI weighted funding rate"];
+        if (fundingInfo) {
+          const percentile = fundingInfo.current_funding_percentile_7d || 50;
+          const fundingRate = fundingInfo.current_funding_rate_in_percentage || 0;
+          
+          let isCrowded = false;
+          let crowdedReason = "";
+
+          if (direction === 'LONG') {
+            if (fundingRate > 0 && percentile >= crowdedPercentileLimit) {
+              isCrowded = true;
+              crowdedReason = `Long funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
+            }
+          } else {
+            if (fundingRate < 0 && percentile >= crowdedPercentileLimit) {
+              isCrowded = true;
+              crowdedReason = `Short funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
+            }
+          }
+
+          if (isCrowded) {
+            console.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Crowded Trade! Reason: ${crowdedReason}`);
+            continue;
+          }
+        }
+      }
+
+      // Valid candidate found
+      target = cand;
+      taData = parsedTa;
+      derivData = parsedDeriv;
+      optionsData = parsedOpt;
+      target.precalculatedLevels = levels;
+      break;
     }
 
     if (!target) {
@@ -1055,11 +1666,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "success", message: "No trade: All candidates were filtered out by Crowded Trade rules." });
     }
 
-    const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
     console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
 
     const direction = detectAutoDirection(target, taData);
-    const levels = computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
+    const levels = target.precalculatedLevels || computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
+    console.log(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`);
 
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
@@ -1085,8 +1696,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
     }
 
-    // Option A: Use 90% of account balance with 5x leverage to leave buffer for fees and slippage
-    const finalLeverage = 5;
+    // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
+    const maxLeverage = target.assetInfo?.maxLeverage || 5;
+    const finalLeverage = Math.min(5, maxLeverage);
     let positionSizeUsd = (accountSize * 0.90) * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
@@ -1109,9 +1721,19 @@ export default async function handler(req, res) {
     const slPx = formatPrice(levels.sl);
     const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
 
+    const entryCloid = generateEncodedCloid({
+      score: target.score,
+      nansenSmartMoney: target.nansenSmartMoney || 0,
+      nansenWhale: target.nansenWhale || 0,
+      nansenExchange: target.nansenExchange || 0,
+      tnVwap: target.tnVwap || 0,
+      direction
+    });
+    console.log(`[Bot Execution] Generated encoded cloid for entry: ${entryCloid}`);
+
     if (isDryRun) {
-      console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to 5x`);
-      console.log(`[DRY RUN] Bypassed placing bracket order for ${target.symbol}: Entry=${entryPx} (Market Worst: ${entryMarketWorstPx}), TP=${tpPx}, SL=${slPx}, Size=${entrySz}`);
+      console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to ${finalLeverage}x`);
+      console.log(`[DRY RUN] Bypassed placing GTC Limit bracket order for ${target.symbol}: Entry Limit=${entryPx}, TP Trigger=${tpPx}, SL Trigger=${slPx}, Size=${entrySz}, Cloid=${entryCloid}`);
       return res.status(200).json({
         status: "success",
         message: "[DRY RUN] Simulated trade execution succeeded",
@@ -1124,6 +1746,7 @@ export default async function handler(req, res) {
           entryPrice: entryPx,
           stopLoss: slPx,
           takeProfit: tpPx,
+          cloid: entryCloid,
           orderResult: { status: "simulated" }
         }
       });
@@ -1135,18 +1758,18 @@ export default async function handler(req, res) {
         leverage: finalLeverage
       });
 
-      // B. Place Bracket Order (Market Entry + TP/SL bracket)
+      // B. Place Bracket Order (Limit Entry + TP/SL bracket)
       const orderResult = await exchange.order({
-        orders: [
-          // Market Taker Entry (FrontendMarket)
+        orders: attachBuilderFee([
+          // Limit Maker Entry (Gtc)
           {
             a: target.assetIndex,
             b: isBuy,
-            p: entryMarketWorstPx,
+            p: entryPx,
             s: entrySz,
             r: false,
-            t: { limit: { tif: "FrontendMarket" } },
-            c: generateBotCloid()
+            t: { limit: { tif: "Gtc" } },
+            c: entryCloid
           },
           // Take Profit Trigger Order (Market Trigger to guarantee fill)
           {
@@ -1180,7 +1803,7 @@ export default async function handler(req, res) {
             },
             c: generateBotCloid()
           }
-        ],
+        ]),
         grouping: "normalTpsl"
       });
 
