@@ -75,7 +75,10 @@ const nansenContractMap = {
 };
 
 async function callNansenMcp(toolName, args) {
-  const token = process.env.NANSEN_API_KEY || 'nsn_b3223fcf67f7a26107844001b57b7822';
+  const token = process.env.NANSEN_API_KEY;
+  if (!token) {
+    throw new Error("NANSEN_API_KEY environment variable is not set");
+  }
   const url = `https://mcp.nansen.ai/ra/mcp`;
   
   const response = await fetch(url, {
@@ -209,7 +212,10 @@ function generateEncodedCloid(details) {
 
 // Generic JSON-RPC tool caller helper for TrueNorth
 async function callTrueNorthMcp(toolName, args) {
-  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY;
+  if (!token) {
+    throw new Error("TN_FINANCIAL_DATA_API_KEY environment variable is not set");
+  }
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
   
   const response = await fetch(url, {
@@ -339,7 +345,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null) {
 }
 
 // Level computation
-function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true) {
+function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true, entryOverride = null) {
   const price   = coin.price;
   const funding = coin.funding || 0;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -349,8 +355,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   let vwap = (high + low + price) / 3;
   let channels = [];
 
-  let entry = price;
-  let reason = 'fallback';
+  let entry = entryOverride !== null ? entryOverride : price;
+  let reason = entryOverride !== null ? 'recovery_entry' : 'fallback';
 
   if (taData?.support_resistance) {
     const sr = taData.support_resistance;
@@ -371,79 +377,81 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   let strongResistance = null;
   const buffer = config.entryBufferPct !== undefined ? config.entryBufferPct : 0.005;
 
-  if (dir === 'LONG' && config.enableSupportRebound !== false && channels.length > 0) {
-    const minStrength = config.supportMinStrength !== undefined ? config.supportMinStrength : 50;
-    const validSupports = channels.filter(c => c.hi <= price && c.lo < price && c.strength >= minStrength);
-    if (validSupports.length > 0) {
-      // Sort by proximity to current price (highest 'hi' level first)
-      validSupports.sort((a, b) => b.hi - a.hi);
-      const candSupport = validSupports[0];
-      const candEntry = Math.min(candSupport.hi * (1 + buffer), price);
-      const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
-      const dist = (price - candEntry) / price;
-      
-      if (dist <= maxDist) {
-        strongSupport = candSupport;
-        entry = candEntry;
-        reason = 'support_rebound_limit';
-      } else {
-        console.log(`[Support Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
-      }
-    }
-  } else if (dir === 'SHORT' && config.enableResistanceRebound !== false && channels.length > 0) {
-    const minStrength = config.resistanceMinStrength !== undefined ? config.resistanceMinStrength : 50;
-    const validResistances = channels.filter(c => c.lo >= price && c.hi > price && c.strength >= minStrength);
-    if (validResistances.length > 0) {
-      // Sort by proximity to current price (lowest 'lo' level first)
-      validResistances.sort((a, b) => a.lo - b.lo);
-      const candResistance = validResistances[0];
-      const candEntry = Math.max(candResistance.lo * (1 - buffer), price);
-      const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
-      const dist = (candEntry - price) / price;
-
-      if (dist <= maxDist) {
-        strongResistance = candResistance;
-        entry = candEntry;
-        reason = 'resistance_rebound_limit';
-      } else {
-        console.log(`[Resistance Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
-      }
-    }
-  }
-
-  if (reason !== 'support_rebound_limit' && reason !== 'resistance_rebound_limit') {
-    // Calculate VWAP-based Limit Entry Price using TrueNorth data
-    if (taData?.support_resistance?.vwap?.cumulative?.value) {
-      const tnVwap = taData.support_resistance.vwap.cumulative.value;
-      const maxPullbackPct = process.env.SMA_MAX_DISTANCE_PCT 
-        ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) 
-        : 0.015; // 1.5% max pullback bounds to guarantee fill probability
+  if (entryOverride === null) {
+    if (dir === 'LONG' && config.enableSupportRebound !== false && channels.length > 0) {
+      const minStrength = config.supportMinStrength !== undefined ? config.supportMinStrength : 50;
+      const validSupports = channels.filter(c => c.hi <= price && c.lo < price && c.strength >= minStrength);
+      if (validSupports.length > 0) {
+        // Sort by proximity to current price (highest 'hi' level first)
+        validSupports.sort((a, b) => b.hi - a.hi);
+        const candSupport = validSupports[0];
+        const candEntry = Math.min(candSupport.hi * (1 + buffer), price);
+        const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
+        const dist = (price - candEntry) / price;
         
-      if (dir === 'LONG') {
-        if (price > tnVwap) {
-          // If current price is above VWAP, buy at VWAP (bounded by max 1.5% pullback)
-          entry = Math.max(tnVwap, price * (1 - maxPullbackPct));
-          reason = 'tn_vwap_limit';
+        if (dist <= maxDist) {
+          strongSupport = candSupport;
+          entry = candEntry;
+          reason = 'support_rebound_limit';
         } else {
-          // If current price is already below VWAP, buy at current market price (cheaper)
-          entry = price;
-          reason = 'tn_vwap_below_market';
-        }
-      } else { // SHORT
-        if (price < tnVwap) {
-          // If current price is below VWAP, sell at VWAP (bounded by max 1.5% pullback)
-          entry = Math.min(tnVwap, price * (1 + maxPullbackPct));
-          reason = 'tn_vwap_limit';
-        } else {
-          // If current price is already above VWAP, sell at current market price (more expensive)
-          entry = price;
-          reason = 'tn_vwap_above_market';
+          console.log(`[Support Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
         }
       }
-    } else {
-      // Fallback limit entry at 0.5% pullback from current price if VWAP is missing
-      entry = dir === 'LONG' ? price * 0.995 : price * 1.005;
-      reason = 'fallback_pullback_limit';
+    } else if (dir === 'SHORT' && config.enableResistanceRebound !== false && channels.length > 0) {
+      const minStrength = config.resistanceMinStrength !== undefined ? config.resistanceMinStrength : 50;
+      const validResistances = channels.filter(c => c.lo >= price && c.hi > price && c.strength >= minStrength);
+      if (validResistances.length > 0) {
+        // Sort by proximity to current price (lowest 'lo' level first)
+        validResistances.sort((a, b) => a.lo - b.lo);
+        const candResistance = validResistances[0];
+        const candEntry = Math.max(candResistance.lo * (1 - buffer), price);
+        const maxDist = config.maxReboundDistancePct !== undefined ? config.maxReboundDistancePct : 0.025;
+        const dist = (candEntry - price) / price;
+
+        if (dist <= maxDist) {
+          strongResistance = candResistance;
+          entry = candEntry;
+          reason = 'resistance_rebound_limit';
+        } else {
+          console.log(`[Resistance Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
+        }
+      }
+    }
+
+    if (reason !== 'support_rebound_limit' && reason !== 'resistance_rebound_limit') {
+      // Calculate VWAP-based Limit Entry Price using TrueNorth data
+      if (taData?.support_resistance?.vwap?.cumulative?.value) {
+        const tnVwap = taData.support_resistance.vwap.cumulative.value;
+        const maxPullbackPct = process.env.SMA_MAX_DISTANCE_PCT 
+          ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) 
+          : 0.015; // 1.5% max pullback bounds to guarantee fill probability
+          
+        if (dir === 'LONG') {
+          if (price > tnVwap) {
+            // If current price is above VWAP, buy at VWAP (bounded by max 1.5% pullback)
+            entry = Math.max(tnVwap, price * (1 - maxPullbackPct));
+            reason = 'tn_vwap_limit';
+          } else {
+            // If current price is already below VWAP, buy at current market price (cheaper)
+            entry = price;
+            reason = 'tn_vwap_below_market';
+          }
+        } else { // SHORT
+          if (price < tnVwap) {
+            // If current price is below VWAP, sell at VWAP (bounded by max 1.5% pullback)
+            entry = Math.min(tnVwap, price * (1 + maxPullbackPct));
+            reason = 'tn_vwap_limit';
+          } else {
+            // If current price is already above VWAP, sell at current market price (more expensive)
+            entry = price;
+            reason = 'tn_vwap_above_market';
+          }
+        }
+      } else {
+        // Fallback limit entry at 0.5% pullback from current price if VWAP is missing
+        entry = dir === 'LONG' ? price * 0.995 : price * 1.005;
+        reason = 'fallback_pullback_limit';
+      }
     }
   }
 
@@ -710,9 +718,6 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   if (dir === 'LONG') {
-    // Take Profit is exactly +3% (+15% ROE at 5x)
-    tp = entry * 1.03;
-
     // Stop Loss must be at least config.minSlBuffer below entry (e.g. 1%)
     const maxSlAllowed = entry * (1 - config.minSlBuffer);
     if (sl > maxSlAllowed) {
@@ -723,10 +728,17 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
+    // Enforce Take Profit is at least config.minTpBuffer above entry
+    const minTpAllowed = entry * (1 + config.minTpBuffer);
+    if (tp < minTpAllowed) {
+      tp = minTpAllowed;
+    }
+    // Cap TP at a maximum of +10% to prevent unrealistic options targets
+    const maxTpAllowed = entry * 1.10;
+    if (tp > maxTpAllowed) {
+      tp = maxTpAllowed;
+    }
   } else {
-    // Take Profit is exactly -3% (+15% ROE at 5x)
-    tp = entry * 0.97;
-
     // Stop Loss must be at least config.minSlBuffer above entry (e.g. 1%)
     const minSlAllowed = entry * (1 + config.minSlBuffer);
     if (sl < minSlAllowed) {
@@ -736,6 +748,16 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     const maxSlAllowed = entry * 1.04;
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
+    }
+    // Enforce Take Profit is at least config.minTpBuffer below entry
+    const maxTpAllowed = entry * (1 - config.minTpBuffer);
+    if (tp > maxTpAllowed) {
+      tp = maxTpAllowed;
+    }
+    // Cap TP at a maximum of -10% to prevent unrealistic options targets
+    const minTpAllowed = entry * 0.90;
+    if (tp < minTpAllowed) {
+      tp = minTpAllowed;
     }
   }
 
@@ -768,19 +790,18 @@ function calculateScore(coin, isHyperliquidScale = false) {
   }
 
   const vol = coin.volume;
-  if (isHyperliquidScale) {
-    if (vol > 30000000) score += 20;
-    else if (vol > 15000000) score += 15;
-    else if (vol > 5000000) score += 10;
-  } else {
-    if (vol > 100000000) score += 20;
-    else if (vol > 50000000) score += 15;
-    else if (vol > 10000000) score += 10;
-  }
+  const thresholds = isHyperliquidScale 
+    ? (config.hyperliquidVolumeThresholds || [30000000, 15000000, 5000000])
+    : (config.binanceVolumeThresholds || [100000000, 50000000, 10000000]);
 
-  const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  if (vol > thresholds[0]) score += 20;
+  else if (vol > thresholds[1]) score += 15;
+  else if (vol > thresholds[2]) score += 10;
+
+  const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  const watchlistBonus = config.watchlistBonus !== undefined ? config.watchlistBonus : 15;
   if (watchlist.includes(coin.symbol)) {
-    score += 15;
+    score += watchlistBonus;
   }
   return Math.min(score, 100);
 }
@@ -1108,9 +1129,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // 1. Calculate recovery levels in case TP/SL are missing
-      const mockCoinForLevels = { ...currentCoin, price: entryPx };
-      const recoveryLevels = computeStrategyLevels(mockCoinForLevels, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp);
+      // 1. Calculate recovery levels in case TP/SL are missing (passing entryPx as entryOverride, and currentCoin for current TA references)
+      const recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx);
 
       // 2. Self-healing recovery: if TP or SL order is missing, recreate them!
       if (!tpOrder || !slOrder) {
@@ -1211,11 +1231,24 @@ export default async function handler(req, res) {
                     r: false
                   }])
                 });
-                console.log(`[Profit Trailing] Pyramided Market Order filled successfully:`, JSON.stringify(marketOrderRes));
-                newTotalSize = currentSizeAbs + targetSize;
+                
+                const status = marketOrderRes?.status;
+                const statuses = marketOrderRes?.response?.data?.statuses || [];
+                const firstStatus = statuses[0];
+
+                if (status === "ok" && firstStatus && !firstStatus.error) {
+                  console.log(`[Profit Trailing] Pyramided Market Order filled successfully:`, JSON.stringify(marketOrderRes));
+                  newTotalSize = currentSizeAbs + targetSize;
+                } else {
+                  const errMsg = firstStatus?.error || "Unknown exchange error";
+                  console.error(`[Profit Trailing] Pyramided Market Order rejected by exchange: ${errMsg}`);
+                  console.log(`[Profit Trailing] Falling back to standard trailing without pyramiding.`);
+                  newTotalSize = currentSizeAbs;
+                }
               } catch (e) {
                 console.error(`[Profit Trailing] Pyramided Market Order failed (likely insufficient margin):`, e.message);
                 console.log(`[Profit Trailing] Falling back to standard trailing without pyramiding.`);
+                newTotalSize = currentSizeAbs;
               }
             }
           } else {
@@ -1456,6 +1489,16 @@ export default async function handler(req, res) {
       })(),
       // 2. Fetch Nansen flows
       (async () => {
+        if (config.enableNansenScoring !== true) {
+          console.log(`[Nansen Integration] Nansen scoring is disabled in config. Skipping Nansen API calls.`);
+          tradeableCandidates.forEach(cand => {
+            cand.nansenSmartMoney = 0;
+            cand.nansenWhale = 0;
+            cand.nansenExchange = 0;
+          });
+          return;
+        }
+
         console.log(`[Nansen Integration] Querying Nansen Smart Money flows for top ${topN} candidates...`);
         await Promise.all(tradeableCandidates.slice(0, topN).map(async (cand) => {
           const nansenInfo = await getNansenTokenAddress(cand.symbol);
@@ -1465,8 +1508,8 @@ export default async function handler(req, res) {
             cand.nansenSmartMoney = nansenSmartMoney;
             cand.nansenWhale = nansenWhale;
             cand.nansenExchange = nansenExchange;
-            // Bypassing Nansen scoring adjustments (only tracking indicators for informational justification)
-            console.log(`[Nansen Integration] Candidate ${cand.symbol} flow tracked (Score adjustment bypassed). Flow details: ${details.replace(/\n/g, ' ')}`);
+            cand.score = Math.min(100, Math.max(0, cand.score + bonus));
+            console.log(`[Nansen Integration] Adjusted candidate ${cand.symbol} score by ${bonus} to ${cand.score}. Flow details: ${details.replace(/\n/g, ' ')}`);
           } else {
             console.log(`[Nansen Integration] Could not resolve Nansen address/chain for ${cand.symbol}`);
             cand.nansenSmartMoney = 0;
@@ -1496,20 +1539,25 @@ export default async function handler(req, res) {
     // Cooldown map calculation
     const lastFillTimeMap = {};
     if (Array.isArray(userFills)) {
+      const minFillValueUsd = config.minFillValueUsd !== undefined ? config.minFillValueUsd : 5.0;
       userFills.forEach(f => {
-        if (!lastFillTimeMap[f.coin] || f.time > lastFillTimeMap[f.coin]) {
-          lastFillTimeMap[f.coin] = f.time;
+        const fillValue = parseFloat(f.sz) * parseFloat(f.px);
+        if (fillValue >= minFillValueUsd) {
+          if (!lastFillTimeMap[f.coin] || f.time > lastFillTimeMap[f.coin]) {
+            lastFillTimeMap[f.coin] = f.time;
+          }
         }
       });
     }
-    const cooldownMs = 2 * 60 * 60 * 1000; // 2 hour cooldown
+    const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
+    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
     for (const cand of tradeableCandidates) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
         if (timeSinceLastTrade < cooldownMs) {
-          console.log(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: 120 mins)`);
+          console.log(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: ${cooldownHours * 60} mins)`);
           continue;
         }
       }
@@ -1617,8 +1665,13 @@ export default async function handler(req, res) {
           continue;
         }
         if (btcTrend === 'NEUTRAL') {
-          console.log(`[BTC Trend Filter] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral (No clear trend)`);
-          continue;
+          const isReboundTrade = levels.reason.includes('support_rebound') || levels.reason.includes('resistance_rebound') || levels.reason.includes('sr_channel');
+          if (isReboundTrade) {
+            console.log(`[BTC Trend Filter] BTC is Neutral, but candidate ${cand.symbol} is a Rebound Trade (${levels.reason}). Bypassing neutral filter.`);
+          } else {
+            console.log(`[BTC Trend Filter] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral (No clear trend)`);
+            continue;
+          }
         }
       }
 
