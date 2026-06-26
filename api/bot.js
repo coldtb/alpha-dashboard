@@ -9,7 +9,7 @@ let config = {
   minSlBuffer: 0.008,
   minTpBuffer: 0.010,
   entryShiftThreshold: 0.0075,
-  replacementScoreDiff: 5,
+  replacementScoreDiff: 10,
   nansenBuilderAddress: "",
   nansenBuilderFeeRate: 80,
   blacklist: [],
@@ -20,7 +20,8 @@ let config = {
   minResistanceRisePct: 0.015,
   resistanceMinStrength: 50,
   entryBufferPct: 0.005,
-  maxReboundDistancePct: 0.025
+  maxReboundDistancePct: 0.025,
+  maxTpPct: 0.10
 };
 
 try {
@@ -733,8 +734,9 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
-    // Cap TP at a maximum of +10% to prevent unrealistic options targets
-    const maxTpAllowed = entry * 1.10;
+    // Cap TP at a maximum of +config.maxTpPct to prevent unrealistic options targets
+    const maxTpPct = config.maxTpPct !== undefined ? config.maxTpPct : 0.10;
+    const maxTpAllowed = entry * (1 + maxTpPct);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
     }
@@ -754,8 +756,9 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
     }
-    // Cap TP at a maximum of -10% to prevent unrealistic options targets
-    const minTpAllowed = entry * 0.90;
+    // Cap TP at a maximum of -config.maxTpPct to prevent unrealistic options targets
+    const maxTpPct = config.maxTpPct !== undefined ? config.maxTpPct : 0.10;
+    const minTpAllowed = entry * (1 - maxTpPct);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
