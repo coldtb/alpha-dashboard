@@ -197,8 +197,8 @@ export default async function handler(req, res) {
     const transport = new HttpTransport();
     const info = new InfoClient({ transport });
 
-    const endTime = Date.now();
-    const startTime = endTime - days * 24 * 60 * 60 * 1000;
+    const endTime = req.query.end_time ? parseInt(req.query.end_time) : Date.now();
+    const startTime = req.query.start_time ? parseInt(req.query.start_time) : (endTime - days * 24 * 60 * 60 * 1000);
 
     // Fetch candles in chunks of 150 days to avoid the 5000-candle limit
     const candles = [];
@@ -382,7 +382,10 @@ export default async function handler(req, res) {
 
           const leveragedReturn = priceReturn * leverage;
           const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
-          const tradePnl = balance * netReturn;
+          // Cap compounding at a maximum margin of $50,000 (which corresponds to $250,000 notional position size at 5x leverage)
+          const maxCompoundingMargin = 50000;
+          const activeMargin = Math.min(balance, maxCompoundingMargin);
+          const tradePnl = activeMargin * netReturn;
 
           balance += tradePnl;
           trades.push({
