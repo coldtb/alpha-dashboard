@@ -155,13 +155,27 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null) {
   if (dir === 'LONG') {
     const maxSlAllowed = entry * (1 - activeSlBuffer);
     if (sl > maxSlAllowed) sl = maxSlAllowed;
+    // Hard cap Stop Loss at -2% (-10% ROE at 5x)
+    const minSlAllowed = entry * 0.98;
+    if (sl < minSlAllowed) sl = minSlAllowed;
+
     const minTpAllowed = entry * (1 + activeTpBuffer);
     if (tp < minTpAllowed) tp = minTpAllowed;
+    // Hard cap Take Profit at +3% (+15% ROE at 5x)
+    const maxTpAllowed = entry * 1.03;
+    if (tp > maxTpAllowed) tp = maxTpAllowed;
   } else {
     const minSlAllowed = entry * (1 + activeSlBuffer);
     if (sl < minSlAllowed) sl = minSlAllowed;
+    // Hard cap Stop Loss at +2% (-10% ROE at 5x)
+    const maxSlAllowed = entry * 1.02;
+    if (sl > maxSlAllowed) sl = maxSlAllowed;
+
     const maxTpAllowed = entry * (1 - activeTpBuffer);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
+    // Hard cap Take Profit at -3% (+15% ROE at 5x)
+    const minTpAllowed = entry * 0.97;
+    if (tp < minTpAllowed) tp = minTpAllowed;
   }
 
   return {
@@ -353,7 +367,7 @@ export default async function handler(req, res) {
           const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
           position = {
             dir: direction,
-            entryPrice: currentPrice,
+            entryPrice: levels.entry,
             tp: levels.tp,
             sl: levels.sl,
             score,
