@@ -348,7 +348,7 @@ export function computeStrategyLevels(
 
   let entry = entryOverride !== null ? entryOverride : price;
   let sl    = dir === 'LONG' ? price * 0.97 : price * 1.03;
-  let tp    = dir === 'LONG' ? price * 1.06 : price * 0.94;
+  let tp    = dir === 'LONG' ? price * 1.03 : price * 0.97;
   let reason = 'fallback';
 
   if (taData?.support_resistance) {

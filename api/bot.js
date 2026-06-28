@@ -458,7 +458,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // Initial TP/SL are relative to calculated Limit Entry price
   let sl    = dir === 'LONG' ? entry * 0.97 : entry * 1.03;
-  let tp    = dir === 'LONG' ? entry * 1.06 : entry * 0.94;
+  let tp    = dir === 'LONG' ? entry * 1.03 : entry * 0.97;
 
   // 1. Calculate standard levels first
   if (dir === 'LONG') {
