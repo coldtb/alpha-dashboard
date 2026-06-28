@@ -114,15 +114,15 @@ describe('Helpers unit tests', () => {
     it('should compute LONG strategy levels correctly', () => {
       const levels = computeStrategyLevels(coin, 'LONG', null);
       expect(levels.entry).toBe(60000);
-      expect(levels.sl).toBe(58115); // low * 0.985 = 59000 * 0.985 = 58115
-      expect(levels.tp).toBe(63770); // entry + (entry - sl) * 2 = 60000 + 1885 * 2 = 63770
+      expect(levels.sl).toBe(58800); // capped at -2% (60000 * 0.98 = 58800)
+      expect(levels.tp).toBe(63770); // entry + (entry - sl_calculated) * 2 = 60000 + 1885 * 2 = 63770
     });
 
     it('should compute SHORT strategy levels correctly', () => {
       const levels = computeStrategyLevels(coin, 'SHORT', null);
       expect(levels.entry).toBe(60000);
-      expect(levels.sl).toBe(61915); // high * 1.015 = 61000 * 1.015 = 61915
-      expect(levels.tp).toBe(56170); // entry - (sl - entry) * 2 = 60000 - 1915 * 2 = 56170
+      expect(levels.sl).toBe(61200); // capped at +2% (60000 * 1.02 = 61200)
+      expect(levels.tp).toBe(56170); // entry - (sl_calculated - entry) * 2 = 60000 - 1915 * 2 = 56170
     });
   });
 });
