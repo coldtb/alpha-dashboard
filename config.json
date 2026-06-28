@@ -1,5 +1,5 @@
 {
-  "minScore": 85,
+  "minScore": 80,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.005,
   "entryShiftThreshold": 0.0075,
@@ -23,5 +23,5 @@
   "watchlistBonus": 15,
   "binanceVolumeThresholds": [100000000, 50000000, 10000000],
   "hyperliquidVolumeThresholds": [30000000, 15000000, 5000000],
-  "maxTpPct": 0.10
+  "maxTpPct": 0.03
 }
