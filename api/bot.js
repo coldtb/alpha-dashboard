@@ -51,7 +51,27 @@ const geckoIdMap = {
   "WLD": "worldcoin-wld",
   "ZEC": "zcash",
   "XLM": "stellar",
-  "TRX": "tron"
+  "TRX": "tron",
+  "SUI": "sui",
+  "TIA": "celestia",
+  "FTM": "fantom",
+  "AVAX": "avalanche-2",
+  "NEAR": "near",
+  "OP": "optimism",
+  "ARB": "arbitrum",
+  "DOGE": "dogecoin",
+  "LTC": "litecoin",
+  "PEPE": "pepe",
+  "WIF": "dogwifhat",
+  "BONK": "bonk",
+  "ENA": "ethena",
+  "ONDO": "ondo-finance",
+  "JUP": "jupiter-exchange-solana",
+  "POPCAT": "popcat-solana",
+  "NVDA": "nvidia",
+  "MU": "micron-technology",
+  "LLY": "eli-lilly-and-co",
+  "0G": "0g-chain"
 };
 
 const nansenContractMap = {
@@ -346,7 +366,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null) {
 }
 
 // Level computation
-function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true, entryOverride = null) {
+function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true, entryOverride = null, maxTpPctOverride = null) {
   const price   = coin.price;
   const funding = coin.funding || 0;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -724,8 +744,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Stop Loss is capped at a maximum of -4% (-20% ROE at 5x)
-    const minSlAllowed = entry * 0.96;
+    // Stop Loss is capped at a maximum of -2% (-10% ROE at 5x)
+    const minSlAllowed = entry * 0.98;
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
@@ -735,7 +755,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       tp = minTpAllowed;
     }
     // Cap TP at a maximum of +config.maxTpPct to prevent unrealistic options targets
-    const maxTpPct = config.maxTpPct !== undefined ? config.maxTpPct : 0.10;
+    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
     const maxTpAllowed = entry * (1 + maxTpPct);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
@@ -746,8 +766,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Stop Loss is capped at a maximum of +4% (-20% ROE at 5x)
-    const maxSlAllowed = entry * 1.04;
+    // Stop Loss is capped at a maximum of +2% (-10% ROE at 5x)
+    const maxSlAllowed = entry * 1.02;
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
@@ -757,7 +777,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       tp = maxTpAllowed;
     }
     // Cap TP at a maximum of -config.maxTpPct to prevent unrealistic options targets
-    const maxTpPct = config.maxTpPct !== undefined ? config.maxTpPct : 0.10;
+    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
     const minTpAllowed = entry * (1 - maxTpPct);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
@@ -1199,17 +1219,62 @@ export default async function handler(req, res) {
 
       // Check A: Profit Trailing (highest priority)
       if (isNearTp) {
-        const newTpPx = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // trail TP by another 2%
+        let trailedTp = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // default fallback trailing TP
+        let smartTpAdjusted = false;
+
+        // Fetch Options and Derivatives analysis to check for walls/magnets beyond currentPrice
+        if (geckoIdActive) {
+          try {
+            console.log(`[Profit Trailing] Fetching Options and Derivatives data from TrueNorth to calculate Smart TP for ${coin}...`);
+            const [derivRes, optRes] = await Promise.all([
+              callTrueNorthMcp('derivatives_analysis', { token_address: geckoIdActive }).catch(() => null),
+              callTrueNorthMcp('options_report', { token_address: geckoIdActive }).catch(() => null)
+            ]);
+            
+            let parsedDerivTrailing = null;
+            let parsedOptTrailing = null;
+            if (derivRes?.result?.content?.[0]?.text) {
+              parsedDerivTrailing = JSON.parse(derivRes.result.content[0].text);
+            }
+            if (optRes?.result?.content?.[0]?.text) {
+              parsedOptTrailing = JSON.parse(optRes.result.content[0].text);
+            }
+
+            // Calculate strategy levels with maxTpPctOverride = 0.15 (allow up to 15% price change target for second stage!)
+            const trailingLevels = computeStrategyLevels(
+              currentCoin,
+              isLong ? 'LONG' : 'SHORT',
+              taDataActive,
+              parsedDerivTrailing,
+              parsedOptTrailing,
+              true, // useSmartSlTp
+              entryPx, // entryOverride
+              0.15 // maxTpPctOverride
+            );
+
+            // Verify if the calculated smart TP is further in the profit direction than currentPrice
+            const isValidSmartTp = isLong ? trailingLevels.tp > currentPrice * 1.005 : trailingLevels.tp < currentPrice * 0.995;
+            if (isValidSmartTp) {
+              trailedTp = trailingLevels.tp;
+              smartTpAdjusted = true;
+              console.log(`[Profit Trailing] Found valid Smart TP for ${coin} beyond currentPrice: ${trailedTp} (Reason: ${trailingLevels.reason})`);
+            }
+          } catch (e) {
+            console.error(`[Profit Trailing] Smart TP calculation failed for ${coin}:`, e.message);
+          }
+        }
+
+        const newTpPx = trailedTp;
         const newSlPx = isLong ? tpPx * 0.990 : tpPx * 1.010;
 
-        console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)} and locking SL at ${newSlPx.toFixed(4)}.`);
+        console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)}${smartTpAdjusted ? ' (Smart TP)' : ''} and locking SL at ${newSlPx.toFixed(4)}.`);
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
           const finalLeverage = Math.min(5, maxLeverage);
-          let targetSizeUsd = (activeAccountSize * 0.90) * finalLeverage;
+          let targetSizeUsd = (activeAccountSize * 0.50) * finalLeverage;
           if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
-          const targetSizeTokens = targetSizeUsd / entryPx;
+          const targetSizeTokens = targetSizeUsd / currentPrice;
           const targetSize = parseFloat(formatSize(targetSizeTokens, currentCoin.assetInfo.szDecimals));
           
           const currentSizeAbs = Math.abs(size);
@@ -1714,6 +1779,7 @@ export default async function handler(req, res) {
       derivData = parsedDeriv;
       optionsData = parsedOpt;
       target.precalculatedLevels = levels;
+      target.direction = direction;
       break;
     }
 
@@ -1724,7 +1790,7 @@ export default async function handler(req, res) {
 
     console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
 
-    const direction = detectAutoDirection(target, taData);
+    const direction = target.direction;
     const levels = target.precalculatedLevels || computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
     console.log(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`);
 
@@ -1755,7 +1821,7 @@ export default async function handler(req, res) {
     // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
     const maxLeverage = target.assetInfo?.maxLeverage || 5;
     const finalLeverage = Math.min(5, maxLeverage);
-    let positionSizeUsd = (accountSize * 0.90) * finalLeverage;
+    let positionSizeUsd = (accountSize * 0.50) * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
