@@ -1506,7 +1506,8 @@ export default async function handler(req, res) {
 
 
     // Pick top candidates (score >= minScore) across all Hyperliquid coins
-    const candidates = scoredCoins.filter(c => c.score >= minScore && !(config.blacklist || []).includes(c.symbol));
+    const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+    const candidates = scoredCoins.filter(c => c.score >= minScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol));
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
