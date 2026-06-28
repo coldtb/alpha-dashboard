@@ -200,13 +200,27 @@ export default async function handler(req, res) {
     const endTime = Date.now();
     const startTime = endTime - days * 24 * 60 * 60 * 1000;
 
-    // Fetch candles
-    const candles = await info.candleSnapshot({
-      coin: coinSymbol,
-      interval: "1h",
-      startTime,
-      endTime
-    });
+    // Fetch candles in chunks of 150 days to avoid the 5000-candle limit
+    const candles = [];
+    const candleChunkMs = 150 * 24 * 60 * 60 * 1000;
+    let candleStart = startTime;
+    while (candleStart < endTime) {
+      const candleEnd = Math.min(candleStart + candleChunkMs, endTime);
+      const chunk = await info.candleSnapshot({
+        coin: coinSymbol,
+        interval: "1h",
+        startTime: candleStart,
+        endTime: candleEnd
+      });
+      if (chunk && chunk.length > 0) {
+        chunk.forEach(c => {
+          if (candles.length === 0 || c.t > candles[candles.length - 1].t) {
+            candles.push(c);
+          }
+        });
+      }
+      candleStart += candleChunkMs;
+    }
 
     if (candles.length < 25) {
       return res.status(400).json({ error: `Not enough historical candles found for ${coinSymbol}.` });
@@ -237,7 +251,17 @@ export default async function handler(req, res) {
     });
 
     // Simulation variables
-    const initialBalance = 10000;
+    const spreadMap = {
+      "BTC": 0.0001, // 0.01%
+      "ETH": 0.0002, // 0.02%
+      "SOL": 0.0003, // 0.03%
+      "HYPE": 0.0008, // 0.08%
+      "LINK": 0.0005, // 0.05%
+      "XRP": 0.0004, // 0.04%
+      "INJ": 0.0006, // 0.06%
+      "WLD": 0.0007  // 0.07%
+    };
+    const initialBalance = req.query.initial_balance ? parseFloat(req.query.initial_balance) : 10000;
     let balance = initialBalance;
     let position = null;
     let pendingOrder = null;
@@ -284,6 +308,7 @@ export default async function handler(req, res) {
         sumClose24 += parseFloat(cj.c);
       }
       const sma24 = sumClose24 / 25;
+      const volatility24h = (high24h - low24h) / low24h;
 
       const hourKey = Math.floor(timestamp / 3600000) * 3600000;
       const fundingRateRaw = fundingMap[hourKey] || 0.0000125; 
@@ -332,27 +357,48 @@ export default async function handler(req, res) {
         }
 
         if (hitSl || hitTp) {
-          const exitPrice = hitSl ? position.sl : position.tp;
+          const rawExitPrice = hitSl ? position.sl : position.tp;
+          const spreadPct = spreadMap[coinSymbol] || 0.0005;
+          const exitSlippagePct = Math.max(0.0002, volatility24h * 0.02);
+
+          let exitPriceWithPenalties = rawExitPrice;
+          if (isLong) {
+            exitPriceWithPenalties = rawExitPrice * (1 - spreadPct / 2) * (1 - exitSlippagePct);
+          } else {
+            exitPriceWithPenalties = rawExitPrice * (1 + spreadPct / 2) * (1 + exitSlippagePct);
+          }
+
           const priceReturn = isLong 
-            ? (exitPrice - position.entryPrice) / position.entryPrice
-            : (position.entryPrice - exitPrice) / position.entryPrice;
+            ? (exitPriceWithPenalties - position.entryPrice) / position.entryPrice
+            : (position.entryPrice - exitPriceWithPenalties) / position.entryPrice;
+
+          // Calculate Hourly Funding Fee impact
+          let totalFundingReturn = 0;
+          for (let h = position.fillTime + 3600000; h <= timestamp; h += 3600000) {
+            const hKey = Math.floor(h / 3600000) * 3600000;
+            const hFundingRate = fundingMap[hKey] || 0.0000125;
+            totalFundingReturn += (isLong ? -hFundingRate : hFundingRate) * leverage;
+          }
 
           const leveragedReturn = priceReturn * leverage;
-          const netReturn = leveragedReturn - roundTripFeePct;
+          const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
           const tradePnl = balance * netReturn;
 
           balance += tradePnl;
           trades.push({
             dir: position.dir,
             entryPrice: position.entryPrice,
-            exitPrice,
+            exitPrice: exitPriceWithPenalties,
             exitType: hitSl ? 'SL' : 'TP',
             entryTime: position.fillTime,
             exitTime: timestamp,
             returnPct: parseFloat((netReturn * 100).toFixed(2)),
             pnlUsd: parseFloat(tradePnl.toFixed(2)),
             balanceAfter: parseFloat(balance.toFixed(2)),
-            score: position.score
+            score: position.score,
+            fundingReturn: parseFloat((totalFundingReturn * 100).toFixed(2)),
+            slippagePaid: parseFloat(((position.entrySlippagePct + exitSlippagePct) * 100).toFixed(2)),
+            spreadPaid: parseFloat((spreadPct * 100).toFixed(2))
           });
 
           position = null;
@@ -365,14 +411,25 @@ export default async function handler(req, res) {
         const direction = detectAutoDirection(coinData, sma24);
         if (direction !== 'SKIP') {
           const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
+          const spreadPct = spreadMap[coinSymbol] || 0.0005;
+          const slippagePct = Math.max(0.0002, volatility24h * 0.02);
+
+          let entryPriceWithPenalties = levels.entry;
+          if (direction === 'LONG') {
+            entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
+          } else {
+            entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
+          }
+
           position = {
             dir: direction,
-            entryPrice: levels.entry,
+            entryPrice: entryPriceWithPenalties,
             tp: levels.tp,
             sl: levels.sl,
             score,
             fillTime: timestamp,
-            slMovedToEntry: false
+            slMovedToEntry: false,
+            entrySlippagePct: slippagePct
           };
         }
       }
