@@ -1,0 +1,30 @@
+name: Frontend CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-size: 20
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci --legacy-peer-deps
+
+    - name: Run Unit Tests
+      run: npm run test
+
+    - name: Build Application
+      run: npm run build

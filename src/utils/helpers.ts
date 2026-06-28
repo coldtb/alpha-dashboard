@@ -1,7 +1,7 @@
-import { store } from '../store/index.js';
+import { Ticker, TradePlan } from '../types';
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
-export const geckoIdMap = {
+export const geckoIdMap: Record<string, string> = {
   "BTC": "bitcoin",
   "ETH": "ethereum",
   "SOL": "solana",
@@ -12,8 +12,20 @@ export const geckoIdMap = {
   "WLD": "worldcoin-wld"
 };
 
+export interface WikiTradePlan {
+  planType: string;
+  badgeClass: string;
+  entryZone: string;
+  sl: string;
+  tp1: string;
+  tp2: string;
+  rr: string;
+  invalidation: string;
+  desc: string;
+}
+
 // Hand-crafted professional trade plans from Wiki
-export const wikiTradePlans = {
+export const wikiTradePlans: Record<string, WikiTradePlan> = {
   "BTC": {
     planType: "Plan 1: Reclaim Squeeze",
     badgeClass: "change-up",
@@ -49,8 +61,14 @@ export const wikiTradePlans = {
   }
 };
 
+export interface WikiPrompt {
+  title: string;
+  desc: string;
+  code: string;
+}
+
 // Prompts templates
-export const wikiPrompts = [
+export const wikiPrompts: WikiPrompt[] = [
   {
     title: "PROMPT 1: Derivatives Divergence (Squeeze Setup)",
     desc: "Нээлттэй гэрээ (OI) өсч, funding rate сөрөг болж short squeeze бэлтгэгдэж буй токен олох.",
@@ -103,7 +121,18 @@ Select top 2, define SL below the flush wick and reversion targets in Mongolian.
   }
 ];
 
-export const defaultSocialAlphaTokens = [
+export interface SocialAlphaToken {
+  symbol: string;
+  chain: string;
+  mcap: string;
+  vol: string;
+  change: string;
+  signal: string;
+  address: string;
+  standout: boolean;
+}
+
+export const defaultSocialAlphaTokens: SocialAlphaToken[] = [
   { symbol: "SAIRI", chain: "Base", mcap: "$1.24M", vol: "$320.13K", change: "88.17%", signal: "small-cap momentum watch", address: "0xde61878b0b21ce395266c44D4d548D1C72A3eB07", standout: true },
   { symbol: "HUNCH", chain: "Base", mcap: "$133.51K", vol: "$38.42K", change: "44.40%", signal: "small-cap momentum watch", address: "0xae1F38Aee37F5bbeeded6A69b6454f4954b30Ba3", standout: true },
   { symbol: "SURPLUS", chain: "Base", mcap: "$2.59M", vol: "$614.09K", change: "16.07%", signal: "mid-cap positive continuation", address: "0xC52aeDec3374422d7510E294cfAa90799595CBa3", standout: true },
@@ -113,20 +142,20 @@ export const defaultSocialAlphaTokens = [
   { symbol: "CAP", chain: "Base", mcap: "$435.51K", vol: "$6.71K", change: "-9.98%", signal: "notable watch", address: "0xbfa733702305280F066D470afDFA784fA70e2649", standout: true }
 ];
 
-export function floatParse(val) {
+export function floatParse(val: any): number {
   const f = parseFloat(val);
   return isNaN(f) ? 0 : f;
 }
 
-export function formatVolume(val) {
+export function formatVolume(val: number): string {
   if (val >= 1e9) return (val / 1e9).toFixed(2) + "B";
   if (val >= 1e6) return (val / 1e6).toFixed(2) + "M";
   if (val >= 1e3) return (val / 1e3).toFixed(2) + "K";
   return val.toFixed(2);
 }
 
-export function getAssetName(sym) {
-  const names = {
+export function getAssetName(sym: string): string {
+  const names: Record<string, string> = {
     "BTC": "Bitcoin",
     "ETH": "Ethereum",
     "SOL": "Solana",
@@ -139,28 +168,40 @@ export function getAssetName(sym) {
   return names[sym] || "Altcoin Perp";
 }
 
-export function formatPriceText(price) {
+export function formatPriceText(price: number): string {
   if (price === 0) return "-";
   if (price < 1) return `$${price.toFixed(6)}`;
   if (price < 10) return `$${price.toFixed(4)}`;
   return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function getScannedCoin(symbol) {
-  return store.top100Coins.find(c => c.symbol === symbol) || 
-         (store.watchlistPrices[symbol] && store.watchlistPrices[symbol].price > 0 ? {
-           symbol: symbol,
-           price: store.watchlistPrices[symbol].price,
-           change: store.watchlistPrices[symbol].change,
-           volume: 50000000,
-           funding: -0.0001,
-           high: store.watchlistPrices[symbol].price * 1.03,
-           low: store.watchlistPrices[symbol].price * 0.97
-         } : null);
+export function getScannedCoin(
+  symbol: string,
+  top100Coins: Ticker[],
+  watchlistPrices: Record<string, { price: number; change: number }>
+): Ticker | null {
+  const found = top100Coins.find(c => c.symbol === symbol);
+  if (found) return found;
+
+  const watch = watchlistPrices[symbol];
+  if (watch && watch.price > 0) {
+    return {
+      symbol,
+      price: watch.price,
+      change: watch.change,
+      volume: 50000000,
+      funding: -0.0001,
+      high: watch.price * 1.03,
+      low: watch.price * 0.97,
+      score: 50,
+      assetIndex: -1
+    };
+  }
+  return null;
 }
 
 // Auto-detect trade direction based on funding rate, VWAP, S/R, momentum
-export function detectAutoDirection(coin, taData = null) {
+export function detectAutoDirection(coin: Ticker, taData: any = null): 'LONG' | 'SHORT' {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -200,12 +241,16 @@ export function detectAutoDirection(coin, taData = null) {
   if (change24h > 3) score += 1;
   else if (change24h < -3) score -= 1;
 
-  if (score > 0) return 'LONG';
-  if (score < 0) return 'SHORT';
-  return change24h >= 0 ? 'LONG' : 'SHORT';
+  return score >= 0 ? 'LONG' : 'SHORT';
 }
 
-export function calculateScore(coin, isHyperliquidScale = false) {
+export function calculateScore(
+  coin: { change: number; funding: number; volume: number; symbol: string },
+  isHyperliquidScale = false,
+  customThresholds?: { binance?: number[]; hyperliquid?: number[] },
+  customWatchlist?: string[],
+  customWatchlistBonus?: number
+): number {
   let score = 0;
   const change = Math.abs(coin.change);
   if (change <= 3.0) {
@@ -224,27 +269,30 @@ export function calculateScore(coin, isHyperliquidScale = false) {
   }
 
   const vol = coin.volume;
-  if (isHyperliquidScale) {
-    if (vol > 30000000) score += 20;
-    else if (vol > 15000000) score += 15;
-    else if (vol > 5000000) score += 10;
-  } else {
-    if (vol > 100000000) score += 20;
-    else if (vol > 50000000) score += 15;
-    else if (vol > 10000000) score += 10;
-  }
+  const thresholds = isHyperliquidScale 
+    ? (customThresholds?.hyperliquid || [30000000, 15000000, 5000000])
+    : (customThresholds?.binance || [100000000, 50000000, 10000000]);
 
-  const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  if (vol > thresholds[0]) score += 20;
+  else if (vol > thresholds[1]) score += 15;
+  else if (vol > thresholds[2]) score += 10;
+
+  const watchlist = customWatchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  const watchlistBonus = customWatchlistBonus !== undefined ? customWatchlistBonus : 15;
   if (watchlist.includes(coin.symbol)) {
-    score += 15;
+    score += watchlistBonus;
   }
   return Math.min(score, 100);
 }
 
-export function calculateCustomSetupScore(plan) {
-  const { symbol, direction, entry, sl, tp } = plan;
+export function calculateCustomSetupScore(
+  plan: Omit<TradePlan, 'id' | 'score' | 'time'>,
+  top100Coins: Ticker[],
+  watchlistPrices: Record<string, { price: number; change: number }>
+) {
+  const { symbol, entry, sl, tp } = plan;
   
-  const matchedCoin = getScannedCoin(symbol);
+  const matchedCoin = getScannedCoin(symbol, top100Coins, watchlistPrices);
   const baseScore = matchedCoin ? calculateScore(matchedCoin) : 50;
 
   const risk   = Math.abs(entry - sl);
@@ -259,7 +307,14 @@ export function calculateCustomSetupScore(plan) {
   };
 }
 
-export function getTrueNorthKeyLevels(coin) {
+export interface KeyLevels {
+  fib0618: number;
+  vwap: number;
+  shortLiqCluster: number;
+  longLiqCluster: number;
+}
+
+export function getTrueNorthKeyLevels(coin: Ticker): KeyLevels | null {
   if (!coin || coin.price === 0) return null;
   const high = coin.high || coin.price * 1.03;
   const low = coin.low || coin.price * 0.97;
@@ -273,16 +328,25 @@ export function getTrueNorthKeyLevels(coin) {
   return { fib0618, vwap, shortLiqCluster, longLiqCluster };
 }
 
-export function computeStrategyLevels(coin, dir, taData, derivData = null, optionsData = null, useSmartSlTp = true) {
+export function computeStrategyLevels(
+  coin: any,
+  dir: 'LONG' | 'SHORT',
+  taData: any,
+  derivData: any = null,
+  optionsData: any = null,
+  useSmartSlTp = true,
+  entryOverride: number | null = null,
+  activeBotConfig: { minSlBuffer: number; minTpBuffer: number; maxTpPct?: number } = { minSlBuffer: 0.010, minTpBuffer: 0.050, maxTpPct: 0.10 }
+) {
   const price   = coin.price;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
 
   let high = coin.high || price * 1.03;
   let low  = coin.low  || price * 0.97;
   let vwap = (high + low + price) / 3;
-  let channels = [];
+  let channels: any[] = [];
 
-  let entry = price;
+  let entry = entryOverride !== null ? entryOverride : price;
   let sl    = dir === 'LONG' ? price * 0.97 : price * 1.03;
   let tp    = dir === 'LONG' ? price * 1.06 : price * 0.94;
   let reason = 'fallback';
@@ -371,7 +435,7 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
         putWall = parsed.summary.key_levels.nearest_put_wall;
         callWall = parsed.summary.key_levels.nearest_call_wall;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Could not parse options report for smart levels:", e.message);
     }
   }
@@ -386,8 +450,8 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
         if (dir === 'LONG') {
           const longLiqs = liqMap.max_liquidation_points?.max_long_liquidation_point || [];
           const sortedLiqs = longLiqs
-            .filter(l => l.liq_usd >= 2000000)
-            .sort((a, b) => b.price - a.price);
+            .filter((l: any) => l.liq_usd >= 2000000)
+            .sort((a: any, b: any) => b.price - a.price);
           
           if (sortedLiqs.length > 0) {
             const nearestLiq = sortedLiqs[0].price;
@@ -400,8 +464,8 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
         } else {
           const shortLiqs = liqMap.max_liquidation_points?.max_short_liquidation_point || [];
           const sortedLiqs = shortLiqs
-            .filter(l => l.liq_usd >= 2000000)
-            .sort((a, b) => a.price - b.price);
+            .filter((l: any) => l.liq_usd >= 2000000)
+            .sort((a: any, b: any) => a.price - b.price);
           
           if (sortedLiqs.length > 0) {
             const nearestLiq = sortedLiqs[0].price;
@@ -413,7 +477,7 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Could not calculate liquidation squeeze levels:", e.message);
     }
   }
@@ -438,7 +502,7 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Could not parse derivatives data for smart levels:", e.message);
     }
   }
@@ -517,23 +581,37 @@ export function computeStrategyLevels(coin, dir, taData, derivData = null, optio
   }
 
   // 4. Final Safety Enforcements
+  const minSlBuffer = activeBotConfig?.minSlBuffer ?? 0.010;
+  const minTpBuffer = activeBotConfig?.minTpBuffer ?? 0.005; // default to 0.5% minTpBuffer if undefined/null
+  const maxTpPct = activeBotConfig?.maxTpPct !== undefined ? activeBotConfig.maxTpPct : 0.10;
+
   if (dir === 'LONG') {
-    const maxSlAllowed = entry * (1 - store.activeBotConfig.minSlBuffer);
+    const maxSlAllowed = entry * (1 - minSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    const minTpAllowed = entry * (1 + store.activeBotConfig.minTpBuffer);
+    const minTpAllowed = entry * (1 + minTpBuffer);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
+    // Cap TP at a maximum of +config.maxTpPct to prevent unrealistic options targets
+    const maxTpAllowed = entry * (1 + maxTpPct);
+    if (tp > maxTpAllowed) {
+      tp = maxTpAllowed;
+    }
   } else {
-    const minSlAllowed = entry * (1 + store.activeBotConfig.minSlBuffer);
+    const minSlAllowed = entry * (1 + minSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    const maxTpAllowed = entry * (1 - store.activeBotConfig.minTpBuffer);
+    const maxTpAllowed = entry * (1 - minTpBuffer);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
+    }
+    // Cap TP at a maximum of -config.maxTpPct to prevent unrealistic options targets
+    const minTpAllowed = entry * (1 - maxTpPct);
+    if (tp < minTpAllowed) {
+      tp = minTpAllowed;
     }
   }
 
