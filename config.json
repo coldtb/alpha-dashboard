@@ -17,7 +17,7 @@
   "entryBufferPct": 0.005,
   "maxReboundDistancePct": 0.025,
   "enableNansenScoring": false,
-  "cooldownHours": 4,
+  "cooldownHours": 1,
   "minFillValueUsd": 5.0,
   "watchlist": ["HYPE", "WLD"],
   "watchlistBonus": 15,
