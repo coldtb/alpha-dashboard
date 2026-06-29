@@ -50,7 +50,7 @@ function calculateScore(coin, isHyperliquidScale = true) {
     else if (vol > 10000000) score += 10;
   }
 
-  const watchlist = ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
   if (watchlist.includes(coin.symbol)) {
     score += 15;
   }
