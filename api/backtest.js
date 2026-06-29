@@ -80,14 +80,26 @@ function detectAutoDirection(coin, sma24 = null) {
   else if (score < 0) dir = 'SHORT';
   else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
-  // Apply Trend Filter: Only align with the 24h SMA trend
+  // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
-    if (dir === 'LONG' && price < sma24) {
-      return 'SKIP'; // Filter out counter-trend longs
+    const maxDistancePct = 0.015; // 1.5% max pullback
+
+    if (dir === 'LONG') {
+      if (price < sma24) {
+        return 'SKIP'; // Filter out counter-trend longs
+      }
+      if (price > sma24 * (1 + maxDistancePct)) {
+        return 'SKIP'; // Filter out overextended longs
+      }
     }
-    if (dir === 'SHORT' && price > sma24) {
-      return 'SKIP'; // Filter out counter-trend shorts
+    if (dir === 'SHORT') {
+      if (price > sma24) {
+        return 'SKIP'; // Filter out counter-trend shorts
+      }
+      if (price < sma24 * (1 - maxDistancePct)) {
+        return 'SKIP'; // Filter out overextended shorts
+      }
     }
   }
 
