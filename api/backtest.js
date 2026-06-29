@@ -396,7 +396,8 @@ export default async function handler(req, res) {
           const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
           // Cap compounding at a maximum margin of $50,000 (which corresponds to $250,000 notional position size at 5x leverage)
           const maxCompoundingMargin = 50000;
-          const activeMargin = Math.min(balance, maxCompoundingMargin);
+          const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 1.0;
+          const activeMargin = Math.min(balance * positionSizeFactor, maxCompoundingMargin);
           const tradePnl = activeMargin * netReturn;
 
           balance += tradePnl;

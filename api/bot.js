@@ -1271,8 +1271,8 @@ export default async function handler(req, res) {
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
-          const finalLeverage = Math.min(5, maxLeverage);
-          let targetSizeUsd = (activeAccountSize * 0.50) * finalLeverage;
+          const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
+          let targetSizeUsd = (activeAccountSize * positionSizeFactor) * finalLeverage;
           if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
           const targetSizeTokens = targetSizeUsd / currentPrice;
           const targetSize = parseFloat(formatSize(targetSizeTokens, currentCoin.assetInfo.szDecimals));
@@ -1822,7 +1822,8 @@ export default async function handler(req, res) {
     // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
     const maxLeverage = target.assetInfo?.maxLeverage || 5;
     const finalLeverage = Math.min(5, maxLeverage);
-    let positionSizeUsd = (accountSize * 0.50) * finalLeverage;
+    const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
+    let positionSizeUsd = (accountSize * positionSizeFactor) * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.

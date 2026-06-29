@@ -18,6 +18,7 @@
   "maxReboundDistancePct": 0.025,
   "enableNansenScoring": false,
   "cooldownHours": 1,
+  "positionSizeFactor": 1.0,
   "minFillValueUsd": 5.0,
   "watchlist": ["HYPE", "WLD"],
   "watchlistBonus": 15,
