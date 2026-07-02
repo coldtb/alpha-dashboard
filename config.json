@@ -1,5 +1,5 @@
 {
-  "minScore": 80,
+  "minScore": 65,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.005,
   "entryShiftThreshold": 0.0075,
@@ -16,6 +16,7 @@
   "resistanceMinStrength": 50,
   "entryBufferPct": 0.005,
   "maxReboundDistancePct": 0.025,
+  "maxDistancePct": 0.05,
   "enableNansenScoring": false,
   "cooldownHours": 1,
   "positionSizeFactor": 1.0,

@@ -320,9 +320,9 @@ function detectAutoDirection(coin, taData = null, sma24 = null) {
   // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
-    const maxDistancePct = process.env.SMA_MAX_DISTANCE_PCT 
-      ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) 
-      : 0.015; // 1.5% max pullback
+    const maxDistancePct = config.maxDistancePct !== undefined 
+      ? config.maxDistancePct 
+      : (process.env.SMA_MAX_DISTANCE_PCT ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) : 0.015);
 
     if (dir === 'LONG') {
       if (price < sma24) {

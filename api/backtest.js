@@ -57,7 +57,7 @@ function calculateScore(coin, isHyperliquidScale = true) {
   return Math.min(score, 100);
 }
 
-function detectAutoDirection(coin, sma24 = null) {
+function detectAutoDirection(coin, sma24 = null, maxDistancePctOverride = null) {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -83,7 +83,7 @@ function detectAutoDirection(coin, sma24 = null) {
   // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
-    const maxDistancePct = 0.015; // 1.5% max pullback
+    const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
 
     if (dir === 'LONG') {
       if (price < sma24) {
@@ -204,6 +204,7 @@ export default async function handler(req, res) {
   const minScore = parseInt(req.query.min_score) || config.minScore;
   const qSlBuffer = req.query.sl_buffer ? parseFloat(req.query.sl_buffer) : config.minSlBuffer;
   const qTpBuffer = req.query.tp_buffer ? parseFloat(req.query.tp_buffer) : config.minTpBuffer;
+  const qMaxDistancePct = req.query.max_distance_pct ? parseFloat(req.query.max_distance_pct) : null;
 
   try {
     const transport = new HttpTransport();
@@ -424,7 +425,7 @@ export default async function handler(req, res) {
 
       // No position: Enter instantly at market price if score is high and trend matches
       if (score >= minScore) {
-        const direction = detectAutoDirection(coinData, sma24);
+        const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
         if (direction !== 'SKIP') {
           const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
           const spreadPct = spreadMap[coinSymbol] || 0.0005;
