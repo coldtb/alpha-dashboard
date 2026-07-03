@@ -1575,7 +1575,14 @@ export default async function handler(req, res) {
     const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
 
     // Every Execution Status Report Generator (5-minute frequency)
-    let reportMessage = `**💰 Account Balance:** $${parseFloat(userState.withdrawable || "0").toFixed(2)}\n\n`;
+    let displayBalance = parseFloat(userState.withdrawable || "0");
+    if (displayBalance === 0 && spotState && spotState.balances) {
+      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcBal) {
+        displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+      }
+    }
+    let reportMessage = `**💰 Account Balance:** $${displayBalance.toFixed(2)}\n\n`;
     reportMessage += `**📊 Watchlist Candidates Status:**\n`;
     for (const symbol of watchlist) {
       const cand = scoredCoins.find(c => c.symbol === symbol);
