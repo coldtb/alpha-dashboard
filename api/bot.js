@@ -1574,35 +1574,27 @@ export default async function handler(req, res) {
     // Pick top candidates (score >= minScore) across all Hyperliquid coins
     const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
 
-    // Hourly Status Report Generator
-    const minutes = new Date().getMinutes();
-    if (minutes < 5) {
-      const currentHourId = new Date().toISOString().substring(0, 13);
-      if (!global.lastHourlyReportHour || global.lastHourlyReportHour !== currentHourId) {
-        global.lastHourlyReportHour = currentHourId;
+    // Every Execution Status Report Generator (5-minute frequency)
+    let reportMessage = `**💰 Account Balance:** $${parseFloat(userState.withdrawable || "0").toFixed(2)}\n\n`;
+    reportMessage += `**📊 Watchlist Candidates Status:**\n`;
+    for (const symbol of watchlist) {
+      const cand = scoredCoins.find(c => c.symbol === symbol);
+      if (cand) {
+        const hasPosition = userState.assetPositions.some(p => p.position.coin === symbol && parseFloat(p.position.szi) !== 0);
+        const hasOpenOrder = openOrders.some(order => order.coin === symbol);
         
-        let reportMessage = `**💰 Account Balance:** $${parseFloat(userState.withdrawable || "0").toFixed(2)}\n\n`;
-        reportMessage += `**📊 Watchlist Candidates Status:**\n`;
-        for (const symbol of watchlist) {
-          const cand = scoredCoins.find(c => c.symbol === symbol);
-          if (cand) {
-            const hasPosition = userState.assetPositions.some(p => p.position.coin === symbol && parseFloat(p.position.szi) !== 0);
-            const hasOpenOrder = openOrders.some(order => order.coin === symbol);
-            
-            let statusText = "Scanning (No setup)";
-            if (hasPosition) statusText = "Position Open 🟢";
-            else if (hasOpenOrder) statusText = "Open Order Pending ⏳";
-            else if (cand.score < minScore) statusText = `Skipped (Score ${cand.score} < ${minScore})`;
-            
-            reportMessage += `• **${symbol}**: Score **${cand.score}** | Price: $${cand.price} | Status: ${statusText}\n`;
-          } else {
-            reportMessage += `• **${symbol}**: Not found in market scanner\n`;
-          }
-        }
+        let statusText = "Scanning (No setup)";
+        if (hasPosition) statusText = "Position Open 🟢";
+        else if (hasOpenOrder) statusText = "Open Order Pending ⏳";
+        else if (cand.score < minScore) statusText = `Skipped (Score ${cand.score} < ${minScore})`;
         
-        await sendDiscordAlert(reportMessage, 'info');
+        reportMessage += `• **${symbol}**: Score **${cand.score}** | Price: $${cand.price} | Status: ${statusText}\n`;
+      } else {
+        reportMessage += `• **${symbol}**: Not found in market scanner\n`;
       }
     }
+    
+    await sendDiscordAlert(reportMessage, 'info');
 
     const candidates = scoredCoins.filter(c => c.score >= minScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol));
     if (candidates.length === 0) {
