@@ -35,6 +35,38 @@ try {
   console.warn("Failed to load config.json at startup, using defaults:", e.message);
 }
 
+async function sendDiscordAlert(message, type = 'info') {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    let color = 3447003; // Blue (info/hourly report)
+    if (type === 'open') color = 3066993; // Green (trade open)
+    if (type === 'close') color = 15158332; // Red (trade close)
+    if (type === 'lock') color = 10181046; // Purple (breakeven lock)
+    if (type === 'error') color = 16711680; // Bright Red (error)
+
+    const payload = {
+      embeds: [
+        {
+          title: type === 'open' ? '🟢 Position Opened' : (type === 'close' ? '🔴 Position Closed' : (type === 'lock' ? '🔒 Stop Loss Trailing' : '📊 Alpha Bot Report')),
+          description: message,
+          color: color,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error("[Discord Alert Error] Failed to send webhook:", err.message);
+  }
+}
+
 function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
 }
@@ -913,6 +945,40 @@ export default async function handler(req, res) {
     let userState = initialUserState;
     let spotState = initialSpotState;
 
+    // Detect recently closed positions from user fills in the last 6 minutes
+    if (Array.isArray(userFills)) {
+      const now = Date.now();
+      for (const fill of userFills) {
+        const fillTime = parseInt(fill.time);
+        const timeDiffMs = now - fillTime;
+        if (timeDiffMs > 0 && timeDiffMs < 6 * 60 * 1000) {
+          const closedPnl = parseFloat(fill.closedPnl || "0");
+          const isClose = fill.dir && fill.dir.toLowerCase().includes("close");
+          if (isClose || Math.abs(closedPnl) > 0.0001) {
+            const fillId = `${fill.hash}-${fill.time}`;
+            if (!global.reportedFills) {
+              global.reportedFills = new Set();
+            }
+            if (!global.reportedFills.has(fillId)) {
+              global.reportedFills.add(fillId);
+              
+              const pnlStr = closedPnl >= 0 ? `+$${closedPnl.toFixed(2)} 🟢` : `-$${Math.abs(closedPnl).toFixed(2)} 🔴`;
+              const direction = fill.dir || (fill.side === 'B' ? 'Close Short' : 'Close Long');
+              
+              await sendDiscordAlert(
+                `**Coin:** ${fill.coin}\n` +
+                `**Action:** ${direction} (Position Closed)\n` +
+                `**Exit Price:** $${parseFloat(fill.px).toFixed(4)}\n` +
+                `**Size:** ${fill.sz}\n` +
+                `**PnL:** ${pnlStr}`,
+                'close'
+              );
+            }
+          }
+        }
+      }
+    }
+
     let binanceData = null;
     try {
       const [resTicker, resFunding] = await Promise.all([
@@ -1507,6 +1573,37 @@ export default async function handler(req, res) {
 
     // Pick top candidates (score >= minScore) across all Hyperliquid coins
     const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+
+    // Hourly Status Report Generator
+    const minutes = new Date().getMinutes();
+    if (minutes < 5) {
+      const currentHourId = new Date().toISOString().substring(0, 13);
+      if (!global.lastHourlyReportHour || global.lastHourlyReportHour !== currentHourId) {
+        global.lastHourlyReportHour = currentHourId;
+        
+        let reportMessage = `**💰 Account Balance:** $${parseFloat(userState.withdrawable || "0").toFixed(2)}\n\n`;
+        reportMessage += `**📊 Watchlist Candidates Status:**\n`;
+        for (const symbol of watchlist) {
+          const cand = scoredCoins.find(c => c.symbol === symbol);
+          if (cand) {
+            const hasPosition = userState.assetPositions.some(p => p.position.coin === symbol && parseFloat(p.position.szi) !== 0);
+            const hasOpenOrder = openOrders.some(order => order.coin === symbol);
+            
+            let statusText = "Scanning (No setup)";
+            if (hasPosition) statusText = "Position Open 🟢";
+            else if (hasOpenOrder) statusText = "Open Order Pending ⏳";
+            else if (cand.score < minScore) statusText = `Skipped (Score ${cand.score} < ${minScore})`;
+            
+            reportMessage += `• **${symbol}**: Score **${cand.score}** | Price: $${cand.price} | Status: ${statusText}\n`;
+          } else {
+            reportMessage += `• **${symbol}**: Not found in market scanner\n`;
+          }
+        }
+        
+        await sendDiscordAlert(reportMessage, 'info');
+      }
+    }
+
     const candidates = scoredCoins.filter(c => c.score >= minScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol));
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
@@ -1874,6 +1971,15 @@ export default async function handler(req, res) {
           orderResult: { status: "simulated" }
         }
       });
+      await sendDiscordAlert(
+        `**[DRY RUN]**\n` +
+        `**Coin:** ${target.symbol}\n` +
+        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
+        `**Entry Price:** $${entryPx}\n` +
+        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
+        `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
+        'open'
+      );
     } else {
       // A. Update Leverage
       await exchange.updateLeverage({
@@ -1930,6 +2036,14 @@ export default async function handler(req, res) {
         ]),
         grouping: "normalTpsl"
       });
+      await sendDiscordAlert(
+        `**Coin:** ${target.symbol}\n` +
+        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
+        `**Entry Price:** $${entryPx}\n` +
+        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
+        `**Position Size:** $${positionSizeUsd.toFixed(2)} (Margin: $${(positionSizeUsd / finalLeverage).toFixed(2)})`,
+        'open'
+      );
 
       return res.status(200).json({
         status: "success",
