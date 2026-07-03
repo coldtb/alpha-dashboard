@@ -41,15 +41,16 @@ async function sendDiscordAlert(message, type = 'info') {
 
   try {
     let color = 3447003; // Blue (info/hourly report)
-    if (type === 'open') color = 3066993; // Green (trade open)
-    if (type === 'close') color = 15158332; // Red (trade close)
+    if (type === 'open') color = 15844352; // Orange/Yellow (limit order placed)
+    if (type === 'fill') color = 3066993; // Green (position filled/active)
+    if (type === 'close') color = 15158332; // Red (position closed)
     if (type === 'lock') color = 10181046; // Purple (breakeven lock)
     if (type === 'error') color = 16711680; // Bright Red (error)
 
     const payload = {
       embeds: [
         {
-          title: type === 'open' ? '🟢 Position Opened' : (type === 'close' ? '🔴 Position Closed' : (type === 'lock' ? '🔒 Stop Loss Trailing' : '📊 Alpha Bot Report')),
+          title: type === 'open' ? '⏳ Limit Order Placed' : (type === 'fill' ? '🟢 Position Filled & Active' : (type === 'close' ? '🔴 Position Closed' : (type === 'lock' ? '🔒 Stop Loss Trailing' : '📊 Alpha Bot Report'))),
           description: message,
           color: color,
           timestamp: new Date().toISOString()
@@ -1191,6 +1192,23 @@ export default async function handler(req, res) {
       const currentCoin = scoredCoins.find(c => c.symbol === coin);
       if (!currentCoin) continue;
       const currentPrice = currentCoin.price;
+
+      // Send Discord notification when a position is newly filled and becomes active
+      const positionId = `${coin}-${entryPx}-${size > 0 ? 'LONG' : 'SHORT'}`;
+      if (!global.notifiedActivePositions) {
+        global.notifiedActivePositions = new Set();
+      }
+      if (!global.notifiedActivePositions.has(positionId)) {
+        global.notifiedActivePositions.add(positionId);
+        
+        await sendDiscordAlert(
+          `**Coin:** ${coin}\n` +
+          `**Direction:** ${size > 0 ? 'LONG' : 'SHORT'}\n` +
+          `**Entry Price:** $${entryPx}\n` +
+          `**Size:** ${Math.abs(size)} tokens ($${(Math.abs(size) * currentPrice).toFixed(2)})`,
+          'fill'
+        );
+      }
 
       const isLong = size > 0;
       const returnPct = isLong ? (currentPrice - entryPx) / entryPx : (entryPx - currentPrice) / entryPx;
