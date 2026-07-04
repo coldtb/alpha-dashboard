@@ -1297,7 +1297,7 @@ export default async function handler(req, res) {
 
       // 3. Hierarchical active trailing logic
       const tpPx = parseFloat(tpOrder.triggerPx);
-      const isNearTp = isLong ? currentPrice >= tpPx * 0.992 : currentPrice <= tpPx * 1.008;
+      const isNearTp = isLong ? currentPrice >= tpPx * 0.988 : currentPrice <= tpPx * 1.012;
       
       const slIsWorseThanEntry = slOrder && (isLong ? parseFloat(slOrder.triggerPx) < entryPx : parseFloat(slOrder.triggerPx) > entryPx);
 
@@ -1619,7 +1619,11 @@ export default async function handler(req, res) {
       }
     }
     
-    await sendDiscordAlert(reportMessage, 'info');
+    // Send general status report only once every 15 minutes to prevent channel spam
+    const currentMin = new Date().getMinutes();
+    if (currentMin % 15 === 0) {
+      await sendDiscordAlert(reportMessage, 'info');
+    }
 
     const candidates = scoredCoins.filter(c => c.score >= minScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol));
     if (candidates.length === 0) {
