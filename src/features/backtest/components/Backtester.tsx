@@ -198,6 +198,14 @@ export const Backtester: React.FC = () => {
               </span>
             </div>
           </div>
+          
+          {/* Detailed wins/losses summary */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-muted)', padding: '0 0.2rem', marginTop: '-0.3rem' }}>
+            <span>Total: <strong style={{ color: '#fff' }}>{lastBacktestData.summary.totalTrades}</strong></span>
+            <span>Wins: <strong className="change-up">{lastBacktestData.summary.wins}</strong></span>
+            <span>Losses: <strong className="change-down">{lastBacktestData.summary.losses}</strong></span>
+            <span>Profit Factor: <strong style={{ color: '#fff' }}>{lastBacktestData.summary.profitFactor}</strong></span>
+          </div>
 
           {/* SVG Recharts Chart */}
           <div className="bt-chart-container" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '0.75rem', padding: '0.4rem', position: 'relative', height: '150px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -226,7 +234,7 @@ export const Backtester: React.FC = () => {
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ verticalAlign: 'middle' }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
             </svg>
-            View Detailed Trade Log ({lastBacktestData.summary.totalTrades})
+            View Detailed Trade Log ({lastBacktestData.summary.totalTrades} | Win: {lastBacktestData.summary.wins} / Loss: {lastBacktestData.summary.losses})
           </button>
         </div>
       )}
