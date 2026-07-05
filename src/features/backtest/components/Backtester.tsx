@@ -6,7 +6,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 
 export const Backtester: React.FC = () => {
-  const { activeBotConfig, lastBacktestData, setLastBacktestData } = useStore();
+  const { activeBotConfig, lastBacktestData, setLastBacktestData, top100Coins } = useStore();
 
   const [coin, setCoin] = useState('BTC');
   const [days, setDays] = useState('30');
@@ -57,14 +57,12 @@ export const Backtester: React.FC = () => {
                 fontSize: '0.85rem'
               }}
             >
-              <option value="BTC">BTC</option>
-              <option value="ETH">ETH</option>
-              <option value="SOL">SOL</option>
-              <option value="HYPE">HYPE</option>
-              <option value="LINK">LINK</option>
-              <option value="XRP">XRP</option>
-              <option value="INJ">INJ</option>
-              <option value="WLD">WLD</option>
+              {Array.from(new Set([
+                'BTC', 'ETH', 'SOL', 'HYPE', 'LINK', 'XRP', 'INJ', 'WLD',
+                ...(top100Coins || []).map(c => c.symbol)
+              ])).map(symbol => (
+                <option key={symbol} value={symbol}>{symbol}</option>
+              ))}
             </select>
           </div>
           <div className="form-group">
