@@ -777,8 +777,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Stop Loss is capped at a maximum of -3% (-15% ROE at 5x)
-    const minSlAllowed = entry * 0.97;
+    // Stop Loss is capped at a maximum of -2% (-10% ROE at 5x)
+    const minSlAllowed = entry * 0.98;
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
@@ -799,8 +799,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Stop Loss is capped at a maximum of +3% (-15% ROE at 5x)
-    const maxSlAllowed = entry * 1.03;
+    // Stop Loss is capped at a maximum of +2% (-10% ROE at 5x)
+    const maxSlAllowed = entry * 1.02;
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
