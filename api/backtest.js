@@ -73,14 +73,11 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
   const change24h = coin.change || 0;
   let score = 0;
 
-  if (funding < -0.0001) {
+  // Abnormal Funding Filter: Only apply funding rate bias if it is extremely high (abnormal)
+  if (funding < -0.0003) {
     score += 1;
-  } else if (funding < 0) {
-    score += 0.5;
-  } else if (funding > 0.0001) {
+  } else if (funding > 0.0003) {
     score -= 1;
-  } else if (funding > 0) {
-    score -= 0.5;
   }
 
   if (change24h > 3) score += 1;
@@ -91,9 +88,19 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
   else if (score < 0) dir = 'SHORT';
   else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
+  const price = coin.price;
+
+  // Trend-Regime Lock: Force direction to align with medium-term trend (SMA100)
+  if (sma100 !== null) {
+    if (price > sma100) {
+      if (dir === 'SHORT') return 'SKIP';
+    } else {
+      if (dir === 'LONG') return 'SKIP';
+    }
+  }
+
   // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
-    const price = coin.price;
     const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
 
     if (dir === 'LONG') {
@@ -455,7 +462,7 @@ export default async function handler(req, res) {
           const leveragedReturn = priceReturn * leverage;
           const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
           const maxCompoundingMargin = 50000;
-          const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 1.0;
+          const positionSizeFactor = position.sizeFactor !== undefined ? position.sizeFactor : (config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95);
           const activeMargin = Math.min(balance * positionSizeFactor, maxCompoundingMargin);
           const tradePnl = activeMargin * netReturn;
 
@@ -515,7 +522,8 @@ export default async function handler(req, res) {
             score: pendingOrder.score,
             fillTime: timestamp,
             slMovedToEntry: false,
-            entrySlippagePct: pendingOrder.entrySlippagePct
+            entrySlippagePct: pendingOrder.entrySlippagePct,
+            sizeFactor: pendingOrder.sizeFactor
           };
           pendingOrder = null;
           continue; // Move to next hour now that position is filled
@@ -541,13 +549,18 @@ export default async function handler(req, res) {
             entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
           }
 
+          // Volatility-Based Position Sizing: Scale size factor dynamically
+          const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95;
+          const dynamicSizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / volatility24h));
+
           pendingOrder = {
             dir: direction,
             entryPrice: entryPriceWithPenalties,
             tp: levels.tp,
             sl: levels.sl,
             score: adjustedScore,
-            entrySlippagePct: slippagePct
+            entrySlippagePct: slippagePct,
+            sizeFactor: dynamicSizeFactor
           };
 
           // Check if it can be filled in the same hour it is placed
@@ -568,7 +581,8 @@ export default async function handler(req, res) {
               score: adjustedScore,
               fillTime: timestamp,
               slMovedToEntry: false,
-              entrySlippagePct: slippagePct
+              entrySlippagePct: slippagePct,
+              sizeFactor: dynamicSizeFactor
             };
             pendingOrder = null;
           }
