@@ -178,8 +178,8 @@ export default async function handler(req, res) {
     const totalEquity = accountValue;
 
     // Process Trade History from Closed Fills
-    // Show ALL trades (bot + manual) from June 13, 2026 onwards
-    const cutoffTime = new Date('2026-06-13T00:00:00Z').getTime();
+    // Show ALL trades (bot + manual) from July 5, 2026 onwards (Reset history to start fresh)
+    const cutoffTime = new Date('2026-07-05T10:00:00Z').getTime();
     const closedFills = fills.filter(f => parseFloat(f.closedPnl || "0") !== 0);
     const recentFills = closedFills
       .filter(f => f.time >= cutoffTime)
