@@ -1,5 +1,3 @@
-import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
-
 async function callTrueNorthMcp(toolName, args) {
   const token = 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
@@ -37,13 +35,18 @@ async function callTrueNorthMcp(toolName, args) {
 }
 
 async function run() {
-  try {
-    console.log("Querying TrueNorth technical analysis for worldcoin-wld (WLD)...");
-    const result = await callTrueNorthMcp('technical_analysis', { token_address: 'worldcoin-wld', timeframe: '1h' });
-    console.log("TrueNorth Result:", JSON.stringify(result, null, 2));
-  } catch (err) {
-    console.error("Error calling TrueNorth:", err.message);
+  console.log("Calling TrueNorth technical_analysis for worldcoin-wld...");
+  const res = await callTrueNorthMcp('technical_analysis', { token_address: 'worldcoin-wld', timeframe: '1h' });
+  if (res?.result?.content?.[0]?.text) {
+    const data = JSON.parse(res.result.content[0].text);
+    console.log("Full data structure keys:", Object.keys(data));
+    console.log("support_resistance keys:", Object.keys(data.support_resistance || {}));
+    if (data.support_resistance?.['support and resistance channel']?.channels) {
+      console.log("Channels:", JSON.stringify(data.support_resistance['support and resistance channel'].channels, null, 2));
+    }
+  } else {
+    console.log("Failed to get content from response:", res);
   }
 }
 
-run();
+run().catch(console.error);

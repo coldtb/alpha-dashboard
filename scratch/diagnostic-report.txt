@@ -1,0 +1,23 @@
+=== Strategy Diagnostics & Feedback Report ===
+Generated: 2026-06-13T17:34:38.174Z
+Data Period: Last 14 days
+Optimized parameter: MinScore=90, SLBuffer=0.006, TPBuffer=0.01
+
+Performance Metrics:
+- Total Simulated Trades: 13
+- Overall Win Rate: 7.69%
+- LONG Trades: 1 (Win Rate: 0.00%)
+- SHORT Trades: 12 (Win Rate: 8.33%)
+- Average Trade Duration: 16.2 hours
+
+Diagnostic Findings & Recommendations:
+- No critical performance anomalies found. Strategy parameters are balanced.
+
+AI REFACTOR PROMPT FOR ANTIGRAVITY (Level 3):
+"You are pair programming to optimize a trading bot. Based on the last 14 days backtest diagnostics of BTC, ETH, SOL, HYPE:
+- Optimal MinScore is 90
+- Optimal SL Buffer is 0.60%
+- Optimal TP Buffer is 1.00%
+- LONG Win Rate: 0.0% | SHORT Win Rate: 8.3%
+- SL Volatility: 8.3% of SLs hit within 2 hours.
+Please refactor api/bot.js to implement logic that optimizes these findings, such as adding a trend-following check (e.g. moving average) to filter out LONG setups since their winrate is low, or dynamic SL sizing based on ATR."

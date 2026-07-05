@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../../store';
 import { detectAutoDirection, computeStrategyLevels, getScannedCoin, formatPriceText, geckoIdMap } from '../../../utils/helpers';
-import { callMcpTool } from '../../../services/api';
+import { callMcpTool, fetchCandles } from '../../../services/api';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 
@@ -11,7 +11,7 @@ interface TradePlannerProps {
 }
 
 export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clearInitialValues }) => {
-  const { top100Coins, watchlistPrices, addCustomTrade, setActiveTab } = useStore();
+  const { top100Coins, watchlistPrices, addCustomTrade, setActiveTab, activeBotConfig } = useStore();
 
   const [symbol, setSymbol] = useState('');
   const [entry, setEntry] = useState('');
@@ -21,6 +21,8 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
   const [accountSize, setAccountSize] = useState('10000');
   
   const [autoDir, setAutoDir] = useState<'LONG' | 'SHORT'>('LONG');
+  const [isSkipped, setIsSkipped] = useState(false);
+  const [skipReason, setSkipReason] = useState('');
   const [indicatorState, setIndicatorState] = useState<{
     coin: any;
     isLive: boolean;
@@ -54,8 +56,10 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
 
     const coin = getScannedCoin(sym, top100Coins, watchlistPrices);
     if (coin) {
-      const dir = detectAutoDirection(coin);
+      const dir = detectAutoDirection(coin) as 'LONG' | 'SHORT';
       setAutoDir(dir);
+      setIsSkipped(false);
+      setSkipReason('');
       
       // Calculate immediate fallback levels
       const fallbackLevels = computeStrategyLevels(coin, dir, null);
@@ -97,10 +101,40 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
             }
           }
 
+          // Fetch candles to calculate 24h SMA
+          const candles = await fetchCandles(sym);
+          let sma24: number | null = null;
+          if (candles && candles.length >= 25) {
+            const last25 = candles.slice(-25);
+            const sumClose = last25.reduce((sum, c: any) => sum + parseFloat(c.c || c[4] || 0), 0);
+            sma24 = sumClose / 25;
+          }
+
           if (data) {
-            const liveDir = detectAutoDirection(coin, data);
-            setAutoDir(liveDir);
-            const liveLevels = computeStrategyLevels(coin, liveDir, data);
+            const rawDir = detectAutoDirection(coin, data, null) as 'LONG' | 'SHORT';
+            const maxDist = activeBotConfig?.maxDistancePct !== undefined ? activeBotConfig.maxDistancePct : 1.5;
+            const liveDir = detectAutoDirection(coin, data, sma24, maxDist);
+
+            setAutoDir(rawDir);
+            
+            if (liveDir === 'SKIP') {
+              setIsSkipped(true);
+              if (sma24 !== null) {
+                const diffPct = ((coin.price - sma24) / sma24) * 100;
+                if (rawDir === 'LONG') {
+                  if (coin.price < sma24) setSkipReason(`Price is below 24h SMA ($${sma24.toFixed(4)}) - Counter-trend LONG`);
+                  else if (diffPct > maxDist) setSkipReason(`LONG is overextended (Diff ${diffPct.toFixed(2)}% > ${maxDist}%)`);
+                } else {
+                  if (coin.price > sma24) setSkipReason(`Price is above 24h SMA ($${sma24.toFixed(4)}) - Counter-trend SHORT`);
+                  else if (Math.abs(diffPct) > maxDist) setSkipReason(`SHORT is overextended (Diff ${Math.abs(diffPct).toFixed(2)}% > ${maxDist}%)`);
+                }
+              }
+            } else {
+              setIsSkipped(false);
+              setSkipReason('');
+            }
+
+            const liveLevels = computeStrategyLevels(coin, rawDir, data);
             
             setIndicatorState({
               coin,
@@ -132,7 +166,7 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [symbol, top100Coins, watchlistPrices]);
+  }, [symbol, top100Coins, watchlistPrices, activeBotConfig]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,6 +244,22 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
                         Funding: <span style={{ color: '#fff' }}>{(indicatorState.coin.funding * 100).toFixed(4)}%</span>
                       </div>
                       <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        {isSkipped && (
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.55rem',
+                            borderRadius: '5px',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            color: '#f87171',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem'
+                          }} title={skipReason}>
+                            ⚠️ Skip: {skipReason.split('-')[0].trim()}
+                          </span>
+                        )}
                         <span style={{
                           fontSize: '0.7rem',
                           fontWeight: 700,

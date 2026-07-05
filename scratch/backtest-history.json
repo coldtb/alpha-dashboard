@@ -14,5 +14,2437 @@
       "maxDrawdown": 14.83,
       "profitFactor": 0
     }
+  },
+  {
+    "timestamp": "2026-06-14T06:19:45.893Z",
+    "coin": "BTC",
+    "days": 14,
+    "minScore": 85,
+    "summary": {
+      "totalTrades": 7,
+      "winRate": 28.57,
+      "wins": 2,
+      "losses": 5,
+      "totalReturnPct": 40.92,
+      "finalBalance": 14091.87,
+      "maxDrawdown": 28.56,
+      "profitFactor": 1.73
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:42:10.067Z",
+    "coin": "BTC",
+    "days": 208,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 69,
+      "winRate": 11.59,
+      "wins": 8,
+      "losses": 61,
+      "totalReturnPct": -74.55,
+      "finalBalance": 2544.83,
+      "maxDrawdown": 92.39,
+      "profitFactor": 0.77
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:42:17.626Z",
+    "coin": "XRP",
+    "days": 208,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 60,
+      "winRate": 13.33,
+      "wins": 8,
+      "losses": 52,
+      "totalReturnPct": 78.71,
+      "finalBalance": 17870.58,
+      "maxDrawdown": 71.88,
+      "profitFactor": 1.25
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:42:41.552Z",
+    "coin": "XRP",
+    "days": 208,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 60,
+      "winRate": 13.33,
+      "wins": 8,
+      "losses": 52,
+      "totalReturnPct": 78.71,
+      "finalBalance": 17870.58,
+      "maxDrawdown": 71.88,
+      "profitFactor": 1.25
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:43:03.291Z",
+    "coin": "XRP",
+    "days": 208,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 94,
+      "winRate": 22.34,
+      "wins": 21,
+      "losses": 73,
+      "totalReturnPct": 73.96,
+      "finalBalance": 17396.42,
+      "maxDrawdown": 74.71,
+      "profitFactor": 1.17
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:43:40.445Z",
+    "coin": "XRP",
+    "days": 208,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 94,
+      "winRate": 22.34,
+      "wins": 21,
+      "losses": 73,
+      "totalReturnPct": 73.96,
+      "finalBalance": 17396.42,
+      "maxDrawdown": 74.71,
+      "profitFactor": 1.17
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:43:54.674Z",
+    "coin": "XRP",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 93,
+      "winRate": 22.58,
+      "wins": 21,
+      "losses": 72,
+      "totalReturnPct": 91.37,
+      "finalBalance": 19136.56,
+      "maxDrawdown": 74.71,
+      "profitFactor": 1.19
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:44:47.765Z",
+    "coin": "XRP",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 93,
+      "winRate": 23.66,
+      "wins": 22,
+      "losses": 71,
+      "totalReturnPct": 216.03,
+      "finalBalance": 31602.8,
+      "maxDrawdown": 71.5,
+      "profitFactor": 1.44
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:11.158Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 8,
+      "winRate": 37.5,
+      "wins": 3,
+      "losses": 5,
+      "totalReturnPct": 77.77,
+      "finalBalance": 17776.86,
+      "maxDrawdown": 0.15,
+      "profitFactor": 207.06
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:11.592Z",
+    "coin": "ETH",
+    "days": 30,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 0,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 0,
+      "totalReturnPct": 0,
+      "finalBalance": 10000,
+      "maxDrawdown": 0,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:12.056Z",
+    "coin": "SOL",
+    "days": 30,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 0,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 0,
+      "totalReturnPct": 0,
+      "finalBalance": 10000,
+      "maxDrawdown": 0,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:12.525Z",
+    "coin": "LINK",
+    "days": 30,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 1,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 1,
+      "totalReturnPct": -0.05,
+      "finalBalance": 9995,
+      "maxDrawdown": 0.05,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:12.942Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 10,
+      "winRate": 20,
+      "wins": 2,
+      "losses": 8,
+      "totalReturnPct": 5.79,
+      "finalBalance": 10578.54,
+      "maxDrawdown": 29.06,
+      "profitFactor": 1.2
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:14.307Z",
+    "coin": "BTC",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 78,
+      "winRate": 16.67,
+      "wins": 13,
+      "losses": 65,
+      "totalReturnPct": -72.06,
+      "finalBalance": 2793.8,
+      "maxDrawdown": 92.31,
+      "profitFactor": 0.83
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:15.293Z",
+    "coin": "ETH",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 1,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 1,
+      "totalReturnPct": -0.05,
+      "finalBalance": 9995,
+      "maxDrawdown": 0.05,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:16.591Z",
+    "coin": "SOL",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 3,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 3,
+      "totalReturnPct": -34.23,
+      "finalBalance": 6577.31,
+      "maxDrawdown": 34.23,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:17.670Z",
+    "coin": "LINK",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 11,
+      "winRate": 9.09,
+      "wins": 1,
+      "losses": 10,
+      "totalReturnPct": -29.89,
+      "finalBalance": 7010.87,
+      "maxDrawdown": 51.26,
+      "profitFactor": 0.42
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:47:19.108Z",
+    "coin": "XRP",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 93,
+      "winRate": 23.66,
+      "wins": 22,
+      "losses": 71,
+      "totalReturnPct": 216.03,
+      "finalBalance": 31602.8,
+      "maxDrawdown": 71.5,
+      "profitFactor": 1.44
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:49:01.874Z",
+    "coin": "XRP",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 93,
+      "winRate": 23.66,
+      "wins": 22,
+      "losses": 71,
+      "totalReturnPct": 216.03,
+      "finalBalance": 31602.8,
+      "maxDrawdown": 71.5,
+      "profitFactor": 1.44
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:54:42.862Z",
+    "coin": "BTC",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 79,
+      "winRate": 16.46,
+      "wins": 13,
+      "losses": 66,
+      "totalReturnPct": -71.33,
+      "finalBalance": 2866.78,
+      "maxDrawdown": 92.32,
+      "profitFactor": 0.83
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:54:43.909Z",
+    "coin": "ETH",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 1,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 1,
+      "totalReturnPct": -0.05,
+      "finalBalance": 9995,
+      "maxDrawdown": 0.05,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:54:45.399Z",
+    "coin": "SOL",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 3,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 3,
+      "totalReturnPct": -34.23,
+      "finalBalance": 6577.31,
+      "maxDrawdown": 34.23,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:57:28.951Z",
+    "coin": "BTC",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 89,
+      "winRate": 17.98,
+      "wins": 16,
+      "losses": 73,
+      "totalReturnPct": -50.31,
+      "finalBalance": 4969.25,
+      "maxDrawdown": 91.9,
+      "profitFactor": 0.88
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:57:32.027Z",
+    "coin": "ETH",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 104,
+      "winRate": 14.42,
+      "wins": 15,
+      "losses": 89,
+      "totalReturnPct": -94.87,
+      "finalBalance": 512.99,
+      "maxDrawdown": 97.6,
+      "profitFactor": 0.42
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:57:35.136Z",
+    "coin": "SOL",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 104,
+      "winRate": 17.31,
+      "wins": 18,
+      "losses": 86,
+      "totalReturnPct": -80.97,
+      "finalBalance": 1903.16,
+      "maxDrawdown": 93.08,
+      "profitFactor": 0.65
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:57:38.222Z",
+    "coin": "LINK",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 77,
+      "winRate": 16.88,
+      "wins": 13,
+      "losses": 64,
+      "totalReturnPct": -52.46,
+      "finalBalance": 4753.74,
+      "maxDrawdown": 79.23,
+      "profitFactor": 0.8
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:57:41.350Z",
+    "coin": "XRP",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 95,
+      "winRate": 21.05,
+      "wins": 20,
+      "losses": 75,
+      "totalReturnPct": 16.24,
+      "finalBalance": 11623.54,
+      "maxDrawdown": 82.71,
+      "profitFactor": 1.05
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:29.340Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 144,
+      "winRate": 13.89,
+      "wins": 20,
+      "losses": 124,
+      "totalReturnPct": -99.55,
+      "finalBalance": 44.51,
+      "maxDrawdown": 99.55,
+      "profitFactor": 0.4
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:32.227Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 144,
+      "winRate": 13.89,
+      "wins": 20,
+      "losses": 124,
+      "totalReturnPct": -99.55,
+      "finalBalance": 44.51,
+      "maxDrawdown": 99.55,
+      "profitFactor": 0.4
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:35.190Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 144,
+      "winRate": 13.89,
+      "wins": 20,
+      "losses": 124,
+      "totalReturnPct": -99.55,
+      "finalBalance": 44.51,
+      "maxDrawdown": 99.55,
+      "profitFactor": 0.4
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:46.062Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 145,
+      "winRate": 11.72,
+      "wins": 17,
+      "losses": 128,
+      "totalReturnPct": -99.76,
+      "finalBalance": 23.91,
+      "maxDrawdown": 99.76,
+      "profitFactor": 0.4
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:48.791Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 139,
+      "winRate": 9.35,
+      "wins": 13,
+      "losses": 126,
+      "totalReturnPct": -99.76,
+      "finalBalance": 23.52,
+      "maxDrawdown": 99.76,
+      "profitFactor": 0.4
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:51.546Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 124,
+      "winRate": 8.87,
+      "wins": 11,
+      "losses": 113,
+      "totalReturnPct": -99.28,
+      "finalBalance": 72.19,
+      "maxDrawdown": 99.28,
+      "profitFactor": 0.42
+    }
+  },
+  {
+    "timestamp": "2026-06-14T06:59:54.662Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 90,
+    "summary": {
+      "totalTrades": 116,
+      "winRate": 6.9,
+      "wins": 8,
+      "losses": 108,
+      "totalReturnPct": -99.79,
+      "finalBalance": 21.24,
+      "maxDrawdown": 99.79,
+      "profitFactor": 0.46
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:07:58.264Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 32,
+      "winRate": 50,
+      "wins": 16,
+      "losses": 16,
+      "totalReturnPct": -14.08,
+      "finalBalance": 8591.9,
+      "maxDrawdown": 52.86,
+      "profitFactor": 0.83
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:08:13.757Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 41,
+      "winRate": 63.41,
+      "wins": 26,
+      "losses": 15,
+      "totalReturnPct": 2609.02,
+      "finalBalance": 270901.8,
+      "maxDrawdown": 19.17,
+      "profitFactor": 15.06
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:08:30.934Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 41,
+      "winRate": 63.41,
+      "wins": 26,
+      "losses": 15,
+      "totalReturnPct": 2609.02,
+      "finalBalance": 270901.8,
+      "maxDrawdown": 19.17,
+      "profitFactor": 15.06
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:13:12.253Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 67,
+      "winRate": 64.18,
+      "wins": 43,
+      "losses": 24,
+      "totalReturnPct": 23290.87,
+      "finalBalance": 2339086.51,
+      "maxDrawdown": 19.09,
+      "profitFactor": 7.23
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:15:23.493Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 37,
+      "winRate": 62.16,
+      "wins": 23,
+      "losses": 14,
+      "totalReturnPct": 1200.1,
+      "finalBalance": 130009.85,
+      "maxDrawdown": 19.17,
+      "profitFactor": 5.3
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:17:50.604Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 67,
+      "winRate": 64.18,
+      "wins": 43,
+      "losses": 24,
+      "totalReturnPct": 23290.87,
+      "finalBalance": 9356.35,
+      "maxDrawdown": 19.08,
+      "profitFactor": 7.23
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:09.971Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 37,
+      "winRate": 62.16,
+      "wins": 23,
+      "losses": 14,
+      "totalReturnPct": 1200.1,
+      "finalBalance": 130009.85,
+      "maxDrawdown": 19.17,
+      "profitFactor": 5.3
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:10.364Z",
+    "coin": "ETH",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 25,
+      "winRate": 48,
+      "wins": 12,
+      "losses": 13,
+      "totalReturnPct": 285.41,
+      "finalBalance": 38541.26,
+      "maxDrawdown": 10.14,
+      "profitFactor": 3.89
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:10.733Z",
+    "coin": "SOL",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 27,
+      "winRate": 48.15,
+      "wins": 13,
+      "losses": 14,
+      "totalReturnPct": 392.11,
+      "finalBalance": 49210.97,
+      "maxDrawdown": 10.09,
+      "profitFactor": 8.78
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:11.062Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 67,
+      "winRate": 64.18,
+      "wins": 43,
+      "losses": 24,
+      "totalReturnPct": 23290.87,
+      "finalBalance": 2339086.51,
+      "maxDrawdown": 19.09,
+      "profitFactor": 7.23
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:11.675Z",
+    "coin": "LINK",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 17,
+      "winRate": 82.35,
+      "wins": 14,
+      "losses": 3,
+      "totalReturnPct": 602.19,
+      "finalBalance": 70218.67,
+      "maxDrawdown": 0.1,
+      "profitFactor": 1377.74
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:12.098Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 41,
+      "winRate": 63.41,
+      "wins": 26,
+      "losses": 15,
+      "totalReturnPct": 2609.02,
+      "finalBalance": 270901.8,
+      "maxDrawdown": 19.17,
+      "profitFactor": 15.06
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:12.528Z",
+    "coin": "INJ",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 16,
+      "winRate": 68.75,
+      "wins": 11,
+      "losses": 5,
+      "totalReturnPct": 361.88,
+      "finalBalance": 46188.46,
+      "maxDrawdown": 0.1,
+      "profitFactor": 473
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:20:12.934Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 59,
+      "winRate": 76.27,
+      "wins": 45,
+      "losses": 14,
+      "totalReturnPct": 47115.62,
+      "finalBalance": 4721562.45,
+      "maxDrawdown": 10.05,
+      "profitFactor": 39.25
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:27:25.824Z",
+    "coin": "HYPE",
+    "days": 180,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 355,
+      "winRate": 66.76,
+      "wins": 237,
+      "losses": 118,
+      "totalReturnPct": 2799480433244061.5,
+      "finalBalance": 279948043324416160,
+      "maxDrawdown": 27.26,
+      "profitFactor": 7.25
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:27:26.617Z",
+    "coin": "WLD",
+    "days": 180,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 114,
+      "winRate": 71.05,
+      "wins": 81,
+      "losses": 33,
+      "totalReturnPct": 5139831.32,
+      "finalBalance": 513993131.86,
+      "maxDrawdown": 19.17,
+      "profitFactor": 39
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:27:28.613Z",
+    "coin": "HYPE",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 408,
+      "winRate": 65.69,
+      "wins": 268,
+      "losses": 140,
+      "totalReturnPct": 169156168549441100,
+      "finalBalance": 16915616854944117000,
+      "maxDrawdown": 27.26,
+      "profitFactor": 7.24
+    }
+  },
+  {
+    "timestamp": "2026-06-28T11:27:29.947Z",
+    "coin": "WLD",
+    "days": 365,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 129,
+      "winRate": 68.22,
+      "wins": 88,
+      "losses": 41,
+      "totalReturnPct": 8905244.33,
+      "finalBalance": 890534433.34,
+      "maxDrawdown": 27.33,
+      "profitFactor": 39.24
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:02:58.820Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 66,
+      "winRate": 65.15,
+      "wins": 43,
+      "losses": 23,
+      "totalReturnPct": 6322.01,
+      "finalBalance": 2568.8,
+      "maxDrawdown": 26.83,
+      "profitFactor": 3.03
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:03.736Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 36,
+      "winRate": 63.89,
+      "wins": 23,
+      "losses": 13,
+      "totalReturnPct": 785.26,
+      "finalBalance": 88526.16,
+      "maxDrawdown": 29.34,
+      "profitFactor": 4.04
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:04.209Z",
+    "coin": "ETH",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 22,
+      "winRate": 50,
+      "wins": 11,
+      "losses": 11,
+      "totalReturnPct": 154.36,
+      "finalBalance": 25435.62,
+      "maxDrawdown": 12.58,
+      "profitFactor": 2.61
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:04.613Z",
+    "coin": "SOL",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 28,
+      "winRate": 50,
+      "wins": 14,
+      "losses": 14,
+      "totalReturnPct": 346.96,
+      "finalBalance": 44696.17,
+      "maxDrawdown": 11.66,
+      "profitFactor": 5.48
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:05.091Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 66,
+      "winRate": 65.15,
+      "wins": 43,
+      "losses": 23,
+      "totalReturnPct": 6322.01,
+      "finalBalance": 642200.82,
+      "maxDrawdown": 26.83,
+      "profitFactor": 3.03
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:05.565Z",
+    "coin": "LINK",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 83.33,
+      "wins": 15,
+      "losses": 3,
+      "totalReturnPct": 550.26,
+      "finalBalance": 65025.96,
+      "maxDrawdown": 1.17,
+      "profitFactor": 92.2
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:06.036Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 40,
+      "winRate": 65,
+      "wins": 26,
+      "losses": 14,
+      "totalReturnPct": 1511.03,
+      "finalBalance": 161103.43,
+      "maxDrawdown": 21.43,
+      "profitFactor": 8.7
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:06.511Z",
+    "coin": "INJ",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 15,
+      "winRate": 73.33,
+      "wins": 11,
+      "losses": 4,
+      "totalReturnPct": 248.24,
+      "finalBalance": 34824.34,
+      "maxDrawdown": 2.09,
+      "profitFactor": 23.33
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:03:06.888Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 58,
+      "winRate": 79.31,
+      "wins": 46,
+      "losses": 12,
+      "totalReturnPct": 12498.64,
+      "finalBalance": 1259864.1,
+      "maxDrawdown": 11.99,
+      "profitFactor": 14.25
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:11.667Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 2,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 2,
+      "totalReturnPct": -12.42,
+      "finalBalance": 8758.23,
+      "maxDrawdown": 12.42,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:13.208Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 29,
+      "winRate": 58.62,
+      "wins": 17,
+      "losses": 12,
+      "totalReturnPct": 406.06,
+      "finalBalance": 50606.23,
+      "maxDrawdown": 20.7,
+      "profitFactor": 4.32
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:23.800Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 201,
+      "winRate": 68.66,
+      "wins": 138,
+      "losses": 63,
+      "totalReturnPct": 387055595.29,
+      "finalBalance": 38705569528.97,
+      "maxDrawdown": 22.91,
+      "profitFactor": 28.33
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:24.346Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 147,
+      "winRate": 63.27,
+      "wins": 93,
+      "losses": 54,
+      "totalReturnPct": 1295865.44,
+      "finalBalance": 129596544.15,
+      "maxDrawdown": 26.83,
+      "profitFactor": 2.85
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:24.772Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 188.37,
+      "finalBalance": 28836.79,
+      "maxDrawdown": 12.86,
+      "profitFactor": 4.85
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:25.258Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 100,
+      "winRate": 75,
+      "wins": 75,
+      "losses": 25,
+      "totalReturnPct": 218547.8,
+      "finalBalance": 21864780.27,
+      "maxDrawdown": 29.02,
+      "profitFactor": 16.87
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:25.752Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 94,
+      "winRate": 50,
+      "wins": 47,
+      "losses": 47,
+      "totalReturnPct": 11368.76,
+      "finalBalance": 1146875.63,
+      "maxDrawdown": 12.94,
+      "profitFactor": 3.74
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:09:26.197Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 74,
+      "winRate": 66.22,
+      "wins": 49,
+      "losses": 25,
+      "totalReturnPct": 9577.63,
+      "finalBalance": 967762.82,
+      "maxDrawdown": 28.67,
+      "profitFactor": 4.89
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:35.710Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 201,
+      "winRate": 68.66,
+      "wins": 138,
+      "losses": 63,
+      "totalReturnPct": 7673.47,
+      "finalBalance": 777346.62,
+      "maxDrawdown": 16.97,
+      "profitFactor": 12.26
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:36.256Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 147,
+      "winRate": 63.27,
+      "wins": 93,
+      "losses": 54,
+      "totalReturnPct": 4683.46,
+      "finalBalance": 478345.51,
+      "maxDrawdown": 14.29,
+      "profitFactor": 6.32
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:36.868Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 188.37,
+      "finalBalance": 28836.79,
+      "maxDrawdown": 12.86,
+      "profitFactor": 4.85
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:37.454Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 100,
+      "winRate": 75,
+      "wins": 75,
+      "losses": 25,
+      "totalReturnPct": 3632.75,
+      "finalBalance": 373274.8,
+      "maxDrawdown": 29.02,
+      "profitFactor": 17.18
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:37.889Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 94,
+      "winRate": 50,
+      "wins": 47,
+      "losses": 47,
+      "totalReturnPct": 2113.44,
+      "finalBalance": 221344.17,
+      "maxDrawdown": 11.81,
+      "profitFactor": 5.9
+    }
+  },
+  {
+    "timestamp": "2026-06-28T12:16:38.306Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 74,
+      "winRate": 66.22,
+      "wins": 49,
+      "losses": 25,
+      "totalReturnPct": 2024.44,
+      "finalBalance": 212443.77,
+      "maxDrawdown": 28.62,
+      "profitFactor": 4.71
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:12.317Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 138,
+      "winRate": 57.25,
+      "wins": 79,
+      "losses": 59,
+      "totalReturnPct": 3888.91,
+      "finalBalance": 398891.43,
+      "maxDrawdown": 16.97,
+      "profitFactor": 7.49
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:12.692Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 109,
+      "winRate": 54.13,
+      "wins": 59,
+      "losses": 50,
+      "totalReturnPct": 2510.48,
+      "finalBalance": 261047.59,
+      "maxDrawdown": 30.84,
+      "profitFactor": 5.06
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:13.074Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 188.33,
+      "finalBalance": 28833.15,
+      "maxDrawdown": 12.86,
+      "profitFactor": 4.85
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:13.657Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 1805.15,
+      "finalBalance": 190515.31,
+      "maxDrawdown": 19.78,
+      "profitFactor": 11.93
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:14.145Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 57,
+      "winRate": 43.86,
+      "wins": 25,
+      "losses": 32,
+      "totalReturnPct": 677.58,
+      "finalBalance": 77758.32,
+      "maxDrawdown": 20.22,
+      "profitFactor": 2.71
+    }
+  },
+  {
+    "timestamp": "2026-06-29T12:58:14.605Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 48,
+      "winRate": 52.08,
+      "wins": 25,
+      "losses": 23,
+      "totalReturnPct": 360.96,
+      "finalBalance": 46096.09,
+      "maxDrawdown": 35.71,
+      "profitFactor": 2.02
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:29.630Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 138,
+      "winRate": 57.25,
+      "wins": 79,
+      "losses": 59,
+      "totalReturnPct": 3888.91,
+      "finalBalance": 398891.43,
+      "maxDrawdown": 16.97,
+      "profitFactor": 7.49
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:30.216Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 109,
+      "winRate": 54.13,
+      "wins": 59,
+      "losses": 50,
+      "totalReturnPct": 2510.48,
+      "finalBalance": 261047.59,
+      "maxDrawdown": 30.84,
+      "profitFactor": 5.06
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:30.855Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 188.33,
+      "finalBalance": 28833.15,
+      "maxDrawdown": 12.86,
+      "profitFactor": 4.85
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:31.517Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 1805.15,
+      "finalBalance": 190515.31,
+      "maxDrawdown": 19.78,
+      "profitFactor": 11.93
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:32.080Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 57,
+      "winRate": 43.86,
+      "wins": 25,
+      "losses": 32,
+      "totalReturnPct": 677.58,
+      "finalBalance": 77758.32,
+      "maxDrawdown": 20.22,
+      "profitFactor": 2.71
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:32.494Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 48,
+      "winRate": 52.08,
+      "wins": 25,
+      "losses": 23,
+      "totalReturnPct": 360.96,
+      "finalBalance": 46096.09,
+      "maxDrawdown": 35.71,
+      "profitFactor": 2.02
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:37.937Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 138,
+      "winRate": 57.25,
+      "wins": 79,
+      "losses": 59,
+      "totalReturnPct": 2886.59,
+      "finalBalance": 298659.14,
+      "maxDrawdown": 8.71,
+      "profitFactor": 6.87
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:38.603Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 109,
+      "winRate": 54.13,
+      "wins": 59,
+      "losses": 50,
+      "totalReturnPct": 1503.9,
+      "finalBalance": 160390.15,
+      "maxDrawdown": 16.2,
+      "profitFactor": 4.54
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:39.179Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 73.41,
+      "finalBalance": 17341.23,
+      "maxDrawdown": 6.47,
+      "profitFactor": 6.07
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:39.718Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 798.75,
+      "finalBalance": 89874.92,
+      "maxDrawdown": 10.13,
+      "profitFactor": 11.02
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:40.262Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 57,
+      "winRate": 43.86,
+      "wins": 25,
+      "losses": 32,
+      "totalReturnPct": 201.56,
+      "finalBalance": 30155.63,
+      "maxDrawdown": 10.42,
+      "profitFactor": 2.72
+    }
+  },
+  {
+    "timestamp": "2026-06-29T13:45:40.917Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 48,
+      "winRate": 52.08,
+      "wins": 25,
+      "losses": 23,
+      "totalReturnPct": 128.95,
+      "finalBalance": 22895.09,
+      "maxDrawdown": 18.99,
+      "profitFactor": 2.21
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:37.379Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 38,
+      "winRate": 42.11,
+      "wins": 16,
+      "losses": 22,
+      "totalReturnPct": 390.82,
+      "finalBalance": 88.35,
+      "maxDrawdown": 22.61,
+      "profitFactor": 3.6
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:38.046Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 138,
+      "winRate": 57.25,
+      "wins": 79,
+      "losses": 59,
+      "totalReturnPct": 317584.25,
+      "finalBalance": 57183.17,
+      "maxDrawdown": 22.91,
+      "profitFactor": 11.65
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:38.591Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 109,
+      "winRate": 54.13,
+      "wins": 59,
+      "losses": 50,
+      "totalReturnPct": 23868.47,
+      "finalBalance": 4314.32,
+      "maxDrawdown": 30.82,
+      "profitFactor": 3.29
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:39.049Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 2,
+      "winRate": 0,
+      "wins": 0,
+      "losses": 2,
+      "totalReturnPct": -12.42,
+      "finalBalance": 15.76,
+      "maxDrawdown": 12.44,
+      "profitFactor": 0
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:39.548Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 18,
+      "winRate": 55.56,
+      "wins": 10,
+      "losses": 8,
+      "totalReturnPct": 188.33,
+      "finalBalance": 51.9,
+      "maxDrawdown": 12.86,
+      "profitFactor": 4.85
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:39.993Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 6825.49,
+      "finalBalance": 1246.59,
+      "maxDrawdown": 19.79,
+      "profitFactor": 11.49
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:40.294Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 19,
+      "winRate": 36.84,
+      "wins": 7,
+      "losses": 12,
+      "totalReturnPct": 26.04,
+      "finalBalance": 22.69,
+      "maxDrawdown": 20.82,
+      "profitFactor": 1.4
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:40.992Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 57,
+      "winRate": 43.86,
+      "wins": 25,
+      "losses": 32,
+      "totalReturnPct": 695.05,
+      "finalBalance": 143.11,
+      "maxDrawdown": 20.27,
+      "profitFactor": 2.31
+    }
+  },
+  {
+    "timestamp": "2026-06-29T14:29:41.581Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 48,
+      "winRate": 52.08,
+      "wins": 25,
+      "losses": 23,
+      "totalReturnPct": 360.96,
+      "finalBalance": 82.97,
+      "maxDrawdown": 35.71,
+      "profitFactor": 2.02
+    }
+  },
+  {
+    "timestamp": "2026-07-02T13:15:22.225Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 6825.49,
+      "finalBalance": 1246.59,
+      "maxDrawdown": 19.79,
+      "profitFactor": 11.49
+    }
+  },
+  {
+    "timestamp": "2026-07-02T13:23:18.290Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 64,
+      "winRate": 65.63,
+      "wins": 42,
+      "losses": 22,
+      "totalReturnPct": 6825.49,
+      "finalBalance": 1246.59,
+      "maxDrawdown": 19.79,
+      "profitFactor": 11.49
+    }
+  },
+  {
+    "timestamp": "2026-07-02T13:23:18.846Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 159,
+      "winRate": 70.44,
+      "wins": 112,
+      "losses": 47,
+      "totalReturnPct": 1427168.01,
+      "finalBalance": 256908.24,
+      "maxDrawdown": 29.02,
+      "profitFactor": 21.11
+    }
+  },
+  {
+    "timestamp": "2026-07-02T13:23:19.221Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 109,
+      "winRate": 54.13,
+      "wins": 59,
+      "losses": 50,
+      "totalReturnPct": 23868.47,
+      "finalBalance": 4314.32,
+      "maxDrawdown": 30.82,
+      "profitFactor": 3.29
+    }
+  },
+  {
+    "timestamp": "2026-07-02T13:23:19.740Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 151,
+      "winRate": 64.24,
+      "wins": 97,
+      "losses": 54,
+      "totalReturnPct": 900772.56,
+      "finalBalance": 162157.06,
+      "maxDrawdown": 22.09,
+      "profitFactor": 5.09
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:24.186Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 8,
+      "winRate": 62.5,
+      "wins": 5,
+      "losses": 3,
+      "totalReturnPct": 60.06,
+      "finalBalance": 28.81,
+      "maxDrawdown": 6.27,
+      "profitFactor": 8.3
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:24.517Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 22,
+      "winRate": 63.64,
+      "wins": 14,
+      "losses": 8,
+      "totalReturnPct": 165.94,
+      "finalBalance": 47.87,
+      "maxDrawdown": 26.76,
+      "profitFactor": 3.63
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:24.825Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 17,
+      "winRate": 64.71,
+      "wins": 11,
+      "losses": 6,
+      "totalReturnPct": 214.59,
+      "finalBalance": 56.63,
+      "maxDrawdown": 11.67,
+      "profitFactor": 5.13
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:25.267Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 29,
+      "winRate": 75.86,
+      "wins": 22,
+      "losses": 7,
+      "totalReturnPct": 1007.02,
+      "finalBalance": 199.26,
+      "maxDrawdown": 11.67,
+      "profitFactor": 6.88
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:30.092Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 8,
+      "winRate": 62.5,
+      "wins": 5,
+      "losses": 3,
+      "totalReturnPct": 60.06,
+      "finalBalance": 28.81,
+      "maxDrawdown": 6.27,
+      "profitFactor": 8.3
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:30.416Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 22,
+      "winRate": 63.64,
+      "wins": 14,
+      "losses": 8,
+      "totalReturnPct": 165.94,
+      "finalBalance": 47.87,
+      "maxDrawdown": 26.76,
+      "profitFactor": 3.63
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:30.708Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 17,
+      "winRate": 64.71,
+      "wins": 11,
+      "losses": 6,
+      "totalReturnPct": 214.59,
+      "finalBalance": 56.63,
+      "maxDrawdown": 11.67,
+      "profitFactor": 5.13
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:33:31.104Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 29,
+      "winRate": 75.86,
+      "wins": 22,
+      "losses": 7,
+      "totalReturnPct": 1007.02,
+      "finalBalance": 199.26,
+      "maxDrawdown": 11.67,
+      "profitFactor": 6.88
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:35.708Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 7,
+      "winRate": 85.71,
+      "wins": 6,
+      "losses": 1,
+      "totalReturnPct": 98.26,
+      "finalBalance": 35.69,
+      "maxDrawdown": 0.89,
+      "profitFactor": 77.91
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:36.050Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 14,
+      "winRate": 78.57,
+      "wins": 11,
+      "losses": 3,
+      "totalReturnPct": 236.32,
+      "finalBalance": 60.54,
+      "maxDrawdown": 4.17,
+      "profitFactor": 43.54
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:36.355Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 12,
+      "winRate": 66.67,
+      "wins": 8,
+      "losses": 4,
+      "totalReturnPct": 125.25,
+      "finalBalance": 40.54,
+      "maxDrawdown": 11.67,
+      "profitFactor": 5.85
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:36.642Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 17,
+      "winRate": 76.47,
+      "wins": 13,
+      "losses": 4,
+      "totalReturnPct": 307.23,
+      "finalBalance": 73.3,
+      "maxDrawdown": 11.68,
+      "profitFactor": 7.72
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:39.951Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 7,
+      "winRate": 85.71,
+      "wins": 6,
+      "losses": 1,
+      "totalReturnPct": 98.26,
+      "finalBalance": 35.69,
+      "maxDrawdown": 0.89,
+      "profitFactor": 77.91
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:40.262Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 14,
+      "winRate": 78.57,
+      "wins": 11,
+      "losses": 3,
+      "totalReturnPct": 236.32,
+      "finalBalance": 60.54,
+      "maxDrawdown": 4.17,
+      "profitFactor": 43.54
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:40.527Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 12,
+      "winRate": 66.67,
+      "wins": 8,
+      "losses": 4,
+      "totalReturnPct": 125.25,
+      "finalBalance": 40.54,
+      "maxDrawdown": 11.67,
+      "profitFactor": 5.85
+    }
+  },
+  {
+    "timestamp": "2026-07-02T14:35:40.839Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 17,
+      "winRate": 76.47,
+      "wins": 13,
+      "losses": 4,
+      "totalReturnPct": 307.23,
+      "finalBalance": 73.3,
+      "maxDrawdown": 11.68,
+      "profitFactor": 7.72
+    }
+  },
+  {
+    "timestamp": "2026-07-02T15:09:12.318Z",
+    "coin": "WLD",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 159,
+      "winRate": 70.44,
+      "wins": 112,
+      "losses": 47,
+      "totalReturnPct": 1427168.01,
+      "finalBalance": 256908.24,
+      "maxDrawdown": 29.02,
+      "profitFactor": 21.11
+    }
+  },
+  {
+    "timestamp": "2026-07-02T15:09:12.877Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 151,
+      "winRate": 64.24,
+      "wins": 97,
+      "losses": 54,
+      "totalReturnPct": 900772.56,
+      "finalBalance": 162157.06,
+      "maxDrawdown": 22.09,
+      "profitFactor": 5.09
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:10:50.136Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 16,
+      "winRate": 50,
+      "wins": 8,
+      "losses": 8,
+      "totalReturnPct": 117.75,
+      "finalBalance": 39.19,
+      "maxDrawdown": 11.56,
+      "profitFactor": 4.71
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:10:51.924Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 29,
+      "winRate": 65.52,
+      "wins": 19,
+      "losses": 10,
+      "totalReturnPct": 776.66,
+      "finalBalance": 157.8,
+      "maxDrawdown": 11.26,
+      "profitFactor": 6.59
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:10:54.039Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 59,
+      "winRate": 45.76,
+      "wins": 27,
+      "losses": 32,
+      "totalReturnPct": 1859.02,
+      "finalBalance": 352.62,
+      "maxDrawdown": 12.27,
+      "profitFactor": 9.02
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:10:56.117Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 128,
+      "winRate": 64.84,
+      "wins": 83,
+      "losses": 45,
+      "totalReturnPct": 734958.1,
+      "finalBalance": 132310.46,
+      "maxDrawdown": 12.55,
+      "profitFactor": 10.08
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:10:58.336Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 45,
+      "winRate": 55.56,
+      "wins": 25,
+      "losses": 20,
+      "totalReturnPct": 583.49,
+      "finalBalance": 123.03,
+      "maxDrawdown": 29.7,
+      "profitFactor": 2.98
+    }
+  },
+  {
+    "timestamp": "2026-07-03T12:11:00.503Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 92,
+      "winRate": 57.61,
+      "wins": 53,
+      "losses": 39,
+      "totalReturnPct": 20329.04,
+      "finalBalance": 3677.23,
+      "maxDrawdown": 30.03,
+      "profitFactor": 10.17
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:49:55.143Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 16,
+      "winRate": 37.5,
+      "wins": 6,
+      "losses": 10,
+      "totalReturnPct": 23.06,
+      "finalBalance": 22.15,
+      "maxDrawdown": 10.8,
+      "profitFactor": 1.47
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:49:56.539Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 24,
+      "winRate": 58.33,
+      "wins": 14,
+      "losses": 10,
+      "totalReturnPct": 260.12,
+      "finalBalance": 64.82,
+      "maxDrawdown": 10.33,
+      "profitFactor": 4.58
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:49:58.592Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 57,
+      "winRate": 43.86,
+      "wins": 25,
+      "losses": 32,
+      "totalReturnPct": 625.76,
+      "finalBalance": 130.64,
+      "maxDrawdown": 19.31,
+      "profitFactor": 2.35
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:50:00.655Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 94,
+      "winRate": 50,
+      "wins": 47,
+      "losses": 47,
+      "totalReturnPct": 9143.16,
+      "finalBalance": 1663.77,
+      "maxDrawdown": 12.3,
+      "profitFactor": 3.81
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:50:02.159Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 80,
+    "summary": {
+      "totalTrades": 48,
+      "winRate": 52.08,
+      "wins": 25,
+      "losses": 23,
+      "totalReturnPct": 332.2,
+      "finalBalance": 77.8,
+      "maxDrawdown": 34.14,
+      "profitFactor": 2.04
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:50:04.517Z",
+    "coin": "BTC",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 74,
+      "winRate": 66.22,
+      "wins": 49,
+      "losses": 25,
+      "totalReturnPct": 7773.45,
+      "finalBalance": 1417.22,
+      "maxDrawdown": 27.39,
+      "profitFactor": 4.86
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:53:48.974Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 19,
+      "winRate": 42.11,
+      "wins": 8,
+      "losses": 11,
+      "totalReturnPct": 33.45,
+      "finalBalance": 24.02,
+      "maxDrawdown": 20.92,
+      "profitFactor": 1.41
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:53:51.017Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 97,
+      "winRate": 25.77,
+      "wins": 25,
+      "losses": 72,
+      "totalReturnPct": -89.71,
+      "finalBalance": 1.85,
+      "maxDrawdown": 93,
+      "profitFactor": 0.56
+    }
+  },
+  {
+    "timestamp": "2026-07-03T13:53:53.193Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 65,
+      "winRate": 29.23,
+      "wins": 19,
+      "losses": 46,
+      "totalReturnPct": -65.51,
+      "finalBalance": 6.21,
+      "maxDrawdown": 74.01,
+      "profitFactor": 0.66
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:37.874Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 19,
+      "winRate": 52.63,
+      "wins": 10,
+      "losses": 9,
+      "totalReturnPct": 102.34,
+      "finalBalance": 36.42,
+      "maxDrawdown": 10.47,
+      "profitFactor": 3.57
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:40.009Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 97,
+      "winRate": 60.82,
+      "wins": 59,
+      "losses": 38,
+      "totalReturnPct": 12402.52,
+      "finalBalance": 2250.45,
+      "maxDrawdown": 11.62,
+      "profitFactor": 4.51
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:42.148Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 71,
+      "winRate": 54.93,
+      "wins": 39,
+      "losses": 32,
+      "totalReturnPct": 965.03,
+      "finalBalance": 191.7,
+      "maxDrawdown": 38.24,
+      "profitFactor": 3.45
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:43.605Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 39,
+      "winRate": 53.85,
+      "wins": 21,
+      "losses": 18,
+      "totalReturnPct": 195.78,
+      "finalBalance": 53.24,
+      "maxDrawdown": 21.56,
+      "profitFactor": 2.94
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:45.485Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 154,
+      "winRate": 62.99,
+      "wins": 97,
+      "losses": 57,
+      "totalReturnPct": 328147.47,
+      "finalBalance": 59084.54,
+      "maxDrawdown": 32.66,
+      "profitFactor": 4.83
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:01:47.515Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 121,
+      "winRate": 57.85,
+      "wins": 70,
+      "losses": 51,
+      "totalReturnPct": 9742.04,
+      "finalBalance": 1771.57,
+      "maxDrawdown": 26.03,
+      "profitFactor": 2.24
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:34.113Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 25,
+      "winRate": 44,
+      "wins": 11,
+      "losses": 14,
+      "totalReturnPct": 199.03,
+      "finalBalance": 53.83,
+      "maxDrawdown": 10.77,
+      "profitFactor": 3.66
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:36.000Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 99,
+      "winRate": 55.56,
+      "wins": 55,
+      "losses": 44,
+      "totalReturnPct": 1898.16,
+      "finalBalance": 359.67,
+      "maxDrawdown": 22.76,
+      "profitFactor": 2.68
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:38.112Z",
+    "coin": "XRP",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 63,
+      "winRate": 47.62,
+      "wins": 30,
+      "losses": 33,
+      "totalReturnPct": 885.52,
+      "finalBalance": 177.39,
+      "maxDrawdown": 42.61,
+      "profitFactor": 3.72
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:39.549Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 42,
+      "winRate": 52.38,
+      "wins": 22,
+      "losses": 20,
+      "totalReturnPct": 351.76,
+      "finalBalance": 81.32,
+      "maxDrawdown": 17.12,
+      "profitFactor": 2.98
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:41.914Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 149,
+      "winRate": 57.05,
+      "wins": 85,
+      "losses": 64,
+      "totalReturnPct": 109061.83,
+      "finalBalance": 19649.13,
+      "maxDrawdown": 41.36,
+      "profitFactor": 2.84
+    }
+  },
+  {
+    "timestamp": "2026-07-03T14:05:43.986Z",
+    "coin": "HYPE",
+    "days": 30,
+    "minScore": 65,
+    "summary": {
+      "totalTrades": 125,
+      "winRate": 53.6,
+      "wins": 67,
+      "losses": 58,
+      "totalReturnPct": 5149.17,
+      "finalBalance": 944.85,
+      "maxDrawdown": 35.16,
+      "profitFactor": 1.8
+    }
   }
 ]

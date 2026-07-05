@@ -1,4 +1,4 @@
-import { Ticker, TradePlan } from '../types';
+import { Ticker, TradePlan, BotConfig } from '../types';
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 export const geckoIdMap: Record<string, string> = {
@@ -9,7 +9,30 @@ export const geckoIdMap: Record<string, string> = {
   "LINK": "chainlink",
   "XRP": "ripple",
   "INJ": "injective-protocol",
-  "WLD": "worldcoin-wld"
+  "WLD": "worldcoin-wld",
+  "ZEC": "zcash",
+  "XLM": "stellar",
+  "TRX": "tron",
+  "SUI": "sui",
+  "TIA": "celestia",
+  "FTM": "fantom",
+  "AVAX": "avalanche-2",
+  "NEAR": "near",
+  "OP": "optimism",
+  "ARB": "arbitrum",
+  "DOGE": "dogecoin",
+  "LTC": "litecoin",
+  "PEPE": "pepe",
+  "WIF": "dogwifhat",
+  "BONK": "bonk",
+  "ENA": "ethena",
+  "ONDO": "ondo-finance",
+  "JUP": "jupiter-exchange-solana",
+  "POPCAT": "popcat-solana",
+  "NVDA": "nvidia",
+  "MU": "micron-technology",
+  "LLY": "eli-lilly-and-co",
+  "0G": "0g-chain"
 };
 
 export interface WikiTradePlan {
@@ -201,7 +224,12 @@ export function getScannedCoin(
 }
 
 // Auto-detect trade direction based on funding rate, VWAP, S/R, momentum
-export function detectAutoDirection(coin: Ticker, taData: any = null): 'LONG' | 'SHORT' {
+export function detectAutoDirection(
+  coin: Ticker,
+  taData: any = null,
+  sma24: number | null = null,
+  maxDistancePct: number = 1.5
+): 'LONG' | 'SHORT' | 'SKIP' {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -241,7 +269,26 @@ export function detectAutoDirection(coin: Ticker, taData: any = null): 'LONG' | 
   if (change24h > 3) score += 1;
   else if (change24h < -3) score -= 1;
 
-  return score >= 0 ? 'LONG' : 'SHORT';
+  let dir: 'LONG' | 'SHORT' = 'LONG';
+  if (score > 0) dir = 'LONG';
+  else if (score < 0) dir = 'SHORT';
+  else dir = change24h >= 0 ? 'LONG' : 'SHORT';
+
+  // Apply 24h SMA trend filters if sma24 is provided
+  if (sma24 !== null) {
+    const price = coin.price;
+    const diffPct = ((price - sma24) / sma24) * 100;
+
+    if (dir === 'LONG') {
+      if (price < sma24) return 'SKIP';
+      if (diffPct > maxDistancePct) return 'SKIP';
+    } else if (dir === 'SHORT') {
+      if (price > sma24) return 'SKIP';
+      if (Math.abs(diffPct) > maxDistancePct) return 'SKIP';
+    }
+  }
+
+  return dir;
 }
 
 export function calculateScore(
@@ -288,12 +335,22 @@ export function calculateScore(
 export function calculateCustomSetupScore(
   plan: Omit<TradePlan, 'id' | 'score' | 'time'>,
   top100Coins: Ticker[],
-  watchlistPrices: Record<string, { price: number; change: number }>
+  watchlistPrices: Record<string, { price: number; change: number }>,
+  config?: BotConfig | null
 ) {
   const { symbol, entry, sl, tp } = plan;
   
   const matchedCoin = getScannedCoin(symbol, top100Coins, watchlistPrices);
-  const baseScore = matchedCoin ? calculateScore(matchedCoin) : 50;
+  const baseScore = matchedCoin ? calculateScore(
+    matchedCoin,
+    false,
+    config ? {
+      binance: config.binanceVolumeThresholds,
+      hyperliquid: config.hyperliquidVolumeThresholds
+    } : undefined,
+    config?.watchlist,
+    config?.watchlistBonus
+  ) : 50;
 
   const risk   = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
@@ -590,6 +647,11 @@ export function computeStrategyLevels(
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
+    // Hard cap Stop Loss at a maximum of -2% (-10% ROE at 5x)
+    const minSlAllowed = entry * 0.98;
+    if (sl < minSlAllowed) {
+      sl = minSlAllowed;
+    }
     const minTpAllowed = entry * (1 + minTpBuffer);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
@@ -603,6 +665,11 @@ export function computeStrategyLevels(
     const minSlAllowed = entry * (1 + minSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
+    }
+    // Hard cap Stop Loss at a maximum of +2% (-10% ROE at 5x)
+    const maxSlAllowed = entry * 1.02;
+    if (sl > maxSlAllowed) {
+      sl = maxSlAllowed;
     }
     const maxTpAllowed = entry * (1 - minTpBuffer);
     if (tp > maxTpAllowed) {

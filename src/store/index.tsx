@@ -34,7 +34,7 @@ interface StoreContextType extends AppState {
   closeDrawer: () => void;
   openDrawer: (coin: Ticker) => void;
   refreshPerformance: () => Promise<void>;
-  refreshScanner: () => Promise<void>;
+  refreshScanner: (currentConfig?: BotConfig | null) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -98,7 +98,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addCustomTrade = (plan: Omit<TradePlan, 'id' | 'score' | 'time'>) => {
-    const scoreObj = calculateCustomSetupScore(plan, top100Coins, watchlistPrices);
+    const scoreObj = calculateCustomSetupScore(plan, top100Coins, watchlistPrices, activeBotConfig);
     const newPlan: TradePlan = {
       ...plan,
       id: "plan_" + Date.now() + Math.random().toString(36).substring(2, 6),
@@ -171,10 +171,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // 3. Fetch Top 100 Scanner Data
-  const refreshScanner = useCallback(async () => {
+  const refreshScanner = useCallback(async (currentConfig?: BotConfig | null) => {
     try {
       const rawTickers = await fetchScannerData();
       const hypePrice = await fetchHyperliquidHypePrice();
+
+      const configToUse = currentConfig !== undefined ? currentConfig : activeBotConfig;
 
       // Score and process tickers
       const scored = rawTickers.map((coin, index) => {
@@ -185,7 +187,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setup = 'Consolidating';
         }
 
-        const score = calculateScore(coin, false);
+        const score = calculateScore(
+          coin,
+          false,
+          configToUse ? {
+            binance: configToUse.binanceVolumeThresholds,
+            hyperliquid: configToUse.hyperliquidVolumeThresholds
+          } : undefined,
+          configToUse?.watchlist,
+          configToUse?.watchlistBonus
+        );
 
         return {
           ...coin,
@@ -234,14 +245,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 4. Fetch Config & Start Websockets
   useEffect(() => {
     const initData = async () => {
+      let configData: BotConfig | null = null;
       try {
-        const configData = await fetchBotConfig();
+        configData = await fetchBotConfig();
         setActiveBotConfig(configData);
       } catch (e) {
         console.warn("Failed to load bot config:", e);
       }
 
-      await refreshScanner();
+      await refreshScanner(configData);
       await refreshPerformance();
     };
 

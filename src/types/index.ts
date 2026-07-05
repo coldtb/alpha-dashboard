@@ -107,5 +107,6 @@ export interface BotConfig {
   watchlistBonus: number;
   binanceVolumeThresholds: number[];
   hyperliquidVolumeThresholds: number[];
+  maxDistancePct: number;
   maxTpPct: number;
 }

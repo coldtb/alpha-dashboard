@@ -1,7 +1,8 @@
-import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
+import { HttpTransport } from "@nktkas/hyperliquid";
 
+// Generic JSON-RPC tool caller helper for TrueNorth
 async function callTrueNorthMcp(toolName, args) {
-  const token = 'ak_6bab536248be4a1896a4ea54de7b8377';
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
   
   const response = await fetch(url, {
@@ -36,14 +37,16 @@ async function callTrueNorthMcp(toolName, args) {
   throw new Error("Invalid TrueNorth SSE response format");
 }
 
-async function run() {
-  try {
-    console.log("Querying TrueNorth technical analysis for worldcoin-wld (WLD)...");
-    const result = await callTrueNorthMcp('technical_analysis', { token_address: 'worldcoin-wld', timeframe: '1h' });
-    console.log("TrueNorth Result:", JSON.stringify(result, null, 2));
-  } catch (err) {
-    console.error("Error calling TrueNorth:", err.message);
+async function main() {
+  console.log("Querying BTC technical analysis from TrueNorth...");
+  const res = await callTrueNorthMcp('technical_analysis', { token_address: 'bitcoin', timeframe: '1h' });
+  if (res?.result?.content?.[0]?.text) {
+    const ta = JSON.parse(res.result.content[0].text);
+    console.log("BTC TA structure:");
+    console.log(JSON.stringify(ta, null, 2));
+  } else {
+    console.log("Empty or invalid response:", res);
   }
 }
 
-run();
+main().catch(console.error);

@@ -208,3 +208,28 @@ export async function fetchBotConfig(): Promise<BotConfig> {
   }
   return await res.json();
 }
+
+// Fetch historical candles from public Hyperliquid API
+export async function fetchCandles(coin: string): Promise<any[]> {
+  try {
+    const res = await fetch("https://api.hyperliquid.xyz/info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "candleSnapshot",
+        req: {
+          coin,
+          interval: "1h",
+          startTime: Date.now() - 30 * 60 * 60 * 1000,
+          endTime: Date.now()
+        }
+      })
+    });
+    if (!res.ok) throw new Error(`Hyperliquid HTTP error: ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error(`Failed to fetch candles for ${coin}:`, e);
+    return [];
+  }
+}

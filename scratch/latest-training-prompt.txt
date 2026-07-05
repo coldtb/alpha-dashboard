@@ -1,0 +1,81 @@
+=== TRUENORTH DIGITAL TWIN FEEDBACK & ALIGNMENT LOOP ===
+Хаяг: true-north.xyz чат эсвэл ask-agent хэрэгсэлд өгөх сургалтын prompt.
+Хугацаа: 6/14/2026, 3:20:23 PM
+
+ХҮСЭЛТ:
+"Дижитал Ихэр (Digital Twin)-д: Миний сүүлд ажиллуулсан түүхэн бэктестийн болон арилжааны алдааны тайлан (Diagnostics Report) гарлаа. Эдгээр тоон үр дүнг уншиж суралцаад, өөрийн дүн шинжилгээний логикоо үүний дагуу тохируулж сайжруулна уу.
+
+1. БЭКТЕСТИЙН СҮҮЛИЙН ҮР ДҮНГҮҮД (Latest Backtest Performance):
+- BTC (365 хоног, minScore=80):
+  * Нийт арилжаа: 89
+  * Win Rate: 17.98%
+  * Нийт өгөөж: -50.31%
+  * Хамгийн их уналт (Max DD): 91.9%
+  * Profit Factor: 0.88
+- XRP (365 хоног, minScore=80):
+  * Нийт арилжаа: 95
+  * Win Rate: 21.05%
+  * Нийт өгөөж: 16.24%
+  * Хамгийн их уналт (Max DD): 82.71%
+  * Profit Factor: 1.05
+- ETH (365 хоног, minScore=80):
+  * Нийт арилжаа: 104
+  * Win Rate: 14.42%
+  * Нийт өгөөж: -94.87%
+  * Хамгийн их уналт (Max DD): 97.6%
+  * Profit Factor: 0.42
+- SOL (365 хоног, minScore=80):
+  * Нийт арилжаа: 104
+  * Win Rate: 17.31%
+  * Нийт өгөөж: -80.97%
+  * Хамгийн их уналт (Max DD): 93.08%
+  * Profit Factor: 0.65
+- LINK (365 хоног, minScore=80):
+  * Нийт арилжаа: 77
+  * Win Rate: 16.88%
+  * Нийт өгөөж: -52.46%
+  * Хамгийн их уналт (Max DD): 79.23%
+  * Profit Factor: 0.8
+- HYPE (365 хоног, minScore=90):
+  * Нийт арилжаа: 116
+  * Win Rate: 6.9%
+  * Нийт өгөөж: -99.79%
+  * Хамгийн их уналт (Max DD): 99.79%
+  * Profit Factor: 0.46
+
+2. СИСТЕМЭС ИЛРҮҮЛСЭН ОНЦЛОГ БОЛОН АЛДААНЫ ДҮГНЭЛТ (Diagnostics Summary):
+=== Strategy Diagnostics & Feedback Report ===
+Generated: 2026-06-13T17:34:38.174Z
+Data Period: Last 14 days
+Optimized parameter: MinScore=90, SLBuffer=0.006, TPBuffer=0.01
+
+Performance Metrics:
+- Total Simulated Trades: 13
+- Overall Win Rate: 7.69%
+- LONG Trades: 1 (Win Rate: 0.00%)
+- SHORT Trades: 12 (Win Rate: 8.33%)
+- Average Trade Duration: 16.2 hours
+
+Diagnostic Findings & Recommendations:
+- No critical performance anomalies found. Strategy parameters are balanced.
+
+AI REFACTOR PROMPT FOR ANTIGRAVITY (Level 3):
+"You are pair programming to optimize a trading bot. Based on the last 14 days backtest diagnostics of BTC, ETH, SOL, HYPE:
+- Optimal MinScore is 90
+- Optimal SL Buffer is 0.60%
+- Optimal TP Buffer is 1.00%
+- LONG Win Rate: 0.0% | SHORT Win Rate: 8.3%
+- SL Volatility: 8.3% of SLs hit within 2 hours.
+Please refactor api/bot.js to implement logic that optimizes these findings, such as adding a trend-following check (e.g. moving average) to filter out LONG setups since their winrate is low, or dynamic SL sizing based on ATR."
+
+
+3. СУРАЛЦАХ БОЛОН ШИНЖИЛГЭЭНД ӨӨРЧЛӨЛТ ОРУУЛАХ ЗААВАР:
+- XRP дээр өгөөж маш сайн (+222%) байгаа нь трэнд дагалт болон TP=5.0% ашгийг урт барьж байгаатай холбоотой. Энэхүү трэнд дагах логикийг XRP дээр чанд мөрдөх.
+- BTC болон ETH дээр whipsaw-д өртөж олон алдагдал хүлээсэн байна. Та дараагийн BTC, ETH арилжааны сигнал шинжлэхдээ:
+  * Зах зээл sideways (чиглэлгүй савлагаатай) байгаа үед сигналын оноог эрс чангатгаж 95-аас дээш гаргах, эсвэл трэнд батлагдах хүртэл арилжаанаас татгалзах (SKIP).
+  * Богино хугацааны савлагааг даван туулахын тулд Options-ийн Put/Call walls хамгаалалтын заагийг илүү нарийвчлан тооцох.
+- HYPE токен дээр манай суурь логик маш том алдагдал хүлээж байгаа тул:
+  * TrueNorth-ийн сошиал хандлага (social sentiment) болон сүлжээн дэх арилжааны идэвхтэй урсгал үнэхээр хүчтэй, нэг чиглэлтэй трэнд үүсгээгүй л бол HYPE дээрх бүх богино хугацааны дохиог SKIP хийхийг тушааж байна.
+
+Дээрх өгөгдөл, алдааны дүгнэлтэд дүн шинжилгээ хийж суралцсан эсэхээ баталж, дараагийн арилжаанд хэрхэн дүрмээ өөрчлөхөө товч тайлбарлана уу."
+======================================================
