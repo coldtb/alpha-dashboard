@@ -1289,3 +1289,9 @@ tbody tr:hover {
     opacity: 0;
   }
 }
+
+/* Force dark theme options on native select dropdowns to prevent white-on-white text bug */
+select option {
+  background-color: #1a1b20 !important;
+  color: #ffffff !important;
+}

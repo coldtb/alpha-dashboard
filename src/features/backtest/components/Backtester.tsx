@@ -62,7 +62,7 @@ export const Backtester: React.FC = () => {
                 'BTC', 'ETH', 'SOL', 'HYPE', 'LINK', 'XRP', 'INJ', 'WLD',
                 ...(top100Coins || []).map(c => c.symbol)
               ])).map(symbol => (
-                <option key={symbol} value={symbol}>{symbol}</option>
+                <option key={symbol} value={symbol} style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>{symbol}</option>
               ))}
             </select>
           </div>
@@ -82,9 +82,9 @@ export const Backtester: React.FC = () => {
                 fontSize: '0.85rem'
               }}
             >
-              <option value="7">7 Days</option>
-              <option value="14">14 Days</option>
-              <option value="30">30 Days</option>
+              <option value="7" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>7 Days</option>
+              <option value="14" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>14 Days</option>
+              <option value="30" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>30 Days</option>
             </select>
           </div>
         </div>
