@@ -1786,6 +1786,45 @@ export default async function handler(req, res) {
           if (results[2].status === 'fulfilled') {
             parsedOpt = results[2].value;
           }
+
+          // ── combo_token_analysis: Зөвхөн мэдээлэл (advisory) — арилжааг хаахгүй ──
+          // XRP болон HYPE-д томоохон events/token_unlock байгаа эсэхийг шалгана.
+          // Хэрэв алдаа гарвал бүрэн алгасна — одоогийн логик огт өөрчлөгдөхгүй.
+          try {
+            const comboTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('combo timeout')), 8000));
+            const comboCall = callTrueNorthMcp('combo_token_analysis', { token_address: geckoId, timeframe: '1h', analysis_type: 'standard' });
+            const comboRes = await Promise.race([comboCall, comboTimeout]).catch(() => null);
+            if (comboRes?.result?.content?.[0]?.text) {
+              const comboData = JSON.parse(comboRes.result.content[0].text);
+              // Events шалгах: 24 цагийн дотор томоохон мэдээ байгаа эсэх
+              const eventsData = comboData?.events;
+              if (eventsData?.status === 'success') {
+                const articles = eventsData?.search_v2_response?.result?.data?.data || [];
+                const highImpact = articles.filter(a => {
+                  const score = parseFloat(a?.metadata?.score || 0);
+                  return score > 0.7; // 70%+ relevance score бүхий мэдээ
+                });
+                if (highImpact.length > 0) {
+                  const titles = highImpact.slice(0, 2).map(a => a?.post?.body?.slice(0, 80) || '').join(' | ');
+                  console.log(`[Combo] ⚠️ ${cand.symbol}: ${highImpact.length} томоохон мэдээ илэрлээ (advisory): ${titles}`);
+                  await sendDiscordMessage(`⚠️ **${cand.symbol} Мэдээний сануулга** (арилжаа хаагдахгүй)\n📰 ${highImpact.length} томоохон мэдээ илэрлээ:\n> ${titles}`).catch(() => {});
+                } else {
+                  console.log(`[Combo] ✅ ${cand.symbol}: Томоохон мэдээ байхгүй — арилжаа үргэлжилнэ`);
+                }
+              }
+              // Token unlock шалгах
+              const unlockData = comboData?.token_unlock;
+              if (unlockData?.status === 'success' && unlockData?.upcoming_unlocks?.length > 0) {
+                const nextUnlock = unlockData.upcoming_unlocks[0];
+                console.log(`[Combo] 🔓 ${cand.symbol}: Token unlock ойрхон — ${JSON.stringify(nextUnlock).slice(0, 100)}`);
+              }
+            }
+          } catch (comboErr) {
+            // Алдаа гарвал бүрэн алгасна — ямар ч нөлөөгүй
+            console.log(`[Combo] ${cand.symbol} combo_token_analysis алдаа (алгасав): ${comboErr.message}`);
+          }
+          // ── combo_token_analysis end ──
+
         } catch (e) {
           console.error(`TrueNorth MCP query failed for candidate ${cand.symbol}:`, e.message);
         }
