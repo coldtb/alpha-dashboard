@@ -426,31 +426,91 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // No position: Enter instantly at market price if score is high and trend matches
-      if (score >= minScore) {
-        const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
-        if (direction !== 'SKIP') {
-          const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
-          const spreadPct = spreadMap[coinSymbol] || 0.0005;
-          const slippagePct = Math.max(0.0002, volatility24h * 0.02);
-
-          let entryPriceWithPenalties = levels.entry;
-          if (direction === 'LONG') {
-            entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
-          } else {
-            entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
+      // Check pending limit order execution
+      if (pendingOrder) {
+        const isLong = pendingOrder.dir === 'LONG';
+        let filled = false;
+        
+        if (isLong) {
+          if (low <= pendingOrder.entryPrice) {
+            filled = true;
           }
+        } else {
+          if (high >= pendingOrder.entryPrice) {
+            filled = true;
+          }
+        }
 
+        if (filled) {
           position = {
-            dir: direction,
-            entryPrice: entryPriceWithPenalties,
-            tp: levels.tp,
-            sl: levels.sl,
-            score,
+            dir: pendingOrder.dir,
+            entryPrice: pendingOrder.entryPrice,
+            tp: pendingOrder.tp,
+            sl: pendingOrder.sl,
+            score: pendingOrder.score,
             fillTime: timestamp,
             slMovedToEntry: false,
-            entrySlippagePct: slippagePct
+            entrySlippagePct: pendingOrder.entrySlippagePct
           };
+          pendingOrder = null;
+          continue; // Move to next hour now that position is filled
+        }
+
+        // Cancel/update pending order if score drops below minScore or direction shifts to SKIP
+        const currentDir = detectAutoDirection(coinData, sma24, qMaxDistancePct);
+        if (score < minScore || currentDir === 'SKIP') {
+          pendingOrder = null;
+        }
+      }
+
+      // No active position: Evaluate new signals to set/update pending limit order
+      if (!position) {
+        if (score >= minScore) {
+          const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
+          if (direction !== 'SKIP') {
+            const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
+            const spreadPct = spreadMap[coinSymbol] || 0.0005;
+            const slippagePct = Math.max(0.0002, volatility24h * 0.02);
+
+            let entryPriceWithPenalties = levels.entry;
+            if (direction === 'LONG') {
+              entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
+            } else {
+              entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
+            }
+
+            pendingOrder = {
+              dir: direction,
+              entryPrice: entryPriceWithPenalties,
+              tp: levels.tp,
+              sl: levels.sl,
+              score,
+              entrySlippagePct: slippagePct
+            };
+
+            // Check if it can be filled in the same hour it is placed
+            const isLong = direction === 'LONG';
+            let filled = false;
+            if (isLong) {
+              if (low <= entryPriceWithPenalties) filled = true;
+            } else {
+              if (high >= entryPriceWithPenalties) filled = true;
+            }
+
+            if (filled) {
+              position = {
+                dir: direction,
+                entryPrice: entryPriceWithPenalties,
+                tp: levels.tp,
+                sl: levels.sl,
+                score,
+                fillTime: timestamp,
+                slMovedToEntry: false,
+                entrySlippagePct: slippagePct
+              };
+              pendingOrder = null;
+            }
+          }
         }
       }
     }
