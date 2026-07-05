@@ -191,8 +191,10 @@ export async function fetchPerformance(): Promise<any> {
 }
 
 // Backtester API client
-export async function runBacktest(coin: string, days: number, minScore: number): Promise<any> {
-  const response = await fetch(`/api/backtest?coin=${coin}&days=${days}&min_score=${minScore}`);
+export async function runBacktest(coin: string, days: number, minScore: number, initialBalance?: number): Promise<any> {
+  const url = `/api/backtest?coin=${coin}&days=${days}&min_score=${minScore}` + 
+    (initialBalance !== undefined ? `&initial_balance=${initialBalance}` : '');
+  const response = await fetch(url);
   if (!response.ok) {
     const errData = await response.json();
     throw new Error(errData.error || "Failed to execute backtest");

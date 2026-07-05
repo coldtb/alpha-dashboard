@@ -11,6 +11,7 @@ export const Backtester: React.FC = () => {
   const [coin, setCoin] = useState('BTC');
   const [days, setDays] = useState('30');
   const [minScore, setMinScore] = useState('85');
+  const [initialBalance, setInitialBalance] = useState('10000');
   const [loading, setLoading] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
 
@@ -25,7 +26,7 @@ export const Backtester: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const data = await runBacktest(coin, parseInt(days), parseInt(minScore));
+      const data = await runBacktest(coin, parseInt(days), parseInt(minScore), parseFloat(initialBalance) || 10000);
       setLastBacktestData(data);
     } catch (err: any) {
       alert("Backtest failed: " + err.message);
@@ -105,6 +106,27 @@ export const Backtester: React.FC = () => {
                 borderRadius: '0.5rem',
                 outline: 'none',
                 fontSize: '0.85rem'
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="bt-initialbalance" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>Start Balance ($)</label>
+            <input
+              type="number"
+              id="bt-initialbalance"
+              value={initialBalance}
+              onChange={(e) => setInitialBalance(e.target.value)}
+              min="1"
+              required
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-light)',
+                color: 'var(--color-text)',
+                padding: '0.4rem',
+                borderRadius: '0.5rem',
+                outline: 'none',
+                fontSize: '0.85rem',
+                width: '100%'
               }}
             />
           </div>
