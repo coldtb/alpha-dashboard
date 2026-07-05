@@ -199,7 +199,10 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null) {
 }
 
 export default async function handler(req, res) {
-  const coinSymbol = req.query.coin || "BTC";
+  let coinSymbol = req.query.coin || "BTC";
+  if (coinSymbol.startsWith("1000")) {
+    coinSymbol = "k" + coinSymbol.slice(4);
+  }
   const days = parseInt(req.query.days) || 30;
   const minScore = parseInt(req.query.min_score) || config.minScore;
   const qSlBuffer = req.query.sl_buffer ? parseFloat(req.query.sl_buffer) : config.minSlBuffer;

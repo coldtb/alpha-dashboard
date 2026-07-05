@@ -32,7 +32,26 @@ export const geckoIdMap: Record<string, string> = {
   "NVDA": "nvidia",
   "MU": "micron-technology",
   "LLY": "eli-lilly-and-co",
-  "0G": "0g-chain"
+  "0G": "0g-chain",
+  "SHIB": "shiba-inu",
+  "1000SHIB": "shiba-inu",
+  "kSHIB": "shiba-inu",
+  "1000PEPE": "pepe",
+  "kPEPE": "pepe",
+  "1000BONK": "bonk",
+  "kBONK": "bonk",
+  "FLOKI": "floki",
+  "1000FLOKI": "floki",
+  "kFLOKI": "floki",
+  "LUNC": "terra-luna",
+  "1000LUNC": "terra-luna",
+  "kLUNC": "terra-luna",
+  "DOGS": "dogs",
+  "1000DOGS": "dogs",
+  "kDOGS": "dogs",
+  "NEIRO": "neiro",
+  "1000NEIRO": "neiro",
+  "kNEIRO": "neiro"
 };
 
 export interface WikiTradePlan {

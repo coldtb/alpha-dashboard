@@ -214,13 +214,17 @@ export async function fetchBotConfig(): Promise<BotConfig> {
 // Fetch historical candles from public Hyperliquid API
 export async function fetchCandles(coin: string): Promise<any[]> {
   try {
+    let hlCoin = coin;
+    if (hlCoin.startsWith("1000")) {
+      hlCoin = "k" + hlCoin.slice(4);
+    }
     const res = await fetch("https://api.hyperliquid.xyz/info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "candleSnapshot",
         req: {
-          coin,
+          coin: hlCoin,
           interval: "1h",
           startTime: Date.now() - 30 * 60 * 60 * 1000,
           endTime: Date.now()

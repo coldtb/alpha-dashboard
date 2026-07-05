@@ -85,6 +85,9 @@ export const Backtester: React.FC = () => {
               <option value="7" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>7 Days</option>
               <option value="14" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>14 Days</option>
               <option value="30" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>30 Days</option>
+              <option value="90" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>90 Days (3 Months)</option>
+              <option value="180" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>180 Days (6 Months)</option>
+              <option value="365" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>365 Days (1 Year)</option>
             </select>
           </div>
         </div>
