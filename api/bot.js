@@ -1136,6 +1136,44 @@ export default async function handler(req, res) {
         cancelReason = `A better candidate exists: ${bestCand.symbol} (Score: ${bestCandScore}) has a score higher than ${coinSymbol} (Score: ${currentScore}) by >= ${replacementScoreDiff} points`;
       }
 
+      // Check if the entry price has shifted significantly (>= 1%) based on latest TrueNorth analysis
+      if (!shouldCancel) {
+        let taDataPending = null;
+        const geckoIdPending = geckoIdMap[coinSymbol];
+        if (geckoIdPending) {
+          try {
+            console.log(`[Stale Cleanup] Checking if resistance/support level shifted for pending coin ${coinSymbol}...`);
+            const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdPending, timeframe: '1h' });
+            if (mcpRes?.result?.content?.[0]?.text) {
+              taDataPending = JSON.parse(mcpRes.result.content[0].text);
+            }
+          } catch (e) {
+            console.error(`[Stale Cleanup] TrueNorth MCP query failed for pending coin ${coinSymbol}:`, e.message);
+          }
+        }
+
+        const limitOrder = openOrders.find(o => o.coin === coinSymbol && !o.isTrigger);
+        if (limitOrder && currentCoin) {
+          const currentEntryPrice = parseFloat(limitOrder.limitPx);
+          const direction = limitOrder.side === "A" ? "SHORT" : "LONG";
+          
+          const useSmartSlTpForPending = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+          const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending);
+          
+          if (newLevels && newLevels.entry) {
+            const priceDiffPct = Math.abs(newLevels.entry - currentEntryPrice) / currentEntryPrice;
+            const entryThreshold = 0.01; // 1% threshold
+            
+            if (priceDiffPct >= entryThreshold) {
+              shouldCancel = true;
+              cancelReason = `Entry price from latest TrueNorth support/resistance has shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
+            } else {
+              console.log(`[Stale Cleanup] ${coinSymbol} entry price diff is within threshold: ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`);
+            }
+          }
+        }
+      }
+
       if (shouldCancel) {
         const assetIndex = hlMeta.universe.findIndex(a => a.name === coinSymbol);
         if (assetIndex !== -1) {
