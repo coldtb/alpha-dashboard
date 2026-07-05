@@ -69,59 +69,69 @@ function calculatePivotLevels(high, low, close) {
 }
 
 function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOverride = null) {
+  const symbol = coin.symbol || '';
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
-  let score = 0;
 
-  // Abnormal Funding Filter: Only apply funding rate bias if it is extremely high (abnormal)
-  if (funding < -0.0003) {
-    score += 1;
-  } else if (funding > 0.0003) {
-    score -= 1;
-  }
+  if (symbol === 'HYPE') {
+    // HYPE: Pure Trend-Following, Neutral Funding
+    let dir = change24h >= 0 ? 'LONG' : 'SHORT';
+    if (funding < -0.0003) dir = 'LONG';
+    else if (funding > 0.0003) dir = 'SHORT';
 
-  if (change24h > 3) score += 1;
-  else if (change24h < -3) score -= 1;
-
-  let dir = 'LONG';
-  if (score > 0) dir = 'LONG';
-  else if (score < 0) dir = 'SHORT';
-  else dir = change24h >= 0 ? 'LONG' : 'SHORT';
-
-  const price = coin.price;
-
-  // Trend-Regime Lock: Force direction to align with medium-term trend (SMA100)
-  if (sma100 !== null) {
-    if (price > sma100) {
-      if (dir === 'SHORT') return 'SKIP';
-    } else {
-      if (dir === 'LONG') return 'SKIP';
+    const price = coin.price;
+    // SMA100 Trend Lock
+    if (sma100 !== null) {
+      if (price > sma100 && dir === 'SHORT') return 'SKIP';
+      if (price < sma100 && dir === 'LONG') return 'SKIP';
     }
-  }
 
-  // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
-  if (sma24 !== null) {
-    const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
+    if (sma24 !== null) {
+      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
+      if (dir === 'LONG' && (price < sma24 || price > sma24 * (1 + maxDistancePct))) return 'SKIP';
+      if (dir === 'SHORT' && (price > sma24 || price < sma24 * (1 - maxDistancePct))) return 'SKIP';
+    }
+    return dir;
+  } else {
+    // Other coins (XRP, etc.): Mean-Reverting, Funding-Biased (Original logic)
+    let score = 0;
+    if (funding < -0.0001) score += 2;
+    else if (funding < 0) score += 1;
+    else if (funding > 0.0001) score -= 2;
+    else if (funding > 0) score -= 1;
 
-    if (dir === 'LONG') {
-      if (price < sma24) {
-        return 'SKIP'; // Filter out counter-trend longs
+    if (change24h > 3) score += 1;
+    else if (change24h < -3) score -= 1;
+
+    let dir = 'LONG';
+    if (score > 0) dir = 'LONG';
+    else if (score < 0) dir = 'SHORT';
+    else dir = change24h >= 0 ? 'LONG' : 'SHORT';
+
+    // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
+    if (sma24 !== null) {
+      const price = coin.price;
+      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
+
+      if (dir === 'LONG') {
+        if (price < sma24) {
+          return 'SKIP'; // Filter out counter-trend longs
+        }
+        if (price > sma24 * (1 + maxDistancePct)) {
+          return 'SKIP'; // Filter out overextended longs
+        }
       }
-      if (price > sma24 * (1 + maxDistancePct)) {
-        return 'SKIP'; // Filter out overextended longs
+      if (dir === 'SHORT') {
+        if (price > sma24) {
+          return 'SKIP'; // Filter out counter-trend shorts
+        }
+        if (price < sma24 * (1 - maxDistancePct)) {
+          return 'SKIP'; // Filter out overextended shorts
+        }
       }
     }
-    if (dir === 'SHORT') {
-      if (price > sma24) {
-        return 'SKIP'; // Filter out counter-trend shorts
-      }
-      if (price < sma24 * (1 - maxDistancePct)) {
-        return 'SKIP'; // Filter out overextended shorts
-      }
-    }
+    return dir;
   }
-
-  return dir;
 }
 
 function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivotLevels = null) {
@@ -549,9 +559,11 @@ export default async function handler(req, res) {
             entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
           }
 
-          // Volatility-Based Position Sizing: Scale size factor dynamically
+          // Volatility-Based Position Sizing: Scale size factor dynamically for HYPE, keep standard for XRP
           const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95;
-          const dynamicSizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / volatility24h));
+          const dynamicSizeFactor = coinSymbol === 'HYPE'
+            ? Math.min(baseSizeFactor, Math.max(0.15, 0.05 / volatility24h))
+            : baseSizeFactor;
 
           pendingOrder = {
             dir: direction,
