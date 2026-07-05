@@ -74,13 +74,13 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
   let score = 0;
 
   if (funding < -0.0001) {
-    score += 2;
-  } else if (funding < 0) {
     score += 1;
+  } else if (funding < 0) {
+    score += 0.5;
   } else if (funding > 0.0001) {
-    score -= 2;
-  } else if (funding > 0) {
     score -= 1;
+  } else if (funding > 0) {
+    score -= 0.5;
   }
 
   if (change24h > 3) score += 1;
