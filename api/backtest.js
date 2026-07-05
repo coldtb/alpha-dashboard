@@ -191,8 +191,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
   if (dir === 'LONG') {
     const maxSlAllowed = entry * (1 - activeSlBuffer);
     if (sl > maxSlAllowed) sl = maxSlAllowed;
-    // Hard cap Stop Loss at -3% (-15% ROE at 5x)
-    const minSlAllowed = entry * 0.97;
+    // Hard cap Stop Loss at -2% (-10% ROE at 5x)
+    const minSlAllowed = entry * 0.98;
     if (sl < minSlAllowed) sl = minSlAllowed;
 
     const minTpAllowed = entry * (1 + activeTpBuffer);
@@ -203,8 +203,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
   } else {
     const minSlAllowed = entry * (1 + activeSlBuffer);
     if (sl < minSlAllowed) sl = minSlAllowed;
-    // Hard cap Stop Loss at +3% (-15% ROE at 5x)
-    const maxSlAllowed = entry * 1.03;
+    // Hard cap Stop Loss at +2% (-10% ROE at 5x)
+    const maxSlAllowed = entry * 1.02;
     if (sl > maxSlAllowed) sl = maxSlAllowed;
 
     const maxTpAllowed = entry * (1 - activeTpBuffer);
