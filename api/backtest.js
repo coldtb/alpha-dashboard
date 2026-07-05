@@ -68,7 +68,7 @@ function calculatePivotLevels(high, low, close) {
   return { p, r1, s1, r2, s2, r3, s3 };
 }
 
-function detectAutoDirection(coin, sma24 = null, maxDistancePctOverride = null) {
+function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOverride = null) {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
   let score = 0;
@@ -309,12 +309,14 @@ export default async function handler(req, res) {
     const leverage = 5;
     const roundTripFeePct = 0.0005; 
     const entryShiftThreshold = 0.0075;
+    let consecutiveLosses = 0;
+    let cooldownUntil = 0;
 
     // Daily equity tracking for chart
     const dailyBalances = [{ time: startTime, balance: initialBalance }];
     let lastLoggedDay = Math.floor(startTime / 86400000);
 
-    for (let i = 24; i < candles.length; i++) {
+    for (let i = 100; i < candles.length; i++) {
       const c = candles[i];
       const timestamp = c.t;
       const currentPrice = parseFloat(c.c);
@@ -348,6 +350,13 @@ export default async function handler(req, res) {
         sumClose24 += parseFloat(cj.c);
       }
       const sma24 = sumClose24 / 25;
+      
+      let sumClose100 = 0;
+      for (let j = i - 100; j <= i; j++) {
+        sumClose100 += parseFloat(candles[j].c);
+      }
+      const sma100 = sumClose100 / 101;
+
       const volatility24h = (high24h - low24h) / low24h;
 
       const hourKey = Math.floor(timestamp / 3600000) * 3600000;
@@ -368,7 +377,7 @@ export default async function handler(req, res) {
       const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
 
       // Determine direction and adjust score based on Pivot zones (TrueNorth model)
-      const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
+      const direction = detectAutoDirection(coinData, sma24, sma100, qMaxDistancePct);
       let adjustedScore = score;
       if (direction !== 'SKIP') {
         if (direction === 'LONG') {
@@ -467,6 +476,16 @@ export default async function handler(req, res) {
             spreadPaid: parseFloat((spreadPct * 100).toFixed(2))
           });
 
+          if (netReturn > 0) {
+            consecutiveLosses = 0;
+          } else {
+            consecutiveLosses++;
+            if (consecutiveLosses >= 2) {
+              cooldownUntil = timestamp + 24 * 60 * 60 * 1000;
+              consecutiveLosses = 0;
+            }
+          }
+
           position = null;
         }
         continue;
@@ -509,7 +528,7 @@ export default async function handler(req, res) {
       }
 
       // No active position: Evaluate new signals to set/update pending limit order
-      if (!position) {
+      if (!position && timestamp >= cooldownUntil) {
         if (adjustedScore >= minScore && direction !== 'SKIP') {
           const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer, pivotLevels);
           const spreadPct = spreadMap[coinSymbol] || 0.0005;
