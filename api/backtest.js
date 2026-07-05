@@ -57,6 +57,17 @@ function calculateScore(coin, isHyperliquidScale = true) {
   return Math.min(score, 100);
 }
 
+function calculatePivotLevels(high, low, close) {
+  const p = (high + low + close) / 3;
+  const r1 = p + (high - low) * 0.382;
+  const s1 = p - (high - low) * 0.382;
+  const r2 = p + (high - low) * 0.618;
+  const s2 = p - (high - low) * 0.618;
+  const r3 = p + (high - low) * 1.0;
+  const s3 = p - (high - low) * 1.0;
+  return { p, r1, s1, r2, s2, r3, s3 };
+}
+
 function detectAutoDirection(coin, sma24 = null, maxDistancePctOverride = null) {
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
@@ -106,7 +117,7 @@ function detectAutoDirection(coin, sma24 = null, maxDistancePctOverride = null) 
   return dir;
 }
 
-function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null) {
+function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivotLevels = null) {
   const price = coin.price;
   const funding = coin.funding || 0;
   const dec = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -120,43 +131,56 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null) {
   let tp = dir === 'LONG' ? price * 1.06 : price * 0.94;
   let reason = 'fib_fallback';
 
-  if (dir === 'LONG') {
-    entry = high - (high - low) * 0.618;
-    sl = low * 0.985;
-
-    if (coin.score >= 90) {
-      const shallowEntry = price * 0.997;
-      if (shallowEntry > entry) {
-        entry = shallowEntry;
-        reason += '+shallow_entry_high_score';
-      }
-    }
-
-    const minTp = entry + (entry - sl) * 1.5;
-    tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
-
-    if (funding < -0.0005) {
-      entry = price;
-      reason += '+squeeze_entry';
+  if (pivotLevels) {
+    reason = 'pivot_truenorth';
+    if (dir === 'LONG') {
+      entry = high - (high - low) * 0.618;
+      sl = pivotLevels.s2 * 0.995; // 0.5% below Support 2
+      tp = pivotLevels.r1;        // Target Resistance 1
+    } else {
+      entry = high - (high - low) * 0.382;
+      sl = pivotLevels.r2 * 1.005; // 0.5% above Resistance 2
+      tp = pivotLevels.s1;        // Target Support 1
     }
   } else {
-    entry = high - (high - low) * 0.382;
-    sl = high * 1.015;
+    if (dir === 'LONG') {
+      entry = high - (high - low) * 0.618;
+      sl = low * 0.985;
 
-    if (coin.score >= 90) {
-      const shallowEntry = price * 1.003;
-      if (shallowEntry < entry) {
-        entry = shallowEntry;
-        reason += '+shallow_entry_high_score';
+      if (coin.score >= 90) {
+        const shallowEntry = price * 0.997;
+        if (shallowEntry > entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
       }
-    }
 
-    const minTp = entry - (sl - entry) * 1.5;
-    tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
+      const minTp = entry + (entry - sl) * 1.5;
+      tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
 
-    if (funding > 0.001) {
-      entry = price;
-      reason += '+overextended_long';
+      if (funding < -0.0005) {
+        entry = price;
+        reason += '+squeeze_entry';
+      }
+    } else {
+      entry = high - (high - low) * 0.382;
+      sl = high * 1.015;
+
+      if (coin.score >= 90) {
+        const shallowEntry = price * 1.003;
+        if (shallowEntry < entry) {
+          entry = shallowEntry;
+          reason += '+shallow_entry_high_score';
+        }
+      }
+
+      const minTp = entry - (sl - entry) * 1.5;
+      tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
+
+      if (funding > 0.001) {
+        entry = price;
+        reason += '+overextended_long';
+      }
     }
   }
 
@@ -341,6 +365,29 @@ export default async function handler(req, res) {
       };
 
       const score = calculateScore(coinData, true);
+      const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
+
+      // Determine direction and adjust score based on Pivot zones (TrueNorth model)
+      const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
+      let adjustedScore = score;
+      if (direction !== 'SKIP') {
+        if (direction === 'LONG') {
+          if (currentPrice <= pivotLevels.s1 * 1.005 && currentPrice >= pivotLevels.s2 * 0.995) {
+            adjustedScore += 15;
+          } else if (currentPrice >= pivotLevels.r1 * 0.995) {
+            adjustedScore -= 15;
+          }
+        } else { // SHORT
+          if (currentPrice >= pivotLevels.r1 * 0.995 && currentPrice <= pivotLevels.r2 * 1.005) {
+            adjustedScore += 15;
+          } else if (currentPrice <= pivotLevels.s1 * 1.005) {
+            adjustedScore -= 15;
+          }
+        }
+        adjustedScore = Math.max(0, Math.min(100, adjustedScore));
+      } else {
+        adjustedScore = 0;
+      }
 
       // Position Handling
       if (position) {
@@ -398,7 +445,6 @@ export default async function handler(req, res) {
 
           const leveragedReturn = priceReturn * leverage;
           const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
-          // Cap compounding at a maximum margin of $50,000 (which corresponds to $250,000 notional position size at 5x leverage)
           const maxCompoundingMargin = 50000;
           const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 1.0;
           const activeMargin = Math.min(balance * positionSizeFactor, maxCompoundingMargin);
@@ -457,59 +503,55 @@ export default async function handler(req, res) {
         }
 
         // Cancel/update pending order if score drops below minScore or direction shifts to SKIP
-        const currentDir = detectAutoDirection(coinData, sma24, qMaxDistancePct);
-        if (score < minScore || currentDir === 'SKIP') {
+        if (adjustedScore < minScore || direction === 'SKIP') {
           pendingOrder = null;
         }
       }
 
       // No active position: Evaluate new signals to set/update pending limit order
       if (!position) {
-        if (score >= minScore) {
-          const direction = detectAutoDirection(coinData, sma24, qMaxDistancePct);
-          if (direction !== 'SKIP') {
-            const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer);
-            const spreadPct = spreadMap[coinSymbol] || 0.0005;
-            const slippagePct = Math.max(0.0002, volatility24h * 0.02);
+        if (adjustedScore >= minScore && direction !== 'SKIP') {
+          const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer, pivotLevels);
+          const spreadPct = spreadMap[coinSymbol] || 0.0005;
+          const slippagePct = Math.max(0.0002, volatility24h * 0.02);
 
-            let entryPriceWithPenalties = levels.entry;
-            if (direction === 'LONG') {
-              entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
-            } else {
-              entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
-            }
+          let entryPriceWithPenalties = levels.entry;
+          if (direction === 'LONG') {
+            entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
+          } else {
+            entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
+          }
 
-            pendingOrder = {
+          pendingOrder = {
+            dir: direction,
+            entryPrice: entryPriceWithPenalties,
+            tp: levels.tp,
+            sl: levels.sl,
+            score: adjustedScore,
+            entrySlippagePct: slippagePct
+          };
+
+          // Check if it can be filled in the same hour it is placed
+          const isLong = direction === 'LONG';
+          let filled = false;
+          if (isLong) {
+            if (low <= entryPriceWithPenalties) filled = true;
+          } else {
+            if (high >= entryPriceWithPenalties) filled = true;
+          }
+
+          if (filled) {
+            position = {
               dir: direction,
               entryPrice: entryPriceWithPenalties,
               tp: levels.tp,
               sl: levels.sl,
-              score,
+              score: adjustedScore,
+              fillTime: timestamp,
+              slMovedToEntry: false,
               entrySlippagePct: slippagePct
             };
-
-            // Check if it can be filled in the same hour it is placed
-            const isLong = direction === 'LONG';
-            let filled = false;
-            if (isLong) {
-              if (low <= entryPriceWithPenalties) filled = true;
-            } else {
-              if (high >= entryPriceWithPenalties) filled = true;
-            }
-
-            if (filled) {
-              position = {
-                dir: direction,
-                entryPrice: entryPriceWithPenalties,
-                tp: levels.tp,
-                sl: levels.sl,
-                score,
-                fillTime: timestamp,
-                slMovedToEntry: false,
-                entrySlippagePct: slippagePct
-              };
-              pendingOrder = null;
-            }
+            pendingOrder = null;
           }
         }
       }
