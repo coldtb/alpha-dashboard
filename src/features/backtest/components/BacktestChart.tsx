@@ -7,11 +7,12 @@ interface BacktestChartProps {
 
 export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
   // Format timestamp to date string for XAxis
-  const chartData = data.map((d) => {
+  const chartData = (data || []).map((d: any) => {
     const date = new Date(d.time);
+    const val = d.equity !== undefined ? d.equity : (d.balance !== undefined ? d.balance : 0);
     return {
       name: `${date.getMonth() + 1}/${date.getDate()}`,
-      equity: parseFloat(d.equity.toFixed(2)),
+      equity: parseFloat((val || 0).toFixed(2)),
       rawTime: d.time,
     };
   });
