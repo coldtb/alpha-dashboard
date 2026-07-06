@@ -798,7 +798,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       tp = minTpAllowed;
     }
     // Cap TP at a maximum of +config.maxTpPct to prevent unrealistic options targets
-    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
+    const defaultMaxTp = coin.symbol === 'SUI' ? 0.05 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
+    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
     const maxTpAllowed = entry * (1 + maxTpPct);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
@@ -820,7 +821,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       tp = maxTpAllowed;
     }
     // Cap TP at a maximum of -config.maxTpPct to prevent unrealistic options targets
-    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
+    const defaultMaxTp = coin.symbol === 'SUI' ? 0.05 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
+    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
     const minTpAllowed = entry * (1 - maxTpPct);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
