@@ -305,7 +305,7 @@ async function callTrueNorthMcp(toolName, args) {
 }
 
 // Direction detection
-function detectAutoDirection(coin, taData = null, sma24 = null) {
+function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null) {
   const symbol = coin.symbol || '';
   const change24h = coin.change || 0;
 
@@ -315,6 +315,40 @@ function detectAutoDirection(coin, taData = null, sma24 = null) {
       return change24h >= 0 ? 'LONG' : 'SHORT';
     }
     return coin.price >= sma24 ? 'LONG' : 'SHORT';
+  }
+
+  if (symbol === 'BTC') {
+    // BTC: Mean Reversion locked with SMA200 trend
+    const funding = coin.funding || 0;
+    let score = 0;
+    if (funding < -0.0001) score += 2;
+    else if (funding < 0) score += 1;
+    else if (funding > 0.0001) score -= 2;
+    else if (funding > 0) score -= 1;
+
+    if (change24h > 3) score += 1;
+    else if (change24h < -3) score -= 1;
+
+    let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
+    
+    // SMA200 Trend Lock: prevent counter-trend positions to keep drawdown small!
+    if (smaTrend !== null) {
+      if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
+      if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
+    }
+
+    // Standard SMA24 distance caps
+    if (sma24 !== null) {
+      const price = coin.price;
+      const maxDistancePct = config.maxDistancePct !== undefined ? config.maxDistancePct : 0.03;
+      if (dir === 'LONG') {
+        if (price < sma24 || price > sma24 * (1 + maxDistancePct)) return 'SKIP';
+      }
+      if (dir === 'SHORT') {
+        if (price > sma24 || price < sma24 * (1 - maxDistancePct)) return 'SKIP';
+      }
+    }
+    return dir;
   }
 
   const funding = coin.funding || 0;
@@ -781,14 +815,19 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 }
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
+  const symbol = coin.symbol || '';
+  const slCap = symbol === 'BTC' ? 0.015 : 0.02;
+  const defaultMaxTp = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.03));
+  const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
+
   if (dir === 'LONG') {
     // Stop Loss must be at least config.minSlBuffer below entry (e.g. 1%)
     const maxSlAllowed = entry * (1 - config.minSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Stop Loss is capped at a maximum of -2% (-10% ROE at 5x)
-    const minSlAllowed = entry * 0.98;
+    // Stop Loss is capped at a maximum (e.g. -1.5% for BTC, -2% for others)
+    const minSlAllowed = entry * (1 - slCap);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
@@ -797,9 +836,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
     }
-    // Cap TP at a maximum of +config.maxTpPct to prevent unrealistic options targets
-    const defaultMaxTp = coin.symbol === 'SUI' ? 0.05 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
-    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
+    // Cap TP at a maximum of +maxTpPct to prevent unrealistic options targets
     const maxTpAllowed = entry * (1 + maxTpPct);
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
@@ -810,8 +847,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
-    // Stop Loss is capped at a maximum of +2% (-10% ROE at 5x)
-    const maxSlAllowed = entry * 1.02;
+    // Stop Loss is capped at a maximum (e.g. +1.5% for BTC, +2% for others)
+    const maxSlAllowed = entry * (1 + slCap);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
@@ -820,9 +857,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (tp > maxTpAllowed) {
       tp = maxTpAllowed;
     }
-    // Cap TP at a maximum of -config.maxTpPct to prevent unrealistic options targets
-    const defaultMaxTp = coin.symbol === 'SUI' ? 0.05 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.10);
-    const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
+    // Cap TP at a maximum of -maxTpPct to prevent unrealistic options targets
     const minTpAllowed = entry * (1 - maxTpPct);
     if (tp < minTpAllowed) {
       tp = minTpAllowed;
@@ -1120,12 +1155,13 @@ export default async function handler(req, res) {
     console.log(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`);
 
     // Find the highest score among all tradeable candidates (no positions, no open orders)
-    const potentialCandidates = scoredCoins.filter(c => 
-      c.score >= minScore && 
-      !(config.blacklist || []).includes(c.symbol) && 
-      !openOrders.some(o => o.coin === c.symbol) && 
-      !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0)
-    );
+    const potentialCandidates = scoredCoins.filter(c => {
+      const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
+      return c.score >= coinMinScore && 
+             !(config.blacklist || []).includes(c.symbol) && 
+             !openOrders.some(o => o.coin === c.symbol) && 
+             !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0);
+    });
     const bestCand = potentialCandidates[0]; // Since scoredCoins is already sorted descending, the first is the best
     const bestCandScore = bestCand ? bestCand.score : 0;
     console.log(`[Stale Cleanup] Best tradeable candidate in market: ${bestCand ? bestCand.symbol : 'None'} (Score: ${bestCandScore})`);
@@ -1137,9 +1173,10 @@ export default async function handler(req, res) {
       let shouldCancel = false;
       let cancelReason = "";
 
-      if (currentScore < minScore) {
+      const coinMinScore = coinSymbol === 'BTC' ? 40 : minScore;
+      if (currentScore < coinMinScore) {
         shouldCancel = true;
-        cancelReason = `Current Score ${currentScore} is below Min Score ${minScore}`;
+        cancelReason = `Current Score ${currentScore} is below Min Score ${coinMinScore}`;
       } else if ((config.blacklist || []).includes(coinSymbol)) {
         shouldCancel = true;
         cancelReason = `Coin ${coinSymbol} has been blacklisted`;
@@ -1658,10 +1695,11 @@ export default async function handler(req, res) {
         const hasPosition = userState.assetPositions.some(p => p.position.coin === symbol && parseFloat(p.position.szi) !== 0);
         const hasOpenOrder = openOrders.some(order => order.coin === symbol);
         
+        const coinMinScore = symbol === 'BTC' ? 40 : minScore;
         let statusText = "Scanning (No setup)";
         if (hasPosition) statusText = "Position Open 🟢";
         else if (hasOpenOrder) statusText = "Open Order Pending ⏳";
-        else if (cand.score < minScore) statusText = `Skipped (Score ${cand.score} < ${minScore})`;
+        else if (cand.score < coinMinScore) statusText = `Skipped (Score ${cand.score} < ${coinMinScore})`;
         
         reportMessage += `• **${symbol}**: Score **${cand.score}** | Price: $${cand.price} | Status: ${statusText}\n`;
       } else {
@@ -1675,7 +1713,10 @@ export default async function handler(req, res) {
       await sendDiscordAlert(reportMessage, 'info');
     }
 
-    const candidates = scoredCoins.filter(c => c.score >= minScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol));
+    const candidates = scoredCoins.filter(c => {
+      const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
+      return c.score >= coinMinScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol);
+    });
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
@@ -1882,17 +1923,20 @@ export default async function handler(req, res) {
         console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`);
       }
 
-      // Calculate 24h SMA and volatility for trend filter and sizing
+      // Calculate 24h SMA, 200h SMA (for BTC trend lock), and volatility for trend filter and sizing
       let sma24 = cand.price;
+      let sma200 = cand.price;
       let volatility24h = 0.02; // default
       try {
         const endTime = Date.now();
-        const startTime = endTime - 30 * 60 * 60 * 1000;
+        const lookbackHours = cand.symbol === 'BTC' ? 210 : 30;
+        const startTime = endTime - lookbackHours * 60 * 60 * 1000;
         const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
+        
         if (candles && candles.length >= 25) {
           const last25 = candles.slice(-25);
-          const sumClose = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
-          sma24 = sumClose / 25;
+          const sumClose24 = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
+          sma24 = sumClose24 / 25;
 
           let high24h = parseFloat(last25[0].h);
           let low24h = parseFloat(last25[0].l);
@@ -1904,13 +1948,20 @@ export default async function handler(req, res) {
           });
           volatility24h = (high24h - low24h) / low24h;
         }
+
+        if (cand.symbol === 'BTC' && candles && candles.length >= 201) {
+          const last200 = candles.slice(-201);
+          const sumClose200 = last200.reduce((sum, c) => sum + parseFloat(c.c), 0);
+          sma200 = sumClose200 / 201;
+          console.log(`[BTC Trend Lock] Calculated SMA200 for BTC: ${sma200.toFixed(2)} (Current price: ${cand.price})`);
+        }
       } catch (e) {
-        console.error(`Failed to calculate 24h SMA/volatility for candidate ${cand.symbol}:`, e.message);
+        console.error(`Failed to calculate SMA/volatility for candidate ${cand.symbol}:`, e.message);
       }
       cand.volatility24h = volatility24h;
 
       // Evaluate raw direction (without SMA/VWAP trend filters)
-      const rawDirection = detectAutoDirection(cand, parsedTa, null);
+      const rawDirection = detectAutoDirection(cand, parsedTa, null, null);
 
       // Pre-calculate candidate levels using raw direction
       const useSmartSlTpForCand = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
@@ -1936,9 +1987,9 @@ export default async function handler(req, res) {
       }
 
       // Evaluate direction with trend filters applied (if not bypassed)
-      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24);
+      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24, sma200);
       if (direction === 'SKIP') {
-        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by 24h SMA/VWAP Trend Filter (Price: ${cand.price}, SMA: ${sma24})`);
+        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(2)}, SMA200: ${sma200.toFixed(2)})`);
         continue;
       }
 
