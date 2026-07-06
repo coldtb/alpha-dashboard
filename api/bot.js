@@ -1999,6 +1999,7 @@ export default async function handler(req, res) {
       derivData = parsedDeriv;
       optionsData = parsedOpt;
       target.precalculatedLevels = levels;
+      target.precalculatedDirection = rawDirection;
       target.direction = direction;
       break;
     }
@@ -2011,7 +2012,9 @@ export default async function handler(req, res) {
     console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
 
     const direction = target.direction;
-    const levels = target.precalculatedLevels || computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
+    const levels = (target.precalculatedLevels && direction === target.precalculatedDirection)
+      ? target.precalculatedLevels
+      : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
     console.log(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`);
 
     // 6. Risk and Position Size Calculations
