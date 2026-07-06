@@ -74,24 +74,9 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
   const change24h = coin.change || 0;
 
   if (symbol === 'HYPE') {
-    // HYPE: Pure Trend-Following, Neutral Funding
-    let dir = change24h >= 0 ? 'LONG' : 'SHORT';
-    if (funding < -0.0003) dir = 'LONG';
-    else if (funding > 0.0003) dir = 'SHORT';
-
-    const price = coin.price;
-    // SMA100 Trend Lock
-    if (sma100 !== null) {
-      if (price > sma100 && dir === 'SHORT') return 'SKIP';
-      if (price < sma100 && dir === 'LONG') return 'SKIP';
-    }
-
-    if (sma24 !== null) {
-      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
-      if (dir === 'LONG' && (price < sma24 || price > sma24 * (1 + maxDistancePct))) return 'SKIP';
-      if (dir === 'SHORT' && (price > sma24 || price < sma24 * (1 - maxDistancePct))) return 'SKIP';
-    }
-    return dir;
+    // HYPE: SMA24 Neutral (Option A) - 50/50 Trend Locked
+    if (sma24 === null) return 'SKIP';
+    return coin.price >= sma24 ? 'LONG' : 'SHORT';
   } else {
     // Other coins (XRP, etc.): Mean-Reverting, Funding-Biased (Original logic)
     let score = 0;
