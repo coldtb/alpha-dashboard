@@ -4,7 +4,7 @@ import path from 'path';
 // We import the handler from api/backtest.js
 import backtestHandler from '../api/backtest.js';
 
-const coins = ['XRP', 'HYPE', 'SUI'];
+const coins = ['XRP', 'HYPE', 'SUI', 'BTC'];
 const periods = [90, 180];
 const initialBalance = 10000;
 const minScore = 65;
@@ -61,6 +61,7 @@ async function main() {
       } catch (e) {
         console.error(`Failed to backtest ${coin} - ${days} Days:`, e.message);
       }
+      await new Promise(res => setTimeout(res, 2500));
     }
   }
 

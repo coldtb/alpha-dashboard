@@ -77,8 +77,42 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
     // HYPE: SMA24 Neutral (Option A) - 50/50 Trend Locked
     if (sma24 === null) return 'SKIP';
     return coin.price >= sma24 ? 'LONG' : 'SHORT';
-  } else {
-    // Other coins (XRP, etc.): Mean-Reverting, Funding-Biased (Original logic)
+  }
+
+  if (symbol === 'BTC') {
+    // BTC: Mean Reversion locked with SMA100 trend (Variant 4)
+    let score = 0;
+    if (funding < -0.0001) score += 2;
+    else if (funding < 0) score += 1;
+    else if (funding > 0.0001) score -= 2;
+    else if (funding > 0) score -= 1;
+
+    if (change24h > 3) score += 1;
+    else if (change24h < -3) score -= 1;
+
+    let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
+    
+    // SMA100 Trend Lock: prevent counter-trend positions to keep drawdown small!
+    if (sma100 !== null) {
+      if (dir === 'LONG' && coin.price < sma100) return 'SKIP';
+      if (dir === 'SHORT' && coin.price > sma100) return 'SKIP';
+    }
+
+    // Standard SMA24 distance caps
+    if (sma24 !== null) {
+      const price = coin.price;
+      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.03);
+      if (dir === 'LONG') {
+        if (price < sma24 || price > sma24 * (1 + maxDistancePct)) return 'SKIP';
+      }
+      if (dir === 'SHORT') {
+        if (price > sma24 || price < sma24 * (1 - maxDistancePct)) return 'SKIP';
+      }
+    }
+    return dir;
+  }
+
+  // Other coins (XRP, etc.): Mean-Reverting, Funding-Biased (Original logic)
     let score = 0;
     if (funding < -0.0001) score += 2;
     else if (funding < 0) score += 1;
@@ -116,7 +150,6 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
       }
     }
     return dir;
-  }
 }
 
 function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivotLevels = null) {
@@ -230,7 +263,7 @@ export default async function handler(req, res) {
     coinSymbol = "k" + coinSymbol.slice(4);
   }
   const days = parseInt(req.query.days) || 30;
-  const minScore = parseInt(req.query.min_score) || config.minScore;
+  let minScore = coinSymbol === 'BTC' ? 40 : (parseInt(req.query.min_score) || config.minScore);
   const qSlBuffer = req.query.sl_buffer ? parseFloat(req.query.sl_buffer) : config.minSlBuffer;
   const qTpBuffer = req.query.tp_buffer ? parseFloat(req.query.tp_buffer) : config.minTpBuffer;
   const qMaxDistancePct = req.query.max_distance_pct ? parseFloat(req.query.max_distance_pct) : null;
