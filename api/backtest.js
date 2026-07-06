@@ -68,7 +68,7 @@ function calculatePivotLevels(high, low, close) {
   return { p, r1, s1, r2, s2, r3, s3 };
 }
 
-function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOverride = null) {
+function detectAutoDirection(coin, sma24 = null, smaTrend = null, maxDistancePctOverride = null) {
   const symbol = coin.symbol || '';
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
@@ -80,7 +80,7 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
   }
 
   if (symbol === 'BTC') {
-    // BTC: Mean Reversion locked with SMA100 trend (Variant 4)
+    // BTC: Mean Reversion locked with SMA200 trend
     let score = 0;
     if (funding < -0.0001) score += 2;
     else if (funding < 0) score += 1;
@@ -92,10 +92,10 @@ function detectAutoDirection(coin, sma24 = null, sma100 = null, maxDistancePctOv
 
     let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
     
-    // SMA100 Trend Lock: prevent counter-trend positions to keep drawdown small!
-    if (sma100 !== null) {
-      if (dir === 'LONG' && coin.price < sma100) return 'SKIP';
-      if (dir === 'SHORT' && coin.price > sma100) return 'SKIP';
+    // SMA200 Trend Lock: prevent counter-trend positions to keep drawdown small!
+    if (smaTrend !== null) {
+      if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
+      if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
     }
 
     // Standard SMA24 distance caps
@@ -223,29 +223,33 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
   const activeSlBuffer = slBuffer !== null ? slBuffer : config.minSlBuffer;
   const activeTpBuffer = tpBuffer !== null ? tpBuffer : config.minTpBuffer;
 
+  const symbol = coin.symbol || '';
+  const slCap = symbol === 'BTC' ? 0.015 : 0.02;
+  const tpCap = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : 0.03);
+
   if (dir === 'LONG') {
     const maxSlAllowed = entry * (1 - activeSlBuffer);
     if (sl > maxSlAllowed) sl = maxSlAllowed;
-    // Hard cap Stop Loss at -2% (-10% ROE at 5x)
-    const minSlAllowed = entry * 0.98;
+    // Hard cap Stop Loss
+    const minSlAllowed = entry * (1 - slCap);
     if (sl < minSlAllowed) sl = minSlAllowed;
 
     const minTpAllowed = entry * (1 + activeTpBuffer);
     if (tp < minTpAllowed) tp = minTpAllowed;
-    // Hard cap Take Profit: 5% for SUI, 3% for others
-    const maxTpAllowed = entry * (coin.symbol === 'SUI' ? 1.05 : 1.03);
+    // Hard cap Take Profit
+    const maxTpAllowed = entry * (1 + tpCap);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
   } else {
     const minSlAllowed = entry * (1 + activeSlBuffer);
     if (sl < minSlAllowed) sl = minSlAllowed;
-    // Hard cap Stop Loss at +2% (-10% ROE at 5x)
-    const maxSlAllowed = entry * 1.02;
+    // Hard cap Stop Loss
+    const maxSlAllowed = entry * (1 + slCap);
     if (sl > maxSlAllowed) sl = maxSlAllowed;
 
     const maxTpAllowed = entry * (1 - activeTpBuffer);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
-    // Hard cap Take Profit: 5% for SUI, 3% for others
-    const minTpAllowed = entry * (coin.symbol === 'SUI' ? 0.95 : 0.97);
+    // Hard cap Take Profit
+    const minTpAllowed = entry * (1 - tpCap);
     if (tp < minTpAllowed) tp = minTpAllowed;
   }
 
@@ -351,7 +355,7 @@ export default async function handler(req, res) {
     const dailyBalances = [{ time: startTime, balance: initialBalance }];
     let lastLoggedDay = Math.floor(startTime / 86400000);
 
-    for (let i = 100; i < candles.length; i++) {
+    for (let i = 200; i < candles.length; i++) {
       const c = candles[i];
       const timestamp = c.t;
       const currentPrice = parseFloat(c.c);
@@ -386,11 +390,11 @@ export default async function handler(req, res) {
       }
       const sma24 = sumClose24 / 25;
       
-      let sumClose100 = 0;
-      for (let j = i - 100; j <= i; j++) {
-        sumClose100 += parseFloat(candles[j].c);
+      let sumClose200 = 0;
+      for (let j = i - 200; j <= i; j++) {
+        sumClose200 += parseFloat(candles[j].c);
       }
-      const sma100 = sumClose100 / 101;
+      const sma200 = sumClose200 / 201;
 
       const volatility24h = (high24h - low24h) / low24h;
 
@@ -412,7 +416,7 @@ export default async function handler(req, res) {
       const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
 
       // Determine direction and adjust score based on Pivot zones (TrueNorth model)
-      const direction = detectAutoDirection(coinData, sma24, sma100, qMaxDistancePct);
+      const direction = detectAutoDirection(coinData, sma24, sma200, qMaxDistancePct);
       let adjustedScore = score;
       if (direction !== 'SKIP') {
         if (direction === 'LONG') {
