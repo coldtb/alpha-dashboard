@@ -199,8 +199,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
 
     const minTpAllowed = entry * (1 + activeTpBuffer);
     if (tp < minTpAllowed) tp = minTpAllowed;
-    // Hard cap Take Profit at +3% (+15% ROE at 5x)
-    const maxTpAllowed = entry * 1.03;
+    // Hard cap Take Profit: 5% for SUI, 3% for others
+    const maxTpAllowed = entry * (coin.symbol === 'SUI' ? 1.05 : 1.03);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
   } else {
     const minSlAllowed = entry * (1 + activeSlBuffer);
@@ -211,8 +211,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
 
     const maxTpAllowed = entry * (1 - activeTpBuffer);
     if (tp > maxTpAllowed) tp = maxTpAllowed;
-    // Hard cap Take Profit at -3% (+15% ROE at 5x)
-    const minTpAllowed = entry * 0.97;
+    // Hard cap Take Profit: 5% for SUI, 3% for others
+    const minTpAllowed = entry * (coin.symbol === 'SUI' ? 0.95 : 0.97);
     if (tp < minTpAllowed) tp = minTpAllowed;
   }
 

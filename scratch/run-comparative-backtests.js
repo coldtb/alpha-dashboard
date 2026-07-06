@@ -4,7 +4,7 @@ import path from 'path';
 // We import the handler from api/backtest.js
 import backtestHandler from '../api/backtest.js';
 
-const coins = ['XRP', 'HYPE'];
+const coins = ['XRP', 'HYPE', 'SUI'];
 const periods = [90, 180];
 const initialBalance = 10000;
 const minScore = 65;
