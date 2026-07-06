@@ -306,8 +306,18 @@ async function callTrueNorthMcp(toolName, args) {
 
 // Direction detection
 function detectAutoDirection(coin, taData = null, sma24 = null) {
-  const funding = coin.funding || 0;
+  const symbol = coin.symbol || '';
   const change24h = coin.change || 0;
+
+  if (symbol === 'HYPE') {
+    // HYPE: SMA24 Neutral (Option A) - 50/50 Trend Locked
+    if (sma24 === null) {
+      return change24h >= 0 ? 'LONG' : 'SHORT';
+    }
+    return coin.price >= sma24 ? 'LONG' : 'SHORT';
+  }
+
+  const funding = coin.funding || 0;
   let score = 0;
 
   if (funding < -0.0001) {
@@ -1870,8 +1880,9 @@ export default async function handler(req, res) {
         console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`);
       }
 
-      // Calculate 24h SMA for trend filter
+      // Calculate 24h SMA and volatility for trend filter and sizing
       let sma24 = cand.price;
+      let volatility24h = 0.02; // default
       try {
         const endTime = Date.now();
         const startTime = endTime - 30 * 60 * 60 * 1000;
@@ -1880,10 +1891,21 @@ export default async function handler(req, res) {
           const last25 = candles.slice(-25);
           const sumClose = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
           sma24 = sumClose / 25;
+
+          let high24h = parseFloat(last25[0].h);
+          let low24h = parseFloat(last25[0].l);
+          last25.forEach(c => {
+            const h = parseFloat(c.h);
+            const l = parseFloat(c.l);
+            if (h > high24h) high24h = h;
+            if (l < low24h) low24h = l;
+          });
+          volatility24h = (high24h - low24h) / low24h;
         }
       } catch (e) {
-        console.error(`Failed to calculate 24h SMA for candidate ${cand.symbol}:`, e.message);
+        console.error(`Failed to calculate 24h SMA/volatility for candidate ${cand.symbol}:`, e.message);
       }
+      cand.volatility24h = volatility24h;
 
       // Evaluate raw direction (without SMA/VWAP trend filters)
       const rawDirection = detectAutoDirection(cand, parsedTa, null);
@@ -2017,8 +2039,13 @@ export default async function handler(req, res) {
     // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
     const maxLeverage = target.assetInfo?.maxLeverage || 5;
     const finalLeverage = Math.min(5, maxLeverage);
-    const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
-    let positionSizeUsd = (accountSize * positionSizeFactor) * finalLeverage;
+    const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
+    let sizeFactor = baseSizeFactor;
+    if (target.symbol === 'HYPE' && target.volatility24h) {
+      sizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / target.volatility24h));
+      console.log(`[Volatility Sizing] HYPE sizeFactor scaled from ${baseSizeFactor} to ${sizeFactor.toFixed(3)} (24h Volatility: ${(target.volatility24h * 100).toFixed(2)}%)`);
+    }
+    let positionSizeUsd = (accountSize * sizeFactor) * finalLeverage;
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
