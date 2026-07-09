@@ -127,6 +127,12 @@ function detectAutoDirection(coin, sma24 = null, smaTrend = null, maxDistancePct
     else if (score < 0) dir = 'SHORT';
     else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
+    // Apply Trend Lock: prevent counter-trend positions to keep drawdown small!
+    if (smaTrend !== null) {
+      if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
+      if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
+    }
+
     // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
     if (sma24 !== null) {
       const price = coin.price;
@@ -224,8 +230,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
   const activeTpBuffer = tpBuffer !== null ? tpBuffer : config.minTpBuffer;
 
   const symbol = coin.symbol || '';
-  const slCap = symbol === 'BTC' ? 0.015 : 0.02;
-  const tpCap = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : 0.03);
+  const slCap = symbol === 'BTC' ? 0.015 : (symbol === 'XRP' ? 0.03 : ((symbol === 'SUI' || symbol === 'HYPE') ? 0.015 : 0.02));
+  const tpCap = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : (symbol === 'XRP' ? 0.02 : (symbol === 'HYPE' ? 0.05 : 0.03)));
 
   if (dir === 'LONG') {
     const maxSlAllowed = entry * (1 - activeSlBuffer);
@@ -390,11 +396,19 @@ export default async function handler(req, res) {
       }
       const sma24 = sumClose24 / 25;
       
+      let sumClose50 = 0;
+      for (let j = i - 50; j <= i; j++) {
+        sumClose50 += parseFloat(candles[j].c);
+      }
+      const sma50 = sumClose50 / 51;
+
       let sumClose200 = 0;
       for (let j = i - 200; j <= i; j++) {
         sumClose200 += parseFloat(candles[j].c);
       }
       const sma200 = sumClose200 / 201;
+
+      const smaTrend = (coinSymbol === 'BTC' || coinSymbol === 'SUI') ? sma200 : (coinSymbol === 'XRP' ? sma50 : sma24);
 
       const volatility24h = (high24h - low24h) / low24h;
 
@@ -416,7 +430,7 @@ export default async function handler(req, res) {
       const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
 
       // Determine direction and adjust score based on Pivot zones (TrueNorth model)
-      const direction = detectAutoDirection(coinData, sma24, sma200, qMaxDistancePct);
+      const direction = detectAutoDirection(coinData, sma24, smaTrend, qMaxDistancePct);
       let adjustedScore = score;
       if (direction !== 'SKIP') {
         if (direction === 'LONG') {

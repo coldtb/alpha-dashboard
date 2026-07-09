@@ -25,5 +25,21 @@
   "watchlistBonus": 15,
   "binanceVolumeThresholds": [100000000, 50000000, 10000000],
   "hyperliquidVolumeThresholds": [30000000, 15000000, 5000000],
-  "maxTpPct": 0.03
+  "maxTpPct": 0.03,
+
+  "_comment_risk": "=== Phase 2: Risk Management (NEW) ===",
+  "maxConcurrentPositions": 2,
+  "dailyLossLimitPct": 5,
+  "maxPositionSizeUsd": 10000,
+  "staleOrderTimeoutHours": 4,
+
+  "_comment_strategy": "=== Phase 3: Strategy (NEW) ===",
+  "partialTpEnabled": false,
+  "partialTpPercent": 50,
+  "breakevenTriggerPct": 0.015,
+
+  "_comment_api": "=== API Settings (NEW) ===",
+  "apiRetryCount": 3,
+  "apiRetryDelayMs": 600,
+  "apiTimeoutMs": 12000
 }

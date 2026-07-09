@@ -107,6 +107,46 @@ const geckoIdMap = {
   "0G": "0g-chain"
 };
 
+// FIX #2: Coin-specific TP caps (used in computeStrategyLevels + recovery)
+const COIN_TP_CAP = {
+  BTC:  0.04,
+  XRP:  0.02,   // XRP: 2.0% TP
+  SUI:  0.05,   // SUI: 5.0% TP
+  HYPE: 0.05,   // HYPE: 5.0% TP
+};
+
+// Phase 3 #13: Coin-specific SL caps
+const COIN_SL_CAP = {
+  BTC:  0.015,  // 1.5% max SL for BTC
+  XRP:  0.03,   // 3.0% for XRP
+  SUI:  0.015,  // 1.5% for SUI
+  HYPE: 0.015,  // 1.5% for HYPE
+};
+
+// Phase 3: Coin-specific trailing and risk management configurations based on best backtest performance
+const COIN_RISK_CONFIG = {
+  BTC: {
+    partialTpEnabled: false,
+    partialTpPercent: 50,
+    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+  },
+  XRP: {
+    partialTpEnabled: false,
+    partialTpPercent: 50,
+    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+  },
+  SUI: {
+    partialTpEnabled: false,
+    partialTpPercent: 50,
+    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+  },
+  HYPE: {
+    partialTpEnabled: true,
+    partialTpPercent: 40,       // V3 best run: 40% partial TP
+    breakevenTriggerPct: 0.025,  // V3 best run: move SL to entry at 2.5% profit
+  }
+};
+
 const nansenContractMap = {
   "BTC": { chain: "ethereum", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" },
   "ETH": { chain: "ethereum", address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" },
@@ -264,48 +304,63 @@ function generateEncodedCloid(details) {
 }
 
 
-// Generic JSON-RPC tool caller helper for TrueNorth
+// FIX #6: Exponential backoff retry helper for all external API calls
+async function withRetry(fn, maxRetries = 3, label = '', timeoutMs = 10000) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await Promise.race([
+        fn(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs))
+      ]);
+      return result;
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt) * 600;
+      console.warn(`[Retry] ${label} attempt ${attempt + 1}/${maxRetries} failed: ${err.message}. Retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+// Generic JSON-RPC tool caller helper for TrueNorth (with retry)
 async function callTrueNorthMcp(toolName, args) {
   const token = process.env.TN_FINANCIAL_DATA_API_KEY;
   if (!token) {
     throw new Error("TN_FINANCIAL_DATA_API_KEY environment variable is not set");
   }
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream'
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'tools/call',
-      params: {
-        name: toolName,
-        arguments: args
+
+  return withRetry(async () => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: { name: toolName, arguments: args }
+      })
+    });
+    if (!response.ok) throw new Error(`TrueNorth MCP Server error: ${response.status} ${response.statusText}`);
+    const text = await response.text();
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        return JSON.parse(line.substring(6).trim());
       }
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`TrueNorth MCP Server error: ${response.statusText}`);
-  }
-
-  const text = await response.text();
-  const lines = text.split('\n');
-  for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      const dataStr = line.substring(6).trim();
-      return JSON.parse(dataStr);
     }
-  }
-  throw new Error("Invalid TrueNorth SSE response format");
+    throw new Error("Invalid TrueNorth SSE response format");
+  }, 3, `TrueNorth:${toolName}`, 12000);
 }
 
 // Direction detection
+// FIX #3: Comprehensive null guards on all inputs
 function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null) {
+  // FIX #3: Guard against null/undefined coin
+  if (!coin || typeof coin.price !== 'number' || isNaN(coin.price)) return 'SKIP';
   const symbol = coin.symbol || '';
   const change24h = coin.change || 0;
 
@@ -314,7 +369,27 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     if (sma24 === null) {
       return change24h >= 0 ? 'LONG' : 'SHORT';
     }
-    return coin.price >= sma24 ? 'LONG' : 'SHORT';
+    const dir = coin.price >= sma24 ? 'LONG' : 'SHORT';
+    // Key Level Proximity Filter
+    if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+      const channels = taData.support_resistance['support and resistance channel'].channels;
+      const price = coin.price;
+      if (dir === 'SHORT') {
+        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+        if (nearSupport) {
+          console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+          return 'SKIP';
+        }
+      }
+      if (dir === 'LONG') {
+        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+        if (nearResistance) {
+          console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+          return 'SKIP';
+        }
+      }
+    }
+    return dir;
   }
 
   if (symbol === 'BTC') {
@@ -346,6 +421,26 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       }
       if (dir === 'SHORT') {
         if (price > sma24 || price < sma24 * (1 - maxDistancePct)) return 'SKIP';
+      }
+    }
+
+    // Key Level Proximity Filter
+    if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+      const channels = taData.support_resistance['support and resistance channel'].channels;
+      const price = coin.price;
+      if (dir === 'SHORT') {
+        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+        if (nearSupport) {
+          console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+          return 'SKIP';
+        }
+      }
+      if (dir === 'LONG') {
+        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+        if (nearResistance) {
+          console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+          return 'SKIP';
+        }
       }
     }
     return dir;
@@ -394,6 +489,12 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
   else if (score < 0) dir = 'SHORT';
   else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
+  // Apply Trend Lock: prevent counter-trend positions
+  if (smaTrend !== null) {
+    if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
+    if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
+  }
+
   // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
@@ -439,11 +540,41 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     }
   }
 
+  // Key Level Proximity Filter
+  if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+    const channels = taData.support_resistance['support and resistance channel'].channels;
+    const price = coin.price;
+    if (dir === 'SHORT') {
+      const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+      if (nearSupport) {
+        console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+        return 'SKIP';
+      }
+    }
+    if (dir === 'LONG') {
+      const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+      if (nearResistance) {
+        console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+        return 'SKIP';
+      }
+    }
+  }
+
   return dir;
 }
 
 // Level computation
+// FIX #2 & #3: null guard on coin + all data inputs
 function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSmartSlTp = true, entryOverride = null, maxTpPctOverride = null) {
+  // FIX #3: Guard against null/invalid coin
+  if (!coin || typeof coin.price !== 'number' || isNaN(coin.price) || dir === 'SKIP') {
+    return null;
+  }
+  // FIX #3: Normalize potentially null data objects to null explicitly
+  taData      = taData      ?? null;
+  derivData   = derivData   ?? null;
+  optionsData = optionsData ?? null;
+
   const price   = coin.price;
   const funding = coin.funding || 0;
   const dec     = price < 1 ? 6 : (price < 10 ? 4 : 2);
@@ -816,8 +947,9 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   const symbol = coin.symbol || '';
-  const slCap = symbol === 'BTC' ? 0.015 : 0.02;
-  const defaultMaxTp = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : (config.maxTpPct !== undefined ? config.maxTpPct : 0.03));
+  // Phase 3 #13: Use coin-specific SL cap from COIN_SL_CAP lookup
+  const slCap = COIN_SL_CAP[symbol] ?? (symbol === 'BTC' ? 0.015 : 0.02);
+  const defaultMaxTp = COIN_TP_CAP[symbol] ?? (config.maxTpPct !== undefined ? config.maxTpPct : 0.03);
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
 
   if (dir === 'LONG') {
@@ -1100,7 +1232,8 @@ export default async function handler(req, res) {
         const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
         const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
         const volume = parseFloat(ctx.dayNtlVlm || "0");
-        const funding = parseFloat(ctx.funding || "0") * 8; // Convert hourly funding to 8h equivalent
+        // FIX #1: HL funding rate is per-8hr interval, 3 settlements/day (not 8)
+        const funding = parseFloat(ctx.funding || "0") * 3; // Convert to daily-equivalent (3 settlements/day)
 
         const coinData = {
           symbol: asset.name,
@@ -1185,16 +1318,34 @@ export default async function handler(req, res) {
         cancelReason = `A better candidate exists: ${bestCand.symbol} (Score: ${bestCandScore}) has a score higher than ${coinSymbol} (Score: ${currentScore}) by >= ${replacementScoreDiff} points`;
       }
 
-      // Check if the entry price has shifted significantly (>= 1%) based on latest TrueNorth analysis
+      // FIX #4: Stale order timeout — cancel if pending order is older than staleOrderTimeoutHours
+      if (!shouldCancel) {
+        const staleTimeoutHours = config.staleOrderTimeoutHours !== undefined ? config.staleOrderTimeoutHours : 4;
+        const limitOrder = openOrders.find(o => o.coin === coinSymbol && !o.isTrigger);
+        if (limitOrder && limitOrder.timestamp) {
+          const orderAgeMs = Date.now() - parseInt(limitOrder.timestamp);
+          const staleMs = staleTimeoutHours * 3600000;
+          if (orderAgeMs > staleMs) {
+            shouldCancel = true;
+            cancelReason = `Order is stale: placed ${(orderAgeMs / 3600000).toFixed(1)}h ago (timeout: ${staleTimeoutHours}h)`;
+          }
+        }
+      }
+
+      // FIX #3 & #4: Check if entry price has shifted — only if not already marked for cancel
       if (!shouldCancel) {
         let taDataPending = null;
         const geckoIdPending = geckoIdMap[coinSymbol];
         if (geckoIdPending) {
           try {
             console.log(`[Stale Cleanup] Checking if resistance/support level shifted for pending coin ${coinSymbol}...`);
-            const mcpRes = await callTrueNorthMcp('technical_analysis', { token_address: geckoIdPending, timeframe: '1h' });
+            // FIX #6: use withRetry so a timeout doesn't crash the whole cycle
+            const mcpRes = await withRetry(
+              () => callTrueNorthMcp('technical_analysis', { token_address: geckoIdPending, timeframe: '1h' }),
+              2, `StaleCleanup:${coinSymbol}`, 8000
+            ).catch(e => { console.warn(`[Stale Cleanup] TrueNorth failed for ${coinSymbol}: ${e.message}`); return null; });
             if (mcpRes?.result?.content?.[0]?.text) {
-              taDataPending = JSON.parse(mcpRes.result.content[0].text);
+              try { taDataPending = JSON.parse(mcpRes.result.content[0].text); } catch(_) {}
             }
           } catch (e) {
             console.error(`[Stale Cleanup] TrueNorth MCP query failed for pending coin ${coinSymbol}:`, e.message);
@@ -1205,19 +1356,20 @@ export default async function handler(req, res) {
         if (limitOrder && currentCoin) {
           const currentEntryPrice = parseFloat(limitOrder.limitPx);
           const direction = limitOrder.side === "A" ? "SHORT" : "LONG";
-          
+
           const useSmartSlTpForPending = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+          // FIX #3: taDataPending may be null — computeStrategyLevels now handles null safely
           const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending);
-          
+
           if (newLevels && newLevels.entry) {
             const priceDiffPct = Math.abs(newLevels.entry - currentEntryPrice) / currentEntryPrice;
-            const entryThreshold = 0.01; // 1% threshold
-            
+            const entryThreshold = config.entryShiftThreshold || 0.01;
+
             if (priceDiffPct >= entryThreshold) {
               shouldCancel = true;
-              cancelReason = `Entry price from latest TrueNorth support/resistance has shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
+              cancelReason = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
             } else {
-              console.log(`[Stale Cleanup] ${coinSymbol} entry price diff is within threshold: ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`);
+              console.log(`[Stale Cleanup] ${coinSymbol} entry diff within threshold: ${(priceDiffPct * 100).toFixed(2)}%`);
             }
           }
         }
@@ -1255,7 +1407,38 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5b. Active Position Trailing (Breakeven & Profit Trailing)
+    // 5b. Risk Management: Daily Loss Limit + Max Concurrent Positions
+    // FIX #7 & #8: New risk controls
+    const maxConcurrentPositions = config.maxConcurrentPositions !== undefined ? config.maxConcurrentPositions : 2;
+    const dailyLossLimitPct      = config.dailyLossLimitPct      !== undefined ? config.dailyLossLimitPct      : 5;
+    const maxPositionSizeUsd     = config.maxPositionSizeUsd     !== undefined ? config.maxPositionSizeUsd     : 10000;
+
+    // Count active positions
+    const activePositionCount = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0).length;
+    console.log(`[Risk] Active positions: ${activePositionCount}/${maxConcurrentPositions}`);
+
+    // Daily PnL check: sum closedPnl from fills in last 24h
+    let dailyPnl = 0;
+    if (Array.isArray(userFills)) {
+      const oneDayAgo = Date.now() - 24 * 3600000;
+      userFills.forEach(f => {
+        if (parseInt(f.time) > oneDayAgo) {
+          dailyPnl += parseFloat(f.closedPnl || '0');
+        }
+      });
+    }
+    const withdrawableNow = parseFloat(userState.withdrawable || '0');
+    const dailyLossThreshold = -(withdrawableNow + Math.abs(dailyPnl)) * (dailyLossLimitPct / 100);
+    console.log(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)}`);
+
+    if (dailyPnl < dailyLossThreshold) {
+      const msg = `🛑 Daily loss limit hit: $${dailyPnl.toFixed(2)} (limit: ${dailyLossLimitPct}%). Bot paused for today.`;
+      console.warn(`[Risk] ${msg}`);
+      await sendDiscordAlert(msg, 'error');
+      return res.status(200).json({ status: 'paused', message: msg });
+    }
+
+    // 5c. Active Position Trailing (Breakeven & Profit Trailing)
     let needsOrdersRefresh = false;
     const activeAccountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
     let withdrawableUsdForActive = parseFloat(userState.withdrawable || "0");
@@ -1324,7 +1507,9 @@ export default async function handler(req, res) {
       }
 
       // 1. Calculate recovery levels in case TP/SL are missing (passing entryPx as entryOverride, and currentCoin for current TA references)
-      const recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx);
+      // FIX #2: maxTpPctOverride from config, null-safe
+      const coinMaxTpPct = COIN_TP_CAP[coin] ?? config.maxTpPct ?? 0.03;
+      const recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx, coinMaxTpPct);
 
       // 2. Self-healing recovery: if TP or SL order is missing, recreate them!
       if (!tpOrder || !slOrder) {
@@ -1442,6 +1627,7 @@ export default async function handler(req, res) {
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
+          const finalLeverage = Math.min(5, maxLeverage);
           const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
           let targetSizeUsd = (activeAccountSize * positionSizeFactor) * finalLeverage;
           if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
@@ -1594,9 +1780,88 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check C: Breakeven Stop Loss (in profit >= 1.5%)
-      if (returnPct >= 0.015 && slOrder && slIsWorseThanEntry && !isNearTp) {
-        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}%. Moving SL to entry: ${entryPx}`);
+      // Phase 3 #11: Partial TP — close configured % of position at midpoint (entry→TP)
+      const coinRisk = COIN_RISK_CONFIG[coin] || {
+        partialTpEnabled: config.partialTpEnabled !== undefined ? config.partialTpEnabled : false,
+        partialTpPercent: config.partialTpPercent !== undefined ? config.partialTpPercent : 50,
+        breakevenTriggerPct: config.breakevenTriggerPct !== undefined ? config.breakevenTriggerPct : 0.015
+      };
+      const partialTpEnabled = coinRisk.partialTpEnabled;
+      const partialTpPct = coinRisk.partialTpPercent / 100;
+      const midpointPct = isLong
+        ? (tpPx - entryPx) / entryPx / 2  // halfway to TP
+        : (entryPx - tpPx) / entryPx / 2;
+      const isAtMidpoint = returnPct >= midpointPct && returnPct < midpointPct * 1.8;
+
+      // Track partial TP state to avoid double-closing
+      if (!global.partialTpDone) global.partialTpDone = new Set();
+      const partialKey = `${coin}-${entryPx}`;
+
+      if (partialTpEnabled && isAtMidpoint && !isNearTp && !global.partialTpDone.has(partialKey)) {
+        const partialSize = Math.abs(size) * partialTpPct;
+        const partialSzStr = formatSize(partialSize, currentCoin.assetInfo.szDecimals);
+        const partialPxStr = formatPrice(isLong ? currentPrice * 0.998 : currentPrice * 1.002);
+
+        console.log(`[Partial TP] ${coin}: At midpoint (${(returnPct * 100).toFixed(2)}% profit). Closing ${(partialTpPct * 100)}% (${partialSzStr} tokens) at market.`);
+
+        if (isDryRun) {
+          console.log(`[DRY RUN] Bypassed Partial TP for ${coin}: Size=${partialSzStr}`);
+          global.partialTpDone.add(partialKey);
+        } else {
+          try {
+            const partialRes = await exchange.order({
+              orders: attachBuilderFee([{
+                a: currentCoin.assetIndex,
+                b: !isLong,
+                p: partialPxStr,
+                s: partialSzStr,
+                r: true,  // reduce-only
+              }])
+            });
+            const pStatus = partialRes?.response?.data?.statuses?.[0];
+            if (partialRes?.status === 'ok' && pStatus && !pStatus.error) {
+              global.partialTpDone.add(partialKey);
+              console.log(`[Partial TP] Successfully closed ${(partialTpPct * 100)}% of ${coin}:`, JSON.stringify(partialRes));
+
+              // Update TP/SL size to reflect remaining position
+              const remainingSize = Math.abs(size) - partialSize;
+              const remainingSzStr = formatSize(remainingSize, currentCoin.assetInfo.szDecimals);
+              const cancelsPartial = [];
+              if (tpOrder) cancelsPartial.push({ a: currentCoin.assetIndex, o: tpOrder.oid });
+              if (slOrder) cancelsPartial.push({ a: currentCoin.assetIndex, o: slOrder.oid });
+              if (cancelsPartial.length > 0) {
+                await safeCancelOrders(exchange, cancelsPartial);
+                // Re-place TP/SL with new reduced size
+                const tpPxStr = formatPrice(tpPx);
+                const tpWPx = formatPrice(getTriggerLimitPrice(!isLong, tpPx));
+                const beSlPx = formatPrice(entryPx); // move SL to breakeven after partial TP
+                const slWPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
+                await exchange.order({
+                  orders: attachBuilderFee([
+                    { a: currentCoin.assetIndex, b: !isLong, p: tpWPx, s: remainingSzStr, r: true, t: { trigger: { triggerPx: tpPxStr, isMarket: true, tpsl: 'tp' } }, c: generateBotCloid() },
+                    { a: currentCoin.assetIndex, b: !isLong, p: slWPx, s: remainingSzStr, r: true, t: { trigger: { triggerPx: beSlPx, isMarket: true, tpsl: 'sl' } }, c: generateBotCloid() }
+                  ])
+                });
+                console.log(`[Partial TP] Re-placed TP/SL for remaining ${remainingSzStr} tokens. SL moved to breakeven: ${entryPx}`);
+              }
+              await sendDiscordAlert(
+                `**Partial TP** 🎯\n**Coin:** ${coin}\n**Closed:** ${(partialTpPct * 100)}% at $${currentPrice}\n**Profit:** +${(returnPct * 100).toFixed(2)}%\n**Remaining:** ${remainingSzStr} tokens (SL → breakeven)`,
+                'close'
+              );
+              needsOrdersRefresh = true;
+            } else {
+              console.error(`[Partial TP] Order rejected for ${coin}:`, pStatus?.error || 'Unknown');
+            }
+          } catch (e) {
+            console.error(`[Partial TP] Failed for ${coin}:`, e.message);
+          }
+        }
+      }
+
+      // Check C: Breakeven Stop Loss (using coin-specific or configured threshold)
+      const breakevenTrigger = coinRisk.breakevenTriggerPct;
+      if (returnPct >= breakevenTrigger && slOrder && slIsWorseThanEntry && !isNearTp) {
+        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}% (trigger: ${(breakevenTrigger * 100).toFixed(1)}%). Moving SL to entry: ${entryPx}`);
         try {
           const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
           const entryPxStr = formatPrice(entryPx);
@@ -1677,7 +1942,11 @@ export default async function handler(req, res) {
 
 
     // Pick top candidates (score >= minScore) across all Hyperliquid coins
-    const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+    let watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+    if (req.query.coin) {
+      watchlist = [req.query.coin.toUpperCase()];
+      console.log(`[Query Coin Override] Watchlist restricted to: ${watchlist}`);
+    }
 
     // Every Execution Status Report Generator (5-minute frequency)
     let displayBalance = parseFloat(userState.withdrawable || "0");
@@ -1719,6 +1988,12 @@ export default async function handler(req, res) {
     });
     if (candidates.length === 0) {
       return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
+    }
+
+    // FIX #8: Max concurrent positions guard — stop new entries if at limit
+    if (activePositionCount >= maxConcurrentPositions) {
+      console.log(`[Risk] Max concurrent positions reached (${activePositionCount}/${maxConcurrentPositions}). Skipping new entry.`);
+      return res.status(200).json({ status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
     }
 
     // Filter candidates that are not currently in active positions/orders
@@ -1923,13 +2198,14 @@ export default async function handler(req, res) {
         console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`);
       }
 
-      // Calculate 24h SMA, 200h SMA (for BTC trend lock), and volatility for trend filter and sizing
+      // Calculate 24h SMA, 50h SMA (for XRP trend lock), 200h SMA (for BTC/SUI trend lock), and volatility
       let sma24 = cand.price;
+      let sma50 = cand.price;
       let sma200 = cand.price;
       let volatility24h = 0.02; // default
       try {
         const endTime = Date.now();
-        const lookbackHours = cand.symbol === 'BTC' ? 210 : 30;
+        const lookbackHours = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? 210 : (cand.symbol === 'XRP' ? 60 : 30);
         const startTime = endTime - lookbackHours * 60 * 60 * 1000;
         const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
         
@@ -1949,15 +2225,23 @@ export default async function handler(req, res) {
           volatility24h = (high24h - low24h) / low24h;
         }
 
-        if (cand.symbol === 'BTC' && candles && candles.length >= 201) {
+        if (cand.symbol === 'XRP' && candles && candles.length >= 51) {
+          const last50 = candles.slice(-51);
+          const sumClose50 = last50.reduce((sum, c) => sum + parseFloat(c.c), 0);
+          sma50 = sumClose50 / 51;
+          console.log(`[XRP Trend Lock] Calculated SMA50 for XRP: ${sma50.toFixed(4)} (Current price: ${cand.price})`);
+        }
+
+        if ((cand.symbol === 'BTC' || cand.symbol === 'SUI') && candles && candles.length >= 201) {
           const last200 = candles.slice(-201);
           const sumClose200 = last200.reduce((sum, c) => sum + parseFloat(c.c), 0);
           sma200 = sumClose200 / 201;
-          console.log(`[BTC Trend Lock] Calculated SMA200 for BTC: ${sma200.toFixed(2)} (Current price: ${cand.price})`);
+          console.log(`[${cand.symbol} Trend Lock] Calculated SMA200 for ${cand.symbol}: ${sma200.toFixed(4)} (Current price: ${cand.price})`);
         }
       } catch (e) {
         console.error(`Failed to calculate SMA/volatility for candidate ${cand.symbol}:`, e.message);
       }
+      const smaTrend = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? sma200 : (cand.symbol === 'XRP' ? sma50 : sma24);
       cand.volatility24h = volatility24h;
 
       // Evaluate raw direction (without SMA/VWAP trend filters)
@@ -1987,9 +2271,9 @@ export default async function handler(req, res) {
       }
 
       // Evaluate direction with trend filters applied (if not bypassed)
-      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24, sma200);
+      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
       if (direction === 'SKIP') {
-        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(2)}, SMA200: ${sma200.toFixed(2)})`);
+        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`);
         continue;
       }
 
@@ -2063,9 +2347,15 @@ export default async function handler(req, res) {
     console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
 
     const direction = target.direction;
+    // FIX #2: always pass coin-specific maxTpPctOverride
+    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? config.maxTpPct ?? 0.03;
     const levels = (target.precalculatedLevels && direction === target.precalculatedDirection)
       ? target.precalculatedLevels
-      : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp);
+      : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
+    if (!levels) {
+      console.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`);
+      return res.status(200).json({ status: 'success', message: 'Level computation returned null. Skipped.' });
+    }
     console.log(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`);
 
     // 6. Risk and Position Size Calculations
@@ -2102,6 +2392,11 @@ export default async function handler(req, res) {
       console.log(`[Volatility Sizing] HYPE sizeFactor scaled from ${baseSizeFactor} to ${sizeFactor.toFixed(3)} (24h Volatility: ${(target.volatility24h * 100).toFixed(2)}%)`);
     }
     let positionSizeUsd = (accountSize * sizeFactor) * finalLeverage;
+    // FIX #9: Cap position size to maxPositionSizeUsd
+    if (positionSizeUsd > maxPositionSizeUsd) {
+      console.log(`[Risk] Position size $${positionSizeUsd.toFixed(2)} capped to $${maxPositionSizeUsd} (maxPositionSizeUsd)`);
+      positionSizeUsd = maxPositionSizeUsd;
+    }
     
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.

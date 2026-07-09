@@ -7,7 +7,7 @@ import backtestHandler from '../api/backtest.js';
 const coins = ['XRP', 'HYPE', 'SUI', 'BTC'];
 const periods = [90, 180];
 const initialBalance = 10000;
-const minScore = 65;
+const minScore = 85;
 
 const results = [];
 
