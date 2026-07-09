@@ -458,7 +458,7 @@ export default async function handler(req, res) {
         let hitTp = false;
 
         if (isLong) {
-          if (!position.slMovedToEntry && high >= position.entryPrice * 1.015) {
+          if (coinSymbol !== 'HYPE' && !position.slMovedToEntry && high >= position.entryPrice * 1.015) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }
@@ -469,7 +469,7 @@ export default async function handler(req, res) {
             hitTp = true;
           }
         } else {
-          if (!position.slMovedToEntry && low <= position.entryPrice * 0.985) {
+          if (coinSymbol !== 'HYPE' && !position.slMovedToEntry && low <= position.entryPrice * 0.985) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }
@@ -533,9 +533,10 @@ export default async function handler(req, res) {
             consecutiveLosses = 0;
           } else {
             consecutiveLosses++;
-            if (consecutiveLosses >= 2) {
+            if (coinSymbol === 'HYPE' && consecutiveLosses >= 2) {
               cooldownUntil = timestamp + 24 * 60 * 60 * 1000;
               consecutiveLosses = 0;
+              pendingOrder = null; // cancel any resting limit entry orders immediately for HYPE
             }
           }
 

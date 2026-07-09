@@ -72,6 +72,56 @@ function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
 }
 
+function isHypeInCooldown(userFills) {
+  if (!Array.isArray(userFills) || userFills.length === 0) return false;
+
+  // 1. Filter HYPE fills that closed a position (have non-zero closedPnl)
+  const hypeCloseFills = userFills
+    .filter(f => f.coin === 'HYPE' && parseFloat(f.closedPnl || '0') !== 0)
+    .sort((a, b) => parseInt(b.time) - parseInt(a.time)); // newest first
+
+  if (hypeCloseFills.length === 0) return false;
+
+  // 2. Group fills into distinct trade exit events (within 10 seconds of each other)
+  const trades = [];
+  let currentTrade = null;
+
+  for (const fill of hypeCloseFills) {
+    const fillTime = parseInt(fill.time);
+    const closedPnl = parseFloat(fill.closedPnl || '0');
+
+    if (!currentTrade) {
+      currentTrade = { time: fillTime, pnl: closedPnl };
+    } else if (Math.abs(currentTrade.time - fillTime) <= 10000) {
+      // Group together if within 10s
+      currentTrade.pnl += closedPnl;
+    } else {
+      trades.push(currentTrade);
+      currentTrade = { time: fillTime, pnl: closedPnl };
+    }
+  }
+  if (currentTrade) {
+    trades.push(currentTrade);
+  }
+
+  // 3. Check if the last two trades were both losses
+  if (trades.length >= 2) {
+    const lastTrade = trades[0];
+    const secondLastTrade = trades[1];
+
+    if (lastTrade.pnl < 0 && secondLastTrade.pnl < 0) {
+      const cooldownEnd = lastTrade.time + 24 * 60 * 60 * 1000;
+      if (Date.now() < cooldownEnd) {
+        const remainingHours = ((cooldownEnd - Date.now()) / (3600000)).toFixed(1);
+        console.log(`[Risk] HYPE is in 24h cooldown after 2 consecutive losses. Cooldown ends in ${remainingHours} hours.`);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 const geckoIdMap = {
   "BTC": "bitcoin",
@@ -2111,6 +2161,13 @@ export default async function handler(req, res) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
         if (timeSinceLastTrade < cooldownMs) {
           console.log(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: ${cooldownHours * 60} mins)`);
+          continue;
+        }
+      }
+
+      if (cand.symbol === 'HYPE') {
+        if (isHypeInCooldown(userFills)) {
+          console.log(`[Cooldown Filter] Skip HYPE: HYPE is in 24h consecutive loss cooldown`);
           continue;
         }
       }
