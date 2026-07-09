@@ -230,8 +230,8 @@ function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivo
   const activeTpBuffer = tpBuffer !== null ? tpBuffer : config.minTpBuffer;
 
   const symbol = coin.symbol || '';
-  const slCap = symbol === 'BTC' ? 0.015 : (symbol === 'XRP' ? 0.03 : ((symbol === 'SUI' || symbol === 'HYPE') ? 0.015 : 0.02));
-  const tpCap = symbol === 'SUI' ? 0.05 : (symbol === 'BTC' ? 0.04 : (symbol === 'XRP' ? 0.02 : (symbol === 'HYPE' ? 0.05 : 0.03)));
+  const slCap = symbol === 'BTC' ? 0.015 : (symbol === 'XRP' ? 0.03 : (symbol === 'SUI' ? 0.02 : (symbol === 'HYPE' ? 0.015 : 0.02)));
+  const tpCap = symbol === 'SUI' ? 0.02 : (symbol === 'BTC' ? 0.04 : (symbol === 'XRP' ? 0.02 : (symbol === 'HYPE' ? 0.05 : 0.03)));
 
   if (dir === 'LONG') {
     const maxSlAllowed = entry * (1 - activeSlBuffer);
@@ -458,7 +458,7 @@ export default async function handler(req, res) {
         let hitTp = false;
 
         if (isLong) {
-          if (coinSymbol !== 'HYPE' && !position.slMovedToEntry && high >= position.entryPrice * 1.015) {
+          if (coinSymbol !== 'HYPE' && coinSymbol !== 'SUI' && !position.slMovedToEntry && high >= position.entryPrice * 1.015) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }
@@ -469,7 +469,7 @@ export default async function handler(req, res) {
             hitTp = true;
           }
         } else {
-          if (coinSymbol !== 'HYPE' && !position.slMovedToEntry && low <= position.entryPrice * 0.985) {
+          if (coinSymbol !== 'HYPE' && coinSymbol !== 'SUI' && !position.slMovedToEntry && low <= position.entryPrice * 0.985) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }
@@ -533,10 +533,10 @@ export default async function handler(req, res) {
             consecutiveLosses = 0;
           } else {
             consecutiveLosses++;
-            if (coinSymbol === 'HYPE' && consecutiveLosses >= 2) {
+            if ((coinSymbol === 'HYPE' || coinSymbol === 'SUI') && consecutiveLosses >= 2) {
               cooldownUntil = timestamp + 24 * 60 * 60 * 1000;
               consecutiveLosses = 0;
-              pendingOrder = null; // cancel any resting limit entry orders immediately for HYPE
+              pendingOrder = null; // cancel any resting limit entry orders immediately for HYPE/SUI
             }
           }
 

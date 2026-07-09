@@ -72,21 +72,21 @@ function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
 }
 
-function isHypeInCooldown(userFills) {
+function isCoinInConsecutiveLossCooldown(coinSymbol, userFills) {
   if (!Array.isArray(userFills) || userFills.length === 0) return false;
 
-  // 1. Filter HYPE fills that closed a position (have non-zero closedPnl)
-  const hypeCloseFills = userFills
-    .filter(f => f.coin === 'HYPE' && parseFloat(f.closedPnl || '0') !== 0)
+  // 1. Filter fills that closed a position (have non-zero closedPnl)
+  const closeFills = userFills
+    .filter(f => f.coin === coinSymbol && parseFloat(f.closedPnl || '0') !== 0)
     .sort((a, b) => parseInt(b.time) - parseInt(a.time)); // newest first
 
-  if (hypeCloseFills.length === 0) return false;
+  if (closeFills.length === 0) return false;
 
   // 2. Group fills into distinct trade exit events (within 10 seconds of each other)
   const trades = [];
   let currentTrade = null;
 
-  for (const fill of hypeCloseFills) {
+  for (const fill of closeFills) {
     const fillTime = parseInt(fill.time);
     const closedPnl = parseFloat(fill.closedPnl || '0');
 
@@ -113,7 +113,7 @@ function isHypeInCooldown(userFills) {
       const cooldownEnd = lastTrade.time + 24 * 60 * 60 * 1000;
       if (Date.now() < cooldownEnd) {
         const remainingHours = ((cooldownEnd - Date.now()) / (3600000)).toFixed(1);
-        console.log(`[Risk] HYPE is in 24h cooldown after 2 consecutive losses. Cooldown ends in ${remainingHours} hours.`);
+        console.log(`[Risk] ${coinSymbol} is in 24h cooldown after 2 consecutive losses. Cooldown ends in ${remainingHours} hours.`);
         return true;
       }
     }
@@ -161,7 +161,7 @@ const geckoIdMap = {
 const COIN_TP_CAP = {
   BTC:  0.04,
   XRP:  0.02,   // XRP: 2.0% TP
-  SUI:  0.05,   // SUI: 5.0% TP
+  SUI:  0.02,   // SUI: 2.0% TP
   HYPE: 0.05,   // HYPE: 5.0% TP
 };
 
@@ -169,7 +169,7 @@ const COIN_TP_CAP = {
 const COIN_SL_CAP = {
   BTC:  0.015,  // 1.5% max SL for BTC
   XRP:  0.03,   // 3.0% for XRP
-  SUI:  0.015,  // 1.5% for SUI
+  SUI:  0.02,   // 2.0% for SUI
   HYPE: 0.015,  // 1.5% for HYPE
 };
 
@@ -2165,9 +2165,9 @@ export default async function handler(req, res) {
         }
       }
 
-      if (cand.symbol === 'HYPE') {
-        if (isHypeInCooldown(userFills)) {
-          console.log(`[Cooldown Filter] Skip HYPE: HYPE is in 24h consecutive loss cooldown`);
+      if (cand.symbol === 'HYPE' || cand.symbol === 'SUI') {
+        if (isCoinInConsecutiveLossCooldown(cand.symbol, userFills)) {
+          console.log(`[Cooldown Filter] Skip ${cand.symbol}: ${cand.symbol} is in 24h consecutive loss cooldown`);
           continue;
         }
       }
