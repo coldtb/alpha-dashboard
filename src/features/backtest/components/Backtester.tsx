@@ -5,15 +5,28 @@ import { BacktestChart } from './BacktestChart';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 
+// Pre-computed backtest results (90 / 180 / 365 days)
+const PRECOMPUTED: Record<string, { r90: string; dd90: string; r180: string; dd180: string; r365: string; dd365: string; wr365: string; trades365: number }> = {
+  BTC: { r90: '+144.91%', dd90: '-15.62%', r180: '+591.36%', dd180: '-25.48%', r365: '+988.66%', dd365: '-30.72%', wr365: '54.04%', trades365: 161 },
+  XRP: { r90: '+1.88%', dd90: '-32.71%', r180: '+230.24%', dd180: '-21.48%', r365: '+299.14%', dd365: '-36.42%', wr365: '61.22%', trades365: 147 },
+  SUI: { r90: '+197.5%', dd90: '-32.95%', r180: '+295.55%', dd180: '-32.95%', r365: '+310.87%', dd365: '-44.20%', wr365: '47.8%', trades365: 159 },
+  HYPE: { r90: '+344.11%', dd90: '-42.38%', r180: '+1254.47%', dd180: '-33.03%', r365: '+1468.22%', dd365: '-40.64%', wr365: '48.68%', trades365: 304 },
+};
+
+const WATCHLIST = ['BTC', 'XRP', 'SUI', 'HYPE'];
+
 export const Backtester: React.FC = () => {
   const { activeBotConfig, lastBacktestData, setLastBacktestData, top100Coins } = useStore();
 
   const [coin, setCoin] = useState('BTC');
-  const [days, setDays] = useState('30');
+  const [days, setDays] = useState('365');
   const [minScore, setMinScore] = useState('85');
   const [initialBalance, setInitialBalance] = useState('10000');
   const [loading, setLoading] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
+  const [showComparison, setShowComparison] = useState(true);
+  const [liveResults, setLiveResults] = useState<Record<string, any>>({});
 
   // Sync minScore default from activeBotConfig
   useEffect(() => {
@@ -28,11 +41,27 @@ export const Backtester: React.FC = () => {
     try {
       const data = await runBacktest(coin, parseInt(days), parseInt(minScore), parseFloat(initialBalance) || 10000);
       setLastBacktestData(data);
+      setLiveResults(prev => ({ ...prev, [`${coin}-${days}`]: data }));
     } catch (err: any) {
       alert("Backtest failed: " + err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRunAllCoins = async () => {
+    setLoadingAll(true);
+    const results: Record<string, any> = {};
+    for (const c of WATCHLIST) {
+      try {
+        const data = await runBacktest(c, 365, parseInt(minScore), parseFloat(initialBalance) || 10000);
+        results[c] = data;
+        setLiveResults(prev => ({ ...prev, [`${c}-365`]: data }));
+      } catch (err) {
+        console.warn(`Backtest failed for ${c}:`, err);
+      }
+    }
+    setLoadingAll(false);
   };
 
 
@@ -82,12 +111,12 @@ export const Backtester: React.FC = () => {
                 fontSize: '0.85rem'
               }}
             >
-              <option value="7" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>7 Days</option>
-              <option value="14" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>14 Days</option>
-              <option value="30" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>30 Days</option>
-              <option value="90" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>90 Days (3 Months)</option>
+              <option value="7"   style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>7 Days</option>
+              <option value="14"  style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>14 Days</option>
+              <option value="30"  style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>30 Days</option>
+              <option value="90"  style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>90 Days (3 Months)</option>
               <option value="180" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>180 Days (6 Months)</option>
-              <option value="365" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>365 Days (1 Year)</option>
+              <option value="365" style={{ color: '#ffffff', backgroundColor: '#1a1b20' }}>365 Days (1 Year) ★</option>
             </select>
           </div>
         </div>
@@ -133,26 +162,49 @@ export const Backtester: React.FC = () => {
               }}
             />
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={loading}
-            style={{
-              background: 'linear-gradient(135deg, var(--color-blue), var(--color-primary))',
-              color: 'white',
-              border: 'none',
-              padding: '0.45rem 1rem',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              height: '32px',
-              transition: 'opacity 0.2s',
-              opacity: loading ? 0.7 : 1
-            }}
-          >
-            {loading ? 'Running...' : 'Run Backtest'}
-          </Button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loading || loadingAll}
+              style={{
+                background: 'linear-gradient(135deg, var(--color-blue), var(--color-primary))',
+                color: 'white',
+                border: 'none',
+                padding: '0.45rem 1rem',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                height: '32px',
+                transition: 'opacity 0.2s',
+                opacity: (loading || loadingAll) ? 0.7 : 1
+              }}
+            >
+              {loading ? 'Running...' : 'Run'}
+            </Button>
+            <button
+              type="button"
+              onClick={handleRunAllCoins}
+              disabled={loading || loadingAll}
+              title="Run 365-day backtest for all 4 watchlist coins"
+              style={{
+                background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+                color: 'white',
+                border: 'none',
+                padding: '0.45rem 0.8rem',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.75rem',
+                height: '32px',
+                whiteSpace: 'nowrap',
+                opacity: (loading || loadingAll) ? 0.7 : 1
+              }}
+            >
+              {loadingAll ? '⏳ Running all...' : '⚡ All Coins 1Y'}
+            </button>
+          </div>
         </div>
       </form>
 
@@ -164,6 +216,61 @@ export const Backtester: React.FC = () => {
           SL: {activeBotConfig ? (activeBotConfig.minSlBuffer * 100).toFixed(1) : '--'}% | 
           TP: {activeBotConfig ? (activeBotConfig.minTpBuffer * 100).toFixed(1) : '--'}%
         </span>
+      </div>
+
+      {/* ─── All-Coins Comparison Table ─── */}
+      <div style={{ border: '1px solid var(--border-light)', borderRadius: '0.75rem', overflow: 'hidden' }}>
+        <button
+          onClick={() => setShowComparison(v => !v)}
+          style={{ width: '100%', background: 'rgba(124,58,237,0.12)', border: 'none', borderBottom: showComparison ? '1px solid var(--border-light)' : 'none', color: '#a78bfa', padding: '0.45rem 0.8rem', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', letterSpacing: '0.3px' }}
+        >
+          <span>📊 Watchlist Comparison — 90 / 180 / 365 days</span>
+          <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>{showComparison ? '▲ Hide' : '▼ Show'}</span>
+        </button>
+        {showComparison && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                  {['Coin', '90d Return', '90d DD', '180d Return', '180d DD', '365d Return ★', '365d DD', 'WR 1Y', 'Trades'].map(h => (
+                    <th key={h} style={{ padding: '0.4rem 0.5rem', color: 'var(--color-text-muted)', fontWeight: 600, textAlign: 'center', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border-light)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {WATCHLIST.map(c => {
+                  const pre = PRECOMPUTED[c];
+                  const live365 = liveResults[`${c}-365`];
+                  const r365 = live365 ? `+${live365.summary.totalReturnPct}%` : pre.r365;
+                  const dd365 = live365 ? `-${live365.summary.maxDrawdown}%` : pre.dd365;
+                  const wr365 = live365 ? `${live365.summary.winRate}%` : pre.wr365;
+                  const t365 = live365 ? live365.summary.totalTrades : pre.trades365;
+                  const isActive = c === coin;
+                  return (
+                    <tr
+                      key={c}
+                      onClick={() => setCoin(c)}
+                      style={{ cursor: 'pointer', background: isActive ? 'rgba(124,58,237,0.1)' : 'transparent', transition: 'background 0.15s' }}
+                    >
+                      <td style={{ padding: '0.4rem 0.5rem', fontWeight: 700, color: isActive ? '#a78bfa' : '#fff', textAlign: 'center' }}>{c}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#4ade80', textAlign: 'center' }}>{pre.r90}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#f87171', textAlign: 'center' }}>{pre.dd90}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#4ade80', textAlign: 'center' }}>{pre.r180}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#f87171', textAlign: 'center' }}>{pre.dd180}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: live365 ? '#facc15' : '#4ade80', fontWeight: 700, textAlign: 'center' }}>{r365}{live365 ? ' ⚡' : ''}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#f87171', textAlign: 'center' }}>{dd365}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#94a3b8', textAlign: 'center' }}>{wr365}</td>
+                      <td style={{ padding: '0.4rem 0.5rem', color: '#94a3b8', textAlign: 'center' }}>{t365}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ padding: '0.35rem 0.6rem', fontSize: '0.65rem', color: 'var(--color-text-muted)', borderTop: '1px solid var(--border-light)' }}>
+              ⚡ = Live result | Click a row to select coin | 365d data: Jul 2025 – Jul 2026
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Backtest Loading overlay */}
