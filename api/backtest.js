@@ -458,7 +458,8 @@ export default async function handler(req, res) {
         let hitTp = false;
 
         if (isLong) {
-          if (coinSymbol !== 'HYPE' && coinSymbol !== 'SUI' && !position.slMovedToEntry && high >= position.entryPrice * 1.015) {
+          const trigger = coinSymbol === 'HYPE' ? 0.025 : 0.015;
+          if (!position.slMovedToEntry && high >= position.entryPrice * (1 + trigger)) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }
@@ -469,7 +470,8 @@ export default async function handler(req, res) {
             hitTp = true;
           }
         } else {
-          if (coinSymbol !== 'HYPE' && coinSymbol !== 'SUI' && !position.slMovedToEntry && low <= position.entryPrice * 0.985) {
+          const trigger = coinSymbol === 'HYPE' ? 0.025 : 0.015;
+          if (!position.slMovedToEntry && low <= position.entryPrice * (1 - trigger)) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
           }

@@ -173,22 +173,21 @@ const COIN_SL_CAP = {
   HYPE: 0.015,  // 1.5% for HYPE
 };
 
-// Phase 3: Coin-specific trailing and risk management configurations based on best backtest performance
 const COIN_RISK_CONFIG = {
   BTC: {
     partialTpEnabled: false,
     partialTpPercent: 50,
-    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+    breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
   XRP: {
     partialTpEnabled: false,
     partialTpPercent: 50,
-    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+    breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
   SUI: {
     partialTpEnabled: false,
     partialTpPercent: 50,
-    breakevenTriggerPct: 999.0, // disabled (V1/V6 performed best without breakeven)
+    breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
   HYPE: {
     partialTpEnabled: true,
