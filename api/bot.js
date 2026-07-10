@@ -192,7 +192,7 @@ const COIN_RISK_CONFIG = {
   HYPE: {
     partialTpEnabled: true,
     partialTpPercent: 40,       // V3 best run: 40% partial TP
-    breakevenTriggerPct: 0.025,  // V3 best run: move SL to entry at 2.5% profit
+    breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   }
 };
 
