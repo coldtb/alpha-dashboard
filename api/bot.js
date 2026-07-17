@@ -1536,6 +1536,36 @@ export default async function handler(req, res) {
         }
       }
 
+      // Check if price has already passed the TP price before entry limit order is filled
+      if (!shouldCancel) {
+        const limitOrder = openOrders.find(o => o.coin === coinSymbol && !o.isTrigger);
+        if (limitOrder && currentCoin) {
+          const entryPrice = parseFloat(limitOrder.limitPx);
+          const isShort = limitOrder.side === "A";
+          
+          // Find TP trigger order: for SHORT triggerPx < entryPrice, for LONG triggerPx > entryPrice
+          const tpOrder = openOrders.find(o => 
+            o.coin === coinSymbol && 
+            o.isTrigger && 
+            o.triggerPx && 
+            parseFloat(o.triggerPx) !== 0 &&
+            (isShort ? parseFloat(o.triggerPx) < entryPrice : parseFloat(o.triggerPx) > entryPrice)
+          );
+          
+          if (tpOrder) {
+            const tpPrice = parseFloat(tpOrder.triggerPx);
+            const currentPrice = currentCoin.price;
+            if (isShort && currentPrice <= tpPrice) {
+              shouldCancel = true;
+              cancelReason = `Price went past TP before entry filled: current price ${currentPrice} <= TP price ${tpPrice}`;
+            } else if (!isShort && currentPrice >= tpPrice) {
+              shouldCancel = true;
+              cancelReason = `Price went past TP before entry filled: current price ${currentPrice} >= TP price ${tpPrice}`;
+            }
+          }
+        }
+      }
+
       // FIX #3 & #4: Check if entry price has shifted — only if not already marked for cancel
       if (!shouldCancel) {
         let taDataPending = null;
