@@ -2678,6 +2678,16 @@ export default async function handler(req, res) {
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
+    // Check if current market price is already past the calculated TP price
+    const currentPrice = target.price;
+    if (direction === "LONG" && currentPrice >= levels.tp) {
+      logger.warn(`[Bot Execution] Skipping trade for ${target.symbol}: Current price $${currentPrice} is already past TP $${levels.tp}`, "events");
+      return res.status(200).json({ status: "success", message: `Skipped: Current price $${currentPrice} is already past TP $${levels.tp}` });
+    } else if (direction === "SHORT" && currentPrice <= levels.tp) {
+      logger.warn(`[Bot Execution] Skipping trade for ${target.symbol}: Current price $${currentPrice} is already past TP $${levels.tp}`, "events");
+      return res.status(200).json({ status: "success", message: `Skipped: Current price $${currentPrice} is already past TP $${levels.tp}` });
+    }
+
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
     let withdrawableUsd = parseFloat(userState.withdrawable || "0");

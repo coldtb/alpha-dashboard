@@ -6,7 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(__dirname, '../../logs');
 
 // Ensure log directory exists
-if (!fs.existsSync(LOG_DIR)) {
+const isVercel = !!process.env.VERCEL;
+if (!isVercel && !fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
@@ -48,13 +49,15 @@ class StructuredLogger {
     }
 
     // 2. Output to local log file synchronously to ensure it persists before process exit (crucial for cron jobs)
-    try {
-      const fileName = `${category}.log`;
-      const filePath = path.join(LOG_DIR, fileName);
-      const fileEntry = JSON.stringify(logEntry) + '\n';
-      fs.appendFileSync(filePath, fileEntry, 'utf8');
-    } catch (err) {
-      console.error(`[Logger Error] Failed to write to local log file: ${err.message}`);
+    if (!isVercel) {
+      try {
+        const fileName = `${category}.log`;
+        const filePath = path.join(LOG_DIR, fileName);
+        const fileEntry = JSON.stringify(logEntry) + '\n';
+        fs.appendFileSync(filePath, fileEntry, 'utf8');
+      } catch (err) {
+        console.error(`[Logger Error] Failed to write to local log file: ${err.message}`);
+      }
     }
   }
 
