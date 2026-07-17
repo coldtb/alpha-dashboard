@@ -1632,9 +1632,17 @@ export default async function handler(req, res) {
         }
       });
     }
-    const withdrawableNow = parseFloat(userState.withdrawable || '0');
-    const dailyLossThreshold = -(withdrawableNow + Math.abs(dailyPnl)) * (dailyLossLimitPct / 100);
-    logger.info(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)}`, "events");
+    const accountSizeEnvForLimit = process.env.HYPERLIQUID_ACCOUNT_SIZE;
+    let withdrawableNow = parseFloat(userState.withdrawable || '0');
+    if (withdrawableNow === 0 && spotState && spotState.balances) {
+      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcBal) {
+        withdrawableNow = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+      }
+    }
+    const baseAccountSize = accountSizeEnvForLimit ? parseFloat(accountSizeEnvForLimit) : withdrawableNow;
+    const dailyLossThreshold = -(baseAccountSize + Math.abs(dailyPnl)) * (dailyLossLimitPct / 100);
+    logger.info(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)} | Base Account: $${baseAccountSize.toFixed(2)}`, "events");
 
     if (dailyPnl < dailyLossThreshold) {
       const msg = `🛑 Daily loss limit hit: $${dailyPnl.toFixed(2)} (limit: ${dailyLossLimitPct}%). Bot paused for today.`;
