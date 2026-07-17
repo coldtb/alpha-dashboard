@@ -1,5 +1,5 @@
 {
-  "minScore": 65,
+  "minScore": 85,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.005,
   "entryShiftThreshold": 0.0075,
