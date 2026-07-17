@@ -1644,12 +1644,15 @@ export default async function handler(req, res) {
     const dailyLossThreshold = -(baseAccountSize + Math.abs(dailyPnl)) * (dailyLossLimitPct / 100);
     logger.info(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)} | Base Account: $${baseAccountSize.toFixed(2)}`, "events");
 
+    // Daily loss limit check disabled per user request
+    /*
     if (dailyPnl < dailyLossThreshold) {
       const msg = `🛑 Daily loss limit hit: $${dailyPnl.toFixed(2)} (limit: ${dailyLossLimitPct}%). Bot paused for today.`;
       logger.warn(`[Risk] ${msg}`, "audit");
       await sendDiscordAlert(msg, 'error');
       return res.status(200).json({ status: 'paused', message: msg });
     }
+    */
 
     // 5c. Active Position Trailing (Breakeven & Profit Trailing)
     let needsOrdersRefresh = false;
