@@ -4,10 +4,11 @@ import path from "path";
 
 let config = {
   minScore: 85,
-  minSlBuffer: 0.012,
-  minTpBuffer: 0.024,
+  minSlBuffer: 0.010,
+  minTpBuffer: 0.005,
   entryShiftThreshold: 0.0075,
-  replacementScoreDiff: 5
+  replacementScoreDiff: 10,
+  positionSizeFactor: 0.95
 };
 
 try {
@@ -21,7 +22,7 @@ try {
   console.warn("Failed to load config.json in backtest, using defaults:", e.message);
 }
 
-function calculateScore(coin, isHyperliquidScale = true) {
+function calculateScore(coin) {
   let score = 0;
   const change = Math.abs(coin.change);
   if (change <= 3.0) {
@@ -40,17 +41,11 @@ function calculateScore(coin, isHyperliquidScale = true) {
   }
 
   const vol = coin.volume;
-  if (isHyperliquidScale) {
-    if (vol > 30000000) score += 20;
-    else if (vol > 15000000) score += 15;
-    else if (vol > 5000000) score += 10;
-  } else {
-    if (vol > 100000000) score += 20;
-    else if (vol > 50000000) score += 15;
-    else if (vol > 10000000) score += 10;
-  }
+  if (vol > 30000000) score += 20;
+  else if (vol > 15000000) score += 15;
+  else if (vol > 5000000) score += 10;
 
-  const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+  const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD", "SUI"];
   if (watchlist.includes(coin.symbol) || coin.symbol === 'BTC') {
     score += 15;
   }
@@ -68,202 +63,84 @@ function calculatePivotLevels(high, low, close) {
   return { p, r1, s1, r2, s2, r3, s3 };
 }
 
-function detectAutoDirection(coin, sma24 = null, smaTrend = null, maxDistancePctOverride = null) {
+function detectAutoDirection(coin, sma24 = null, smaTrend = null) {
   const symbol = coin.symbol || '';
   const funding = coin.funding || 0;
   const change24h = coin.change || 0;
 
   if (symbol === 'HYPE') {
-    // HYPE: SMA24 Neutral (Option A) - 50/50 Trend Locked
     if (sma24 === null) return 'SKIP';
     return coin.price >= sma24 ? 'LONG' : 'SHORT';
   }
 
-  if (symbol === 'BTC') {
-    // BTC: Mean Reversion locked with SMA200 trend
-    let score = 0;
-    if (funding < -0.0001) score += 2;
-    else if (funding < 0) score += 1;
-    else if (funding > 0.0001) score -= 2;
-    else if (funding > 0) score -= 1;
+  let score = 0;
+  if (funding < -0.0001) score += 2;
+  else if (funding < 0) score += 1;
+  else if (funding > 0.0001) score -= 2;
+  else if (funding > 0) score -= 1;
 
-    if (change24h > 3) score += 1;
-    else if (change24h < -3) score -= 1;
+  if (change24h > 3) score += 1;
+  else if (change24h < -3) score -= 1;
 
-    let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
-    
-    // SMA200 Trend Lock: prevent counter-trend positions to keep drawdown small!
-    if (smaTrend !== null) {
-      if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
-      if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
-    }
-
-    // Standard SMA24 distance caps
-    if (sma24 !== null) {
-      const price = coin.price;
-      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.03);
-      if (dir === 'LONG') {
-        if (price < sma24 || price > sma24 * (1 + maxDistancePct)) return 'SKIP';
-      }
-      if (dir === 'SHORT') {
-        if (price > sma24 || price < sma24 * (1 - maxDistancePct)) return 'SKIP';
-      }
-    }
-    return dir;
+  let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
+  
+  if (smaTrend !== null) {
+    if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
+    if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
   }
 
-  // Other coins (XRP, etc.): Mean-Reverting, Funding-Biased (Original logic)
-    let score = 0;
-    if (funding < -0.0001) score += 2;
-    else if (funding < 0) score += 1;
-    else if (funding > 0.0001) score -= 2;
-    else if (funding > 0) score -= 1;
-
-    if (change24h > 3) score += 1;
-    else if (change24h < -3) score -= 1;
-
-    let dir = 'LONG';
-    if (score > 0) dir = 'LONG';
-    else if (score < 0) dir = 'SHORT';
-    else dir = change24h >= 0 ? 'LONG' : 'SHORT';
-
-    // Apply Trend Lock: prevent counter-trend positions to keep drawdown small!
-    if (smaTrend !== null) {
-      if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
-      if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
+  if (sma24 !== null) {
+    const price = coin.price;
+    const maxDistancePct = config.maxDistancePct !== undefined ? config.maxDistancePct : 0.05;
+    if (dir === 'LONG') {
+      if (price < sma24 || price > sma24 * (1 + maxDistancePct)) return 'SKIP';
     }
-
-    // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
-    if (sma24 !== null) {
-      const price = coin.price;
-      const maxDistancePct = maxDistancePctOverride !== null ? maxDistancePctOverride : (config.maxDistancePct !== undefined ? config.maxDistancePct : 0.015);
-
-      if (dir === 'LONG') {
-        if (price < sma24) {
-          return 'SKIP'; // Filter out counter-trend longs
-        }
-        if (price > sma24 * (1 + maxDistancePct)) {
-          return 'SKIP'; // Filter out overextended longs
-        }
-      }
-      if (dir === 'SHORT') {
-        if (price > sma24) {
-          return 'SKIP'; // Filter out counter-trend shorts
-        }
-        if (price < sma24 * (1 - maxDistancePct)) {
-          return 'SKIP'; // Filter out overextended shorts
-        }
-      }
+    if (dir === 'SHORT') {
+      if (price > sma24 || price < sma24 * (1 - maxDistancePct)) return 'SKIP';
     }
-    return dir;
+  }
+  return dir;
 }
 
-function computeStrategyLevels(coin, dir, slBuffer = null, tpBuffer = null, pivotLevels = null) {
+function computeStrategyLevels(coin, dir, pivotLevels, params, slCapOverride = null) {
   const price = coin.price;
-  const funding = coin.funding || 0;
   const dec = price < 1 ? 6 : (price < 10 ? 4 : 2);
+  const high = coin.high || price * 1.03;
+  const low  = coin.low  || price * 0.97;
 
-  let high = coin.high || price * 1.03;
-  let low  = coin.low  || price * 0.97;
-  let vwap = (high + low + price) / 3;
-
-  let entry = price;
-  let sl = dir === 'LONG' ? price * 0.97 : price * 1.03;
-  let tp = dir === 'LONG' ? price * 1.06 : price * 0.94;
-  let reason = 'fib_fallback';
-
-  if (pivotLevels) {
-    reason = 'pivot_truenorth';
-    if (dir === 'LONG') {
-      entry = high - (high - low) * 0.618;
-      sl = pivotLevels.s2 * 0.995; // 0.5% below Support 2
-      tp = pivotLevels.r1;        // Target Resistance 1
-    } else {
-      entry = high - (high - low) * 0.382;
-      sl = pivotLevels.r2 * 1.005; // 0.5% above Resistance 2
-      tp = pivotLevels.s1;        // Target Support 1
-    }
-  } else {
-    if (dir === 'LONG') {
-      entry = high - (high - low) * 0.618;
-      sl = low * 0.985;
-
-      if (coin.score >= 90) {
-        const shallowEntry = price * 0.997;
-        if (shallowEntry > entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
-
-      const minTp = entry + (entry - sl) * 1.5;
-      tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
-
-      if (funding < -0.0005) {
-        entry = price;
-        reason += '+squeeze_entry';
-      }
-    } else {
-      entry = high - (high - low) * 0.382;
-      sl = high * 1.015;
-
-      if (coin.score >= 90) {
-        const shallowEntry = price * 1.003;
-        if (shallowEntry < entry) {
-          entry = shallowEntry;
-          reason += '+shallow_entry_high_score';
-        }
-      }
-
-      const minTp = entry - (sl - entry) * 1.5;
-      tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
-
-      if (funding > 0.001) {
-        entry = price;
-        reason += '+overextended_long';
-      }
-    }
-  }
-
-  // Safety bounds
-  const activeSlBuffer = slBuffer !== null ? slBuffer : config.minSlBuffer;
-  const activeTpBuffer = tpBuffer !== null ? tpBuffer : config.minTpBuffer;
-
-  const symbol = coin.symbol || '';
-  const slCap = symbol === 'BTC' ? 0.015 : (symbol === 'XRP' ? 0.03 : (symbol === 'SUI' ? 0.02 : (symbol === 'HYPE' ? 0.015 : 0.02)));
-  const tpCap = symbol === 'SUI' ? 0.02 : (symbol === 'BTC' ? 0.04 : (symbol === 'XRP' ? 0.02 : (symbol === 'HYPE' ? 0.05 : 0.03)));
+  let entry, sl, tp;
 
   if (dir === 'LONG') {
-    const maxSlAllowed = entry * (1 - activeSlBuffer);
-    if (sl > maxSlAllowed) sl = maxSlAllowed;
-    // Hard cap Stop Loss
-    const minSlAllowed = entry * (1 - slCap);
-    if (sl < minSlAllowed) sl = minSlAllowed;
-
-    const minTpAllowed = entry * (1 + activeTpBuffer);
-    if (tp < minTpAllowed) tp = minTpAllowed;
-    // Hard cap Take Profit
-    const maxTpAllowed = entry * (1 + tpCap);
-    if (tp > maxTpAllowed) tp = maxTpAllowed;
+    entry = high - (high - low) * 0.618;
+    sl    = pivotLevels ? pivotLevels.s2 * 0.995 : low * 0.985;
+    const minTp = entry + (entry - sl) * 1.5;
+    tp = pivotLevels && pivotLevels.r1 > minTp ? pivotLevels.r1 : minTp;
   } else {
-    const minSlAllowed = entry * (1 + activeSlBuffer);
-    if (sl < minSlAllowed) sl = minSlAllowed;
-    // Hard cap Stop Loss
-    const maxSlAllowed = entry * (1 + slCap);
-    if (sl > maxSlAllowed) sl = maxSlAllowed;
+    entry = high - (high - low) * 0.382;
+    sl    = pivotLevels ? pivotLevels.r2 * 1.005 : high * 1.015;
+    const minTp = entry - (sl - entry) * 1.5;
+    tp = pivotLevels && pivotLevels.s1 < minTp ? pivotLevels.s1 : minTp;
+  }
 
-    const maxTpAllowed = entry * (1 - activeTpBuffer);
-    if (tp > maxTpAllowed) tp = maxTpAllowed;
-    // Hard cap Take Profit
-    const minTpAllowed = entry * (1 - tpCap);
-    if (tp < minTpAllowed) tp = minTpAllowed;
+  const tpCap = params.tpCap;
+  const slCap = slCapOverride !== null ? slCapOverride : params.slCap;
+
+  if (dir === 'LONG') {
+    if (sl > entry * (1 - 0.01)) sl = entry * (1 - 0.01);
+    if (sl < entry * (1 - slCap)) sl = entry * (1 - slCap);
+    if (tp < entry * (1 + 0.005)) tp = entry * (1 + 0.005);
+    if (tp > entry * (1 + tpCap)) tp = entry * (1 + tpCap);
+  } else {
+    if (sl < entry * (1 + 0.01)) sl = entry * (1 + 0.01);
+    if (sl > entry * (1 + slCap)) sl = entry * (1 + slCap);
+    if (tp > entry * (1 - 0.005)) tp = entry * (1 - 0.005);
+    if (tp < entry * (1 - tpCap)) tp = entry * (1 - tpCap);
   }
 
   return {
     entry: parseFloat(entry.toFixed(dec)),
-    sl: parseFloat(sl.toFixed(dec)),
-    tp: parseFloat(tp.toFixed(dec)),
-    reason
+    sl:    parseFloat(sl.toFixed(dec)),
+    tp:    parseFloat(tp.toFixed(dec)),
   };
 }
 
@@ -274,9 +151,7 @@ export default async function handler(req, res) {
   }
   const days = parseInt(req.query.days) || 30;
   let minScore = coinSymbol === 'BTC' ? 40 : (parseInt(req.query.min_score) || config.minScore);
-  const qSlBuffer = req.query.sl_buffer ? parseFloat(req.query.sl_buffer) : config.minSlBuffer;
-  const qTpBuffer = req.query.tp_buffer ? parseFloat(req.query.tp_buffer) : config.minTpBuffer;
-  const qMaxDistancePct = req.query.max_distance_pct ? parseFloat(req.query.max_distance_pct) : null;
+  const initialBalance = req.query.initial_balance ? parseFloat(req.query.initial_balance) : 10000;
 
   try {
     const transport = new HttpTransport();
@@ -288,7 +163,7 @@ export default async function handler(req, res) {
     // Fetch candles in chunks of 150 days to avoid the 5000-candle limit
     const candles = [];
     const candleChunkMs = 150 * 24 * 60 * 60 * 1000;
-    let candleStart = startTime;
+    let candleStart = startTime - 200 * 3600000; // start early for SMAs
     while (candleStart < endTime) {
       const candleEnd = Math.min(candleStart + candleChunkMs, endTime);
       const chunk = await info.candleSnapshot({
@@ -335,33 +210,40 @@ export default async function handler(req, res) {
       fundingMap[hourTimestamp] = parseFloat(item.fundingRate);
     });
 
-    // Simulation variables
+    // Simulation parameters
     const spreadMap = {
-      "BTC": 0.0001, // 0.01%
-      "ETH": 0.0002, // 0.02%
-      "SOL": 0.0003, // 0.03%
-      "HYPE": 0.0008, // 0.08%
-      "LINK": 0.0005, // 0.05%
-      "XRP": 0.0004, // 0.04%
-      "INJ": 0.0006, // 0.06%
-      "WLD": 0.0007  // 0.07%
+      "BTC": 0.0001,
+      "ETH": 0.0002,
+      "SOL": 0.0003,
+      "HYPE": 0.0004,
+      "XRP": 0.0004,
+      "SUI": 0.0004
     };
-    const initialBalance = req.query.initial_balance ? parseFloat(req.query.initial_balance) : 10000;
+    
     let balance = initialBalance;
     let position = null;
     let pendingOrder = null;
     const trades = [];
     const leverage = 5;
-    const roundTripFeePct = 0.0005; 
-    const entryShiftThreshold = 0.0075;
-    let consecutiveLosses = 0;
-    let cooldownUntil = 0;
+    const roundTripFeePct = 0.0008; 
+
+    // Live Bot parameters:
+    const coinParams = {
+      BTC:  { tpCap: 0.02,   slCap: 0.015, trendPeriod: 200 },
+      XRP:  { tpCap: 0.0075, slCap: 0.015, trendPeriod: 50  },
+      SUI:  { tpCap: 0.0075, slCap: 0.015, trendPeriod: 200 },
+      HYPE: { tpCap: 0.0075, slCap: 0.015, trendPeriod: 24  },
+    };
+    const params = coinParams[coinSymbol] || { tpCap: 0.01, slCap: 0.015, trendPeriod: 24 };
 
     // Daily equity tracking for chart
-    const dailyBalances = [{ time: startTime, balance: initialBalance }];
-    let lastLoggedDay = Math.floor(startTime / 86400000);
+    const dailyBalances = [];
+    let lastLoggedDay = 0;
 
-    for (let i = 200; i < candles.length; i++) {
+    const startSimIdx = candles.findIndex(c => c.t >= startTime);
+    const warmupIdx = startSimIdx === -1 ? 200 : startSimIdx;
+
+    for (let i = warmupIdx; i < candles.length; i++) {
       const c = candles[i];
       const timestamp = c.t;
       const currentPrice = parseFloat(c.c);
@@ -371,13 +253,13 @@ export default async function handler(req, res) {
       // Track daily balance point
       const currentDay = Math.floor(timestamp / 86400000);
       if (currentDay > lastLoggedDay) {
-        dailyBalances.push({ time: timestamp, balance });
+        dailyBalances.push({ time: timestamp, balance: parseFloat(balance.toFixed(2)) });
         lastLoggedDay = currentDay;
       }
 
       // Calculate 24h rolling features
       const candle24hAgo = candles[i - 24];
-      const prevPrice = parseFloat(candle24hAgo.c) || currentPrice;
+      const prevPrice = candle24hAgo ? parseFloat(candle24hAgo.c) : currentPrice;
       const change = ((currentPrice - prevPrice) / prevPrice) * 100;
 
       let high24h = low;
@@ -387,6 +269,7 @@ export default async function handler(req, res) {
 
       for (let j = i - 24; j <= i; j++) {
         const cj = candles[j];
+        if (!cj) continue;
         const cjHigh = parseFloat(cj.h);
         const cjLow = parseFloat(cj.l);
         if (cjHigh > high24h) high24h = cjHigh;
@@ -396,25 +279,17 @@ export default async function handler(req, res) {
       }
       const sma24 = sumClose24 / 25;
       
-      let sumClose50 = 0;
-      for (let j = i - 50; j <= i; j++) {
-        sumClose50 += parseFloat(candles[j].c);
+      let sumTrend = 0;
+      for (let j = i - params.trendPeriod; j <= i; j++) {
+        if (candles[j]) sumTrend += parseFloat(candles[j].c);
       }
-      const sma50 = sumClose50 / 51;
-
-      let sumClose200 = 0;
-      for (let j = i - 200; j <= i; j++) {
-        sumClose200 += parseFloat(candles[j].c);
-      }
-      const sma200 = sumClose200 / 201;
-
-      const smaTrend = (coinSymbol === 'BTC' || coinSymbol === 'SUI') ? sma200 : (coinSymbol === 'XRP' ? sma50 : sma24);
+      const smaTrend = sumTrend / (params.trendPeriod + 1);
 
       const volatility24h = (high24h - low24h) / low24h;
 
       const hourKey = Math.floor(timestamp / 3600000) * 3600000;
       const fundingRateRaw = fundingMap[hourKey] || 0.0000125; 
-      const funding = fundingRateRaw * 8;
+      const funding = fundingRateRaw * 3;
 
       const coinData = {
         symbol: coinSymbol,
@@ -426,121 +301,116 @@ export default async function handler(req, res) {
         low: low24h
       };
 
-      const score = calculateScore(coinData, true);
-      const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
-
-      // Determine direction and adjust score based on Pivot zones (TrueNorth model)
-      const direction = detectAutoDirection(coinData, sma24, smaTrend, qMaxDistancePct);
-      let adjustedScore = score;
-      if (direction !== 'SKIP') {
-        if (direction === 'LONG') {
-          if (currentPrice <= pivotLevels.s1 * 1.005 && currentPrice >= pivotLevels.s2 * 0.995) {
-            adjustedScore += 15;
-          } else if (currentPrice >= pivotLevels.r1 * 0.995) {
-            adjustedScore -= 15;
-          }
-        } else { // SHORT
-          if (currentPrice >= pivotLevels.r1 * 0.995 && currentPrice <= pivotLevels.r2 * 1.005) {
-            adjustedScore += 15;
-          } else if (currentPrice <= pivotLevels.s1 * 1.005) {
-            adjustedScore -= 15;
-          }
-        }
-        adjustedScore = Math.max(0, Math.min(100, adjustedScore));
-      } else {
-        adjustedScore = 0;
-      }
+      const score = calculateScore(coinData);
+      const direction = detectAutoDirection(coinData, sma24, smaTrend);
 
       // Position Handling
       if (position) {
         const isLong = position.dir === 'LONG';
         let hitSl = false;
         let hitTp = false;
+        let exitReason = 'SL';
 
-        if (isLong) {
-          const trigger = 0.015;
-          if (!position.slMovedToEntry && high >= position.entryPrice * (1 + trigger)) {
+        const currentProfitPct = isLong
+          ? (currentPrice - position.entryPrice) / position.entryPrice
+          : (position.entryPrice - currentPrice) / position.entryPrice;
+
+        // 1. Trailing Activation Check:
+        // Generalized isNearTp: true only if price has completed >= 85% of entry-to-TP distance
+        const totalTpDistance = Math.abs(position.initialTp - position.entryPrice);
+        const currentTpDistance = Math.abs(currentPrice - position.entryPrice);
+        const isNearTp = totalTpDistance > 0 && currentTpDistance >= totalTpDistance * 0.85 && (isLong ? currentPrice > position.entryPrice : currentPrice < position.entryPrice);
+
+        if (!position.trailed && isNearTp) {
+          position.trailed = true;
+          position.sl = position.initialTp; // Lock in Stop Loss at original TP
+          position.tp = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // Trail TP by 2%
+          position.marginScale = 1.5; // Simulate 0.5x Pyramiding
+          position.entryPrice = (position.entryPrice * 1.0 + currentPrice * 0.5) / 1.5; // Update average entry price
+        }
+
+        // 2. Standard breakeven if trailing is disabled or not yet triggered
+        if (!position.trailed) {
+          const beTrigger = 0.015;
+          if (!position.slMovedToEntry && currentProfitPct >= beTrigger) {
             position.sl = position.entryPrice;
             position.slMovedToEntry = true;
-          }
-
-          if (low <= position.sl) {
-            hitSl = true;
-          } else if (high >= position.tp) {
-            hitTp = true;
-          }
-        } else {
-          const trigger = 0.015;
-          if (!position.slMovedToEntry && low <= position.entryPrice * (1 - trigger)) {
-            position.sl = position.entryPrice;
-            position.slMovedToEntry = true;
-          }
-
-          if (high >= position.sl) {
-            hitSl = true;
-          } else if (low <= position.tp) {
-            hitTp = true;
           }
         }
 
-        if (hitSl || hitTp) {
-          const rawExitPrice = hitSl ? position.sl : position.tp;
-          const spreadPct = spreadMap[coinSymbol] || 0.0005;
-          const exitSlippagePct = Math.max(0.0002, volatility24h * 0.02);
+        // 3. Check SL/TP triggers
+        if (isLong) {
+          if (low <= position.sl) {
+            hitSl = true;
+            exitReason = position.trailed ? 'TRAILING_SL' : (position.slMovedToEntry ? 'BE' : 'SL');
+          } else if (high >= position.tp) {
+            hitTp = true;
+            exitReason = position.trailed ? 'TRAILING_TP' : 'TP';
+          }
+        } else {
+          if (high >= position.sl) {
+            hitSl = true;
+            exitReason = position.trailed ? 'TRAILING_SL' : (position.slMovedToEntry ? 'BE' : 'SL');
+          } else if (low <= position.tp) {
+            hitTp = true;
+            exitReason = position.trailed ? 'TRAILING_TP' : 'TP';
+          }
+        }
 
-          let exitPriceWithPenalties = rawExitPrice;
-          if (isLong) {
-            exitPriceWithPenalties = rawExitPrice * (1 - spreadPct / 2) * (1 - exitSlippagePct);
+        // 24h Max hold force close
+        const durationHours = Math.round((timestamp - position.fillTime) / 3600000);
+        if (!hitSl && !hitTp && durationHours >= 24) {
+          hitSl = true;
+          exitReason = 'TIMEOUT';
+        }
+
+        if (hitSl || hitTp) {
+          let exitPrice = position.sl;
+          if (hitTp) {
+            exitPrice = position.tp;
+          } else if (exitReason === 'TIMEOUT') {
+            exitPrice = currentPrice;
           } else {
-            exitPriceWithPenalties = rawExitPrice * (1 + spreadPct / 2) * (1 + exitSlippagePct);
+            // Honest Fill adjustment:
+            if (isLong && exitPrice > currentPrice) {
+              exitPrice = currentPrice;
+            } else if (!isLong && exitPrice < currentPrice) {
+              exitPrice = currentPrice;
+            }
           }
 
           const priceReturn = isLong 
-            ? (exitPriceWithPenalties - position.entryPrice) / position.entryPrice
-            : (position.entryPrice - exitPriceWithPenalties) / position.entryPrice;
+            ? (exitPrice - position.entryPrice) / position.entryPrice
+            : (position.entryPrice - exitPrice) / position.entryPrice;
 
           // Calculate Hourly Funding Fee impact
           let totalFundingReturn = 0;
           for (let h = position.fillTime + 3600000; h <= timestamp; h += 3600000) {
-            const hKey = Math.floor(h / 3600000) * 3600000;
-            const hFundingRate = fundingMap[hKey] || 0.0000125;
+            const hFundingRate = fundingMap[Math.floor(h / 3600000) * 3600000] || 0.0000125;
             totalFundingReturn += (isLong ? -hFundingRate : hFundingRate) * leverage;
           }
 
-          const leveragedReturn = priceReturn * leverage;
-          const netReturn = leveragedReturn + totalFundingReturn - roundTripFeePct;
-          const maxCompoundingMargin = 50000;
-          const positionSizeFactor = position.sizeFactor !== undefined ? position.sizeFactor : (config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95);
-          const activeMargin = Math.min(balance * positionSizeFactor, maxCompoundingMargin);
+          const netReturn = priceReturn * leverage + totalFundingReturn - roundTripFeePct;
+          const scale = position.marginScale || 1.0;
+          
+          // Position size factor 0.95 capped to 50k max compounding
+          const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95;
+          const activeMargin = Math.min(balance * baseSizeFactor, 50000) * scale;
           const tradePnl = activeMargin * netReturn;
 
           balance += tradePnl;
           trades.push({
             dir: position.dir,
             entryPrice: position.entryPrice,
-            exitPrice: exitPriceWithPenalties,
-            exitType: hitSl ? 'SL' : 'TP',
+            exitPrice: exitPrice,
+            exitType: exitReason,
             entryTime: position.fillTime,
             exitTime: timestamp,
             returnPct: parseFloat((netReturn * 100).toFixed(2)),
             pnlUsd: parseFloat(tradePnl.toFixed(2)),
             balanceAfter: parseFloat(balance.toFixed(2)),
-            score: position.score,
-            fundingReturn: parseFloat((totalFundingReturn * 100).toFixed(2)),
-            slippagePaid: parseFloat(((position.entrySlippagePct + exitSlippagePct) * 100).toFixed(2)),
-            spreadPaid: parseFloat((spreadPct * 100).toFixed(2))
+            score: position.score
           });
-
-          if (netReturn > 0) {
-            consecutiveLosses = 0;
-          } else {
-            consecutiveLosses++;
-            if ((coinSymbol === 'HYPE' || coinSymbol === 'SUI') && consecutiveLosses >= 2) {
-              cooldownUntil = timestamp + 24 * 60 * 60 * 1000;
-              consecutiveLosses = 0;
-              pendingOrder = null; // cancel any resting limit entry orders immediately for HYPE/SUI
-            }
-          }
 
           position = null;
         }
@@ -566,74 +436,85 @@ export default async function handler(req, res) {
           position = {
             dir: pendingOrder.dir,
             entryPrice: pendingOrder.entryPrice,
+            initialTp: pendingOrder.tp,
             tp: pendingOrder.tp,
             sl: pendingOrder.sl,
             score: pendingOrder.score,
             fillTime: timestamp,
             slMovedToEntry: false,
-            entrySlippagePct: pendingOrder.entrySlippagePct,
-            sizeFactor: pendingOrder.sizeFactor
+            trailed: false,
+            marginScale: 1.0
           };
           pendingOrder = null;
-          continue; // Move to next hour now that position is filled
+          continue; 
         }
 
-        // Cancel/update pending order if score drops below minScore or direction shifts to SKIP
-        if (adjustedScore < minScore || direction === 'SKIP') {
+        // Cancel pending order if score drops below minScore or direction shifts to SKIP
+        if (score < minScore || direction === 'SKIP') {
           pendingOrder = null;
         }
       }
 
       // No active position: Evaluate new signals to set/update pending limit order
-      if (!position && timestamp >= cooldownUntil) {
-        if (adjustedScore >= minScore && direction !== 'SKIP') {
-          const levels = computeStrategyLevels(coinData, direction, qSlBuffer, qTpBuffer, pivotLevels);
-          const spreadPct = spreadMap[coinSymbol] || 0.0005;
-          const slippagePct = Math.max(0.0002, volatility24h * 0.02);
-
-          let entryPriceWithPenalties = levels.entry;
-          if (direction === 'LONG') {
-            entryPriceWithPenalties = levels.entry * (1 + spreadPct / 2) * (1 + slippagePct);
-          } else {
-            entryPriceWithPenalties = levels.entry * (1 - spreadPct / 2) * (1 - slippagePct);
+      if (!position) {
+        if (score >= minScore && direction !== 'SKIP') {
+          // SHORT Trend Block
+          if (direction === 'SHORT' && smaTrend !== null && currentPrice > smaTrend) {
+            continue;
           }
 
-          // Volatility-Based Position Sizing: Scale size factor dynamically for HYPE, keep standard for XRP
-          const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.95;
-          const dynamicSizeFactor = coinSymbol === 'HYPE'
-            ? Math.min(baseSizeFactor, Math.max(0.15, 0.05 / volatility24h))
-            : baseSizeFactor;
+          let slCap = params.slCap;
+          if (direction === 'SHORT') {
+            slCap = 0.015;
+          }
+
+          const pivotLevels = calculatePivotLevels(high24h, low24h, currentPrice);
+          const levels = computeStrategyLevels(coinData, direction, pivotLevels, params, slCap);
+
+          const spreadPct = spreadMap[coinSymbol] || 0.0004;
+          const slippagePct = Math.max(0.0002, volatility24h * 0.02);
+
+          let entryFinal = levels.entry;
+          let volShift = 0;
+          if (volatility24h > 0.035) {
+            volShift = 0.005;
+          }
+
+          if (direction === 'LONG') {
+            entryFinal *= (1 + spreadPct / 2 + slippagePct - volShift);
+          } else {
+            entryFinal *= (1 - spreadPct / 2 - slippagePct + volShift);
+          }
 
           pendingOrder = {
             dir: direction,
-            entryPrice: entryPriceWithPenalties,
+            entryPrice: entryFinal,
             tp: levels.tp,
             sl: levels.sl,
-            score: adjustedScore,
-            entrySlippagePct: slippagePct,
-            sizeFactor: dynamicSizeFactor
+            score: score
           };
 
           // Check if it can be filled in the same hour it is placed
           const isLong = direction === 'LONG';
           let filled = false;
           if (isLong) {
-            if (low <= entryPriceWithPenalties) filled = true;
+            if (low <= entryFinal) filled = true;
           } else {
-            if (high >= entryPriceWithPenalties) filled = true;
+            if (high >= entryFinal) filled = true;
           }
 
           if (filled) {
             position = {
               dir: direction,
-              entryPrice: entryPriceWithPenalties,
+              entryPrice: entryFinal,
+              initialTp: levels.tp,
               tp: levels.tp,
               sl: levels.sl,
-              score: adjustedScore,
+              score: score,
               fillTime: timestamp,
               slMovedToEntry: false,
-              entrySlippagePct: slippagePct,
-              sizeFactor: dynamicSizeFactor
+              trailed: false,
+              marginScale: 1.0
             };
             pendingOrder = null;
           }
@@ -641,9 +522,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Push final balance point if not already added
-    if (dailyBalances[dailyBalances.length - 1].time !== candles[candles.length - 1].t) {
-      dailyBalances.push({ time: candles[candles.length - 1].t, balance });
+    // Push final balance point
+    if (candles.length > 0 && (dailyBalances.length === 0 || dailyBalances[dailyBalances.length - 1].time !== candles[candles.length - 1].t)) {
+      dailyBalances.push({ time: candles[candles.length - 1].t, balance: parseFloat(balance.toFixed(2)) });
     }
 
     // Summary calculations
@@ -688,7 +569,6 @@ export default async function handler(req, res) {
         }
       });
       fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-      console.log(`Saved backtest results to history log: ${historyPath}`);
     } catch (e) {
       console.warn("Failed to save backtest history log:", e.message);
     }

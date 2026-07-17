@@ -3,11 +3,12 @@ import { privateKeyToAccount } from "viem/accounts";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import logger from "./services/logger.js";
 
 let config = {
   minScore: 85,
   minSlBuffer: 0.008,
-  minTpBuffer: 0.010,
+  minTpBuffer: 0.005,
   entryShiftThreshold: 0.0075,
   replacementScoreDiff: 10,
   nansenBuilderAddress: "",
@@ -29,10 +30,103 @@ try {
   if (fs.existsSync(configPath)) {
     const rawConfig = fs.readFileSync(configPath, 'utf8');
     config = { ...config, ...JSON.parse(rawConfig) };
-    console.log("Loaded config.json at startup:", config);
+    logger.info("Loaded config.json at startup", "audit", { config });
   }
 } catch (e) {
-  console.warn("Failed to load config.json at startup, using defaults:", e.message);
+  logger.warn("Failed to load config.json at startup, using defaults: " + e.message);
+}
+
+// ── Startup Secrets Validation ──────────────────────────────────
+export function validateEnvSecrets() {
+  const isDryRun = process.env.DRY_RUN === 'true' || config.dryRun === true || config.dryRun === "true";
+  
+  if (!isDryRun) {
+    const key = process.env.HYPERLIQUID_PRIVATE_KEY;
+    const wallet = process.env.HYPERLIQUID_WALLET_ADDRESS;
+    
+    if (!key) {
+      throw new Error("HYPERLIQUID_PRIVATE_KEY is missing in environment variables.");
+    }
+    if (!key.startsWith("0x") || key.length !== 66) {
+      throw new Error("HYPERLIQUID_PRIVATE_KEY must start with '0x' and be exactly 66 characters long.");
+    }
+    
+    if (!wallet) {
+      throw new Error("HYPERLIQUID_WALLET_ADDRESS is missing in environment variables.");
+    }
+    if (!wallet.startsWith("0x") || wallet.length !== 42) {
+      throw new Error("HYPERLIQUID_WALLET_ADDRESS must start with '0x' and be exactly 42 characters long.");
+    }
+  }
+  
+  const webhook = process.env.DISCORD_WEBHOOK_URL;
+  if (webhook && !webhook.startsWith("http")) {
+    throw new Error("DISCORD_WEBHOOK_URL must be a valid HTTP/HTTPS URL.");
+  }
+  
+  logger.info("Startup environment secrets validated successfully.", "audit");
+}
+
+// ── Process-Level Error Boundaries ──────────────────────────────
+process.on('uncaughtException', (err) => {
+  logger.critical(`Uncaught Exception: ${err.message}`, 'events', { stack: err.stack });
+  sendDiscordAlert(`🚨 **CRITICAL: Uncaught Exception!**\nMessage: ${err.message}\n\`\`\`\n${err.stack?.slice(0, 1500)}\n\`\`\``, 'error').finally(() => {
+    process.exit(1);
+  });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : '';
+  logger.critical(`Unhandled Promise Rejection: ${msg}`, 'events', { stack });
+  sendDiscordAlert(`🚨 **CRITICAL: Unhandled Promise Rejection!**\nMessage: ${msg}\n\`\`\`\n${stack?.slice(0, 1500)}\n\`\`\``, 'error');
+});
+
+
+// ── API Call Retry and Timeout Wrapper ──────────────────────────
+async function withRetryAndTimeout(fn, label = "API Call", options = {}) {
+  const retries = options.retries ?? config.apiRetryCount ?? 3;
+  const delayMs = options.delayMs ?? config.apiRetryDelayMs ?? 600;
+  const timeoutMs = options.timeoutMs ?? config.apiTimeoutMs ?? 12000;
+
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`Timeout of ${timeoutMs}ms exceeded`));
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([
+        fn(),
+        timeoutPromise
+      ]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      
+      const isRateLimit = err.message.includes("429") || err.message.toLowerCase().includes("rate limit");
+      const isTimeout = err.message.includes("Timeout");
+      
+      logger.warn(`[${label}] Attempt ${attempt} failed: ${err.message}`, "events", { 
+        attempt, 
+        isRateLimit, 
+        isTimeout 
+      });
+
+      if (attempt > retries) {
+        logger.error(`[${label}] All ${retries + 1} attempts failed. Exception thrown.`, "events");
+        throw err;
+      }
+
+      // Exponential backoff with jitter
+      const backoffDelay = delayMs * Math.pow(2, attempt - 1) * (0.8 + Math.random() * 0.4);
+      logger.info(`[${label}] Retrying in ${Math.round(backoffDelay)}ms...`, "events");
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+    }
+  }
 }
 
 async function sendDiscordAlert(message, type = 'info') {
@@ -64,7 +158,7 @@ async function sendDiscordAlert(message, type = 'info') {
       body: JSON.stringify(payload)
     });
   } catch (err) {
-    console.error("[Discord Alert Error] Failed to send webhook:", err.message);
+    logger.error("[Discord Alert Error] Failed to send webhook: " + err.message, "events");
   }
 }
 
@@ -113,13 +207,48 @@ function isCoinInConsecutiveLossCooldown(coinSymbol, userFills) {
       const cooldownEnd = lastTrade.time + 24 * 60 * 60 * 1000;
       if (Date.now() < cooldownEnd) {
         const remainingHours = ((cooldownEnd - Date.now()) / (3600000)).toFixed(1);
-        console.log(`[Risk] ${coinSymbol} is in 24h cooldown after 2 consecutive losses. Cooldown ends in ${remainingHours} hours.`);
+        logger.info(`[Risk] ${coinSymbol} is in 24h cooldown after 2 consecutive losses. Cooldown ends in ${remainingHours} hours.`, "events");
         return true;
       }
     }
   }
 
   return false;
+}
+
+function getPositionOpenTime(coinSymbol, userFills) {
+  if (!Array.isArray(userFills) || userFills.length === 0) return null;
+  
+  // Helper to detect if a fill closed a position
+  const isCloseFill = f => {
+    const dir = (f.dir || "").toLowerCase();
+    if (dir.includes("close")) return true;
+    if (parseFloat(f.closedPnl || "0") !== 0) return true;
+    return false;
+  };
+
+  // Helper to detect if a fill opened/increased a position
+  const isOpenFill = f => {
+    const dir = (f.dir || "").toLowerCase();
+    if (dir.includes("open")) return true;
+    if (parseFloat(f.closedPnl || "0") === 0 && !dir.includes("close")) return true;
+    return false;
+  };
+
+  // Find the most recent close fill for this coin
+  const closeFills = userFills.filter(f => f.coin === coinSymbol && isCloseFill(f));
+  const lastCloseTime = closeFills.length > 0 ? Math.max(...closeFills.map(f => parseInt(f.time))) : 0;
+  
+  // Find opening fills that occurred after the last close
+  const currentOpenFills = userFills.filter(f => f.coin === coinSymbol && isOpenFill(f) && parseInt(f.time) > lastCloseTime);
+  
+  if (currentOpenFills.length === 0) {
+    const allOpenFills = userFills.filter(f => f.coin === coinSymbol && isOpenFill(f));
+    if (allOpenFills.length === 0) return null;
+    return Math.min(...allOpenFills.map(f => parseInt(f.time)));
+  }
+  
+  return Math.min(...currentOpenFills.map(f => parseInt(f.time)));
 }
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
@@ -159,18 +288,18 @@ const geckoIdMap = {
 
 // FIX #2: Coin-specific TP caps (used in computeStrategyLevels + recovery)
 const COIN_TP_CAP = {
-  BTC:  0.04,
-  XRP:  0.02,   // XRP: 2.0% TP
-  SUI:  0.02,   // SUI: 2.0% TP
-  HYPE: 0.05,   // HYPE: 5.0% TP
+  BTC:  0.02,   // BTC: 2.0% TP
+  XRP:  0.0075, // XRP: 0.75% TP
+  SUI:  0.0075, // SUI: 0.75% TP
+  HYPE: 0.0075, // HYPE: 0.75% TP
 };
 
 // Phase 3 #13: Coin-specific SL caps
 const COIN_SL_CAP = {
   BTC:  0.015,  // 1.5% max SL for BTC
-  XRP:  0.03,   // 3.0% for XRP
-  SUI:  0.02,   // 2.0% for SUI
-  HYPE: 0.015,  // 1.5% for HYPE
+  XRP:  0.015,  // 1.5% max SL for XRP (from 3.0%)
+  SUI:  0.015,  // 1.5% max SL for SUI (from 2.0%)
+  HYPE: 0.015,  // 1.5% max SL for HYPE
 };
 
 const COIN_RISK_CONFIG = {
@@ -279,7 +408,7 @@ async function getNansenTokenAddress(symbol) {
       }
     }
   } catch (e) {
-    console.error(`Failed to resolve Nansen address for ${symbol}:`, e.message);
+    logger.error(`Failed to resolve Nansen address for ${symbol}: ${e.message}`, "events");
   }
   return null;
 }
@@ -334,7 +463,7 @@ async function getSmartMoneyBonus(chain, tokenAddress) {
       }
     }
   } catch (e) {
-    console.error(`Failed to get Nansen flows for ${tokenAddress}:`, e.message);
+    logger.error(`Failed to get Nansen flows for ${tokenAddress}: ${e.message}`, "events");
   }
   return { bonus, details, nansenSmartMoney, nansenWhale, nansenExchange };
 }
@@ -353,22 +482,9 @@ function generateEncodedCloid(details) {
 }
 
 
-// FIX #6: Exponential backoff retry helper for all external API calls
+// Refactored legacy withRetry to delegate to the new structured withRetryAndTimeout helper
 async function withRetry(fn, maxRetries = 3, label = '', timeoutMs = 10000) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await Promise.race([
-        fn(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs))
-      ]);
-      return result;
-    } catch (err) {
-      if (attempt === maxRetries) throw err;
-      const delay = Math.pow(2, attempt) * 600;
-      console.warn(`[Retry] ${label} attempt ${attempt + 1}/${maxRetries} failed: ${err.message}. Retrying in ${delay}ms...`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
+  return withRetryAndTimeout(fn, label, { retries: maxRetries, timeoutMs });
 }
 
 // Generic JSON-RPC tool caller helper for TrueNorth (with retry)
@@ -426,14 +542,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       if (dir === 'SHORT') {
         const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
         if (nearSupport) {
-          console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
         const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
         if (nearResistance) {
-          console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
         }
       }
@@ -480,14 +596,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       if (dir === 'SHORT') {
         const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
         if (nearSupport) {
-          console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
         const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
         if (nearResistance) {
-          console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
         }
       }
@@ -556,7 +672,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
         return 'SKIP'; // Filter out counter-trend longs
       }
       if (price > sma24 * (1 + maxDistancePct)) {
-        console.log(`[SMA Distance Filter] Skip LONG candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% above 24h SMA (${sma24.toFixed(4)})`);
+        logger.info(`[SMA Distance Filter] Skip LONG candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% above 24h SMA (${sma24.toFixed(4)})`, "events");
         return 'SKIP'; // Filter out overextended longs
       }
 
@@ -564,7 +680,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       if (taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
         if (vwapData.state === 'price_below' || vwapData.slope === 'down') {
-          console.log(`[VWAP Trend Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP is Bearish (Price below VWAP or slope down)`);
+          logger.info(`[VWAP Trend Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP is Bearish (Price below VWAP or slope down)`, "events");
           return 'SKIP';
         }
       }
@@ -574,7 +690,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
         return 'SKIP'; // Filter out counter-trend shorts
       }
       if (price < sma24 * (1 - maxDistancePct)) {
-        console.log(`[SMA Distance Filter] Skip SHORT candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% below 24h SMA (${sma24.toFixed(4)})`);
+        logger.info(`[SMA Distance Filter] Skip SHORT candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% below 24h SMA (${sma24.toFixed(4)})`, "events");
         return 'SKIP'; // Filter out overextended shorts
       }
 
@@ -582,7 +698,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       if (taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
         if (vwapData.state === 'price_above' || vwapData.slope === 'up') {
-          console.log(`[VWAP Trend Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP is Bullish (Price above VWAP or slope up)`);
+          logger.info(`[VWAP Trend Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP is Bullish (Price above VWAP or slope up)`, "events");
           return 'SKIP';
         }
       }
@@ -596,14 +712,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     if (dir === 'SHORT') {
       const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
       if (nearSupport) {
-        console.log(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`);
+        logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
         return 'SKIP';
       }
     }
     if (dir === 'LONG') {
       const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
       if (nearResistance) {
-        console.log(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`);
+        logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
         return 'SKIP';
       }
     }
@@ -672,7 +788,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           entry = candEntry;
           reason = 'support_rebound_limit';
         } else {
-          console.log(`[Support Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
+          logger.info(`[Support Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`, "events");
         }
       }
     } else if (dir === 'SHORT' && config.enableResistanceRebound !== false && channels.length > 0) {
@@ -691,7 +807,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           entry = candEntry;
           reason = 'resistance_rebound_limit';
         } else {
-          console.log(`[Resistance Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`);
+          logger.info(`[Resistance Rebound] Distance too far: Entry ${candEntry.toFixed(dec)} is too far from price ${price} (Distance: ${(dist * 100).toFixed(2)}% > ${(maxDist * 100).toFixed(1)}%). Falling back to standard entry.`, "events");
         }
       }
     }
@@ -731,6 +847,18 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         reason = 'fallback_pullback_limit';
       }
     }
+  }
+
+  // Volatility-Adjusted Entry Shift (pullback shift)
+  const vol24 = coin.volatility24h || 0;
+  if (vol24 > 0.035) {
+    if (dir === 'LONG') {
+      entry *= 0.995; // 0.5% deeper pullback
+    } else {
+      entry *= 1.005; // 0.5% higher pullback
+    }
+    entry = parseFloat(entry.toFixed(dec));
+    reason += '+vol_shift_0.5%';
   }
 
   // Initial TP/SL are relative to calculated Limit Entry price
@@ -844,7 +972,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         callWall = parsed.summary.key_levels.nearest_call_wall;
       }
     } catch (e) {
-      console.warn("Could not parse options report for smart levels:", e.message);
+      logger.warn("Could not parse options report for smart levels: " + e.message, "events");
     }
   }
 
@@ -886,7 +1014,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         }
       }
     } catch (e) {
-      console.warn("Could not calculate liquidation squeeze levels:", e.message);
+      logger.warn("Could not calculate liquidation squeeze levels: " + e.message, "events");
     }
   }
 
@@ -911,7 +1039,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
         }
       }
     } catch (e) {
-      console.warn("Could not parse derivatives data for smart levels:", e.message);
+      logger.warn("Could not parse derivatives data for smart levels: " + e.message, "events");
     }
   }
 
@@ -997,8 +1125,11 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   const symbol = coin.symbol || '';
   // Phase 3 #13: Use coin-specific SL cap from COIN_SL_CAP lookup
-  const slCap = COIN_SL_CAP[symbol] ?? (symbol === 'BTC' ? 0.015 : 0.02);
-  const defaultMaxTp = COIN_TP_CAP[symbol] ?? (config.maxTpPct !== undefined ? config.maxTpPct : 0.03);
+  let slCap = COIN_SL_CAP[symbol] ?? 0.015;
+  if (dir === 'SHORT') {
+    slCap = 0.015; // Tighten stop loss to 1.5% max on shorts
+  }
+  const defaultMaxTp = COIN_TP_CAP[symbol] ?? 0.0075;
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
 
   if (dir === 'LONG') {
@@ -1114,7 +1245,7 @@ function attachBuilderFee(orders) {
     orders.forEach(o => {
       o.builder = builderFeeObj;
     });
-    console.log(`[Builder Fee] Attached builder address ${config.nansenBuilderAddress} with fee ${builderFeeObj.f} to ${orders.length} orders.`);
+    logger.info(`[Builder Fee] Attached builder address ${config.nansenBuilderAddress} with fee ${builderFeeObj.f} to ${orders.length} orders.`, "events");
   }
   return orders;
 }
@@ -1125,7 +1256,7 @@ async function safeCancelOrders(exchange, cancels) {
     const res = await exchange.cancel({ cancels });
     return res;
   } catch (e) {
-    console.warn(`[Safe Cancel] Cancel request returned an error (might be already cancelled/filled):`, e.message);
+    logger.warn(`[Safe Cancel] Cancel request returned an error (might be already cancelled/filled): ${e.message}`, "events");
     if (e.message.includes("already canceled") || e.message.includes("never placed") || e.message.includes("filled")) {
       return null;
     }
@@ -1134,6 +1265,19 @@ async function safeCancelOrders(exchange, cancels) {
 }
 
 export default async function handler(req, res) {
+  // Generate Trace ID for execution cycle
+  const traceId = crypto.randomBytes(6).toString("hex");
+  logger.setTraceId(traceId);
+  logger.info("Bot execution cycle started", "events");
+
+  // Validate environment secrets
+  try {
+    validateEnvSecrets();
+  } catch (err) {
+    logger.critical(`Startup secrets validation failed: ${err.message}`, "events");
+    return res.status(500).json({ error: `Secrets Validation Failed: ${err.message}` });
+  }
+
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
   const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
 
@@ -1143,6 +1287,7 @@ export default async function handler(req, res) {
     const authHeader = req.headers['authorization'] || req.query.secret;
     const expected = `Bearer ${cronSecret}`;
     if (authHeader !== expected && req.query.secret !== cronSecret) {
+      logger.warn("Unauthorized bot execution attempt", "audit");
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
@@ -1151,6 +1296,7 @@ export default async function handler(req, res) {
   const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
   const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
   if (!privateKey || !walletAddress) {
+    logger.error("Missing credentials in environment variables", "audit");
     return res.status(400).json({ error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS in environment variables." });
   }
 
@@ -1162,13 +1308,16 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({ transport, wallet: account });
 
     // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
-    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
-      info.metaAndAssetCtxs(),
-      info.clearinghouseState({ user: walletAddress }),
-      info.frontendOpenOrders({ user: walletAddress }),
-      info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-      info.userFills({ user: walletAddress }).catch(() => [])
-    ]);
+    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState, userFills] = await withRetryAndTimeout(
+      () => Promise.all([
+        info.metaAndAssetCtxs(),
+        info.clearinghouseState({ user: walletAddress }),
+        info.frontendOpenOrders({ user: walletAddress }),
+        info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
+        info.userFills({ user: walletAddress }).catch(() => [])
+      ]),
+      "Hyperliquid User & Market State Initialization"
+    );
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
     let openOrders = initialOpenOrders;
     let userState = initialUserState;
@@ -1210,15 +1359,19 @@ export default async function handler(req, res) {
 
     let binanceData = null;
     try {
-      const [resTicker, resFunding] = await Promise.all([
-        fetch("https://fapi.binance.com/fapi/v1/ticker/24hr").then(r => r.json()),
-        fetch("https://fapi.binance.com/fapi/v1/premiumIndex").then(r => r.json())
-      ]);
+      const [resTicker, resFunding] = await withRetryAndTimeout(
+        () => Promise.all([
+          fetch("https://fapi.binance.com/fapi/v1/ticker/24hr").then(r => r.json()),
+          fetch("https://fapi.binance.com/fapi/v1/premiumIndex").then(r => r.json())
+        ]),
+        "Binance Scanner Data Fetching",
+        { retries: 2, delayMs: 400, timeoutMs: 6000 }
+      );
       if (Array.isArray(resTicker) && Array.isArray(resFunding)) {
         binanceData = { tickers: resTicker, premiumData: resFunding };
       }
     } catch (e) {
-      console.warn("Failed to fetch from Binance, falling back to Hyperliquid data:", e.message);
+      logger.warn("Failed to fetch from Binance, falling back to Hyperliquid data: " + e.message);
     }
 
     let scoredCoins = [];
@@ -1270,7 +1423,7 @@ export default async function handler(req, res) {
         };
       }).filter(Boolean);
       
-      console.log("Using Binance scanner data. Scored coins count:", scoredCoins.length);
+      logger.info(`Using Binance scanner data. Scored coins count: ${scoredCoins.length}`, "events");
     } else {
       // Fallback: Use Hyperliquid data directly
       scoredCoins = hlMeta.universe.map((asset, index) => {
@@ -1302,7 +1455,7 @@ export default async function handler(req, res) {
         };
       }).filter(Boolean);
       
-      console.log("Using Hyperliquid fallback scanner data. Scored coins count:", scoredCoins.length);
+      logger.info(`Using Hyperliquid fallback scanner data. Scored coins count: ${scoredCoins.length}`, "events");
     }
 
     // Sort by score descending, then by volume descending
@@ -1311,14 +1464,16 @@ export default async function handler(req, res) {
       return b.volume - a.volume;
     });
 
-    console.log("Top 5 candidates:", scoredCoins.slice(0, 5).map(c => ({
-      symbol: c.symbol,
-      score: c.score,
-      price: c.price,
-      change: parseFloat(c.change.toFixed(2)),
-      funding: c.funding,
-      volume: Math.round(c.volume)
-    })));
+    logger.info("Top 5 candidates", "events", {
+      candidates: scoredCoins.slice(0, 5).map(c => ({
+        symbol: c.symbol,
+        score: c.score,
+        price: c.price,
+        change: parseFloat(c.change.toFixed(2)),
+        funding: c.funding,
+        volume: Math.round(c.volume)
+      }))
+    });
 
     const minScore = req.query.min_score ? parseInt(req.query.min_score) : (process.env.HYPERLIQUID_MIN_SCORE ? parseInt(process.env.HYPERLIQUID_MIN_SCORE) : config.minScore);
     const replacementScoreDiff = process.env.HYPERLIQUID_REPLACEMENT_SCORE_DIFF 
@@ -1334,7 +1489,7 @@ export default async function handler(req, res) {
         coinsWithPendingOrders.add(order.coin);
       }
     }
-    console.log(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`);
+    logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
     // Find the highest score among all tradeable candidates (no positions, no open orders)
     const potentialCandidates = scoredCoins.filter(c => {
@@ -1346,7 +1501,7 @@ export default async function handler(req, res) {
     });
     const bestCand = potentialCandidates[0]; // Since scoredCoins is already sorted descending, the first is the best
     const bestCandScore = bestCand ? bestCand.score : 0;
-    console.log(`[Stale Cleanup] Best tradeable candidate in market: ${bestCand ? bestCand.symbol : 'None'} (Score: ${bestCandScore})`);
+    logger.info(`[Stale Cleanup] Best tradeable candidate in market: ${bestCand ? bestCand.symbol : 'None'} (Score: ${bestCandScore})`, "events");
 
     for (const coinSymbol of coinsWithPendingOrders) {
       const currentCoin = scoredCoins.find(c => c.symbol === coinSymbol);
@@ -1387,17 +1542,17 @@ export default async function handler(req, res) {
         const geckoIdPending = geckoIdMap[coinSymbol];
         if (geckoIdPending) {
           try {
-            console.log(`[Stale Cleanup] Checking if resistance/support level shifted for pending coin ${coinSymbol}...`);
+            logger.info(`[Stale Cleanup] Checking if resistance/support level shifted for pending coin ${coinSymbol}...`, "events");
             // FIX #6: use withRetry so a timeout doesn't crash the whole cycle
             const mcpRes = await withRetry(
               () => callTrueNorthMcp('technical_analysis', { token_address: geckoIdPending, timeframe: '1h' }),
               2, `StaleCleanup:${coinSymbol}`, 8000
-            ).catch(e => { console.warn(`[Stale Cleanup] TrueNorth failed for ${coinSymbol}: ${e.message}`); return null; });
+            ).catch(e => { logger.warn(`[Stale Cleanup] TrueNorth failed for ${coinSymbol}: ${e.message}`, "events"); return null; });
             if (mcpRes?.result?.content?.[0]?.text) {
               try { taDataPending = JSON.parse(mcpRes.result.content[0].text); } catch(_) {}
             }
           } catch (e) {
-            console.error(`[Stale Cleanup] TrueNorth MCP query failed for pending coin ${coinSymbol}:`, e.message);
+            logger.error(`[Stale Cleanup] TrueNorth MCP query failed for pending coin ${coinSymbol}: ${e.message}`, "events");
           }
         }
 
@@ -1407,8 +1562,9 @@ export default async function handler(req, res) {
           const direction = limitOrder.side === "A" ? "SHORT" : "LONG";
 
           const useSmartSlTpForPending = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+          const pendingMaxTpPct = COIN_TP_CAP[currentCoin.symbol] ?? 0.0075;
           // FIX #3: taDataPending may be null — computeStrategyLevels now handles null safely
-          const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending);
+          const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending, null, pendingMaxTpPct);
 
           if (newLevels && newLevels.entry) {
             const priceDiffPct = Math.abs(newLevels.entry - currentEntryPrice) / currentEntryPrice;
@@ -1418,7 +1574,7 @@ export default async function handler(req, res) {
               shouldCancel = true;
               cancelReason = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
             } else {
-              console.log(`[Stale Cleanup] ${coinSymbol} entry diff within threshold: ${(priceDiffPct * 100).toFixed(2)}%`);
+              logger.info(`[Stale Cleanup] ${coinSymbol} entry diff within threshold: ${(priceDiffPct * 100).toFixed(2)}%`, "events");
             }
           }
         }
@@ -1431,7 +1587,7 @@ export default async function handler(req, res) {
           coinOrders.forEach(o => {
             cancels.push({ a: assetIndex, o: o.oid });
           });
-          console.log(`Scheduling cancellation of all pending orders for ${coinSymbol}. Reason: ${cancelReason}`);
+          logger.info(`Scheduling cancellation of all pending orders for ${coinSymbol}. Reason: ${cancelReason}`, "audit", { coinSymbol, cancelReason });
         }
       }
     }
@@ -1439,10 +1595,10 @@ export default async function handler(req, res) {
     if (cancels.length > 0) {
       try {
         if (isDryRun) {
-          console.log("[DRY RUN] Bypassed stale cancels:", JSON.stringify(cancels));
+          logger.info("[DRY RUN] Bypassed stale cancels: " + JSON.stringify(cancels), "events");
         } else {
           const cancelRes = await exchange.cancel({ cancels });
-          console.log("Stale/orphaned orders cancelled successfully:", JSON.stringify(cancelRes));
+          logger.info("Stale/orphaned orders cancelled successfully: " + JSON.stringify(cancelRes), "audit", { cancelRes });
         }
         // Refresh openOrders and userState to reflect freed margin
         openOrders = await info.frontendOpenOrders({ user: walletAddress });
@@ -1450,9 +1606,9 @@ export default async function handler(req, res) {
         if (spotState) {
           spotState = await info.spotClearinghouseState({ user: walletAddress }).catch(() => null);
         }
-        console.log(`[Stale Cleanup] States refreshed after cancellation. New withdrawable balance: $${userState.withdrawable}`);
+        logger.info(`[Stale Cleanup] States refreshed after cancellation. New withdrawable balance: $${userState.withdrawable}`, "events");
       } catch (e) {
-        console.error("Failed to cancel stale orders:", e.message);
+        logger.error("Failed to cancel stale orders: " + e.message, "events");
       }
     }
 
@@ -1464,7 +1620,7 @@ export default async function handler(req, res) {
 
     // Count active positions
     const activePositionCount = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0).length;
-    console.log(`[Risk] Active positions: ${activePositionCount}/${maxConcurrentPositions}`);
+    logger.info(`[Risk] Active positions: ${activePositionCount}/${maxConcurrentPositions}`, "events");
 
     // Daily PnL check: sum closedPnl from fills in last 24h
     let dailyPnl = 0;
@@ -1478,11 +1634,11 @@ export default async function handler(req, res) {
     }
     const withdrawableNow = parseFloat(userState.withdrawable || '0');
     const dailyLossThreshold = -(withdrawableNow + Math.abs(dailyPnl)) * (dailyLossLimitPct / 100);
-    console.log(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)}`);
+    logger.info(`[Risk] Daily PnL: $${dailyPnl.toFixed(2)} | Limit: $${dailyLossThreshold.toFixed(2)}`, "events");
 
     if (dailyPnl < dailyLossThreshold) {
       const msg = `🛑 Daily loss limit hit: $${dailyPnl.toFixed(2)} (limit: ${dailyLossLimitPct}%). Bot paused for today.`;
-      console.warn(`[Risk] ${msg}`);
+      logger.warn(`[Risk] ${msg}`, "audit");
       await sendDiscordAlert(msg, 'error');
       return res.status(200).json({ status: 'paused', message: msg });
     }
@@ -1532,6 +1688,61 @@ export default async function handler(req, res) {
       const isLong = size > 0;
       const returnPct = isLong ? (currentPrice - entryPx) / entryPx : (entryPx - currentPrice) / entryPx;
 
+      // Check A: Max Hold Duration Timeout (24h force close)
+      const openTime = getPositionOpenTime(coin, userFills);
+      if (openTime) {
+        const ageHours = (Date.now() - openTime) / 3600000;
+        if (ageHours >= 24) {
+          logger.info(`[Timeout Force Close] Position for ${coin} has been open for ${ageHours.toFixed(1)}h (max 24h). Closing at market.`, "events");
+          
+          if (isDryRun) {
+            logger.info(`[DRY RUN] Bypassed Timeout Force Close market order for ${coin}`, "events");
+          } else {
+            try {
+              // 1. Cancel resting TP/SL orders first
+              const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
+              const cancels = coinOrders.map(o => ({ a: currentCoin.assetIndex, o: o.oid }));
+              if (cancels.length > 0) {
+                await safeCancelOrders(exchange, cancels);
+                logger.info(`[Timeout Force Close] Cancelled resting orders for ${coin}: ${JSON.stringify(cancels)}`, "events");
+              }
+              
+              // 2. Place reduce-only market close order
+              const closeSzStr = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
+              const closePxStr = formatPrice(isLong ? currentPrice * 0.98 : currentPrice * 1.02); // 2% slippage tolerance
+              const closeRes = await exchange.order({
+                orders: attachBuilderFee([{
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: closePxStr,
+                  s: closeSzStr,
+                  r: true, // reduce-only
+                }])
+              });
+              
+              const cStatus = closeRes?.response?.data?.statuses?.[0];
+              if (closeRes?.status === 'ok' && cStatus && !cStatus.error) {
+                logger.info(`[Timeout Force Close] Successfully closed position for ${coin}: ` + JSON.stringify(closeRes), "audit", { closeRes });
+                await sendDiscordAlert(
+                  `⏰ **Timeout Force Close (24h max hold)**\n` +
+                  `**Coin:** ${coin}\n` +
+                  `**Direction:** ${isLong ? 'LONG' : 'SHORT'} (Closed)\n` +
+                  `**Exit Price:** $${currentPrice.toFixed(4)}\n` +
+                  `**Size:** ${Math.abs(size)} tokens\n` +
+                  `**Hold Duration:** ${ageHours.toFixed(1)} hours`,
+                  'close'
+                );
+              } else {
+                logger.error(`[Timeout Force Close] Close order rejected for ${coin}: ` + (cStatus?.error || 'Unknown'), "events");
+              }
+            } catch (e) {
+              logger.error(`[Timeout Force Close] Failed to close position for ${coin}: ${e.message}`, "events");
+            }
+          }
+          continue; // Skip the rest of the trailing logic for this closed position
+        }
+      }
+
       // Find active trigger orders for this coin
       const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
       
@@ -1551,18 +1762,18 @@ export default async function handler(req, res) {
             taDataActive = JSON.parse(mcpRes.result.content[0].text);
           }
         } catch (e) {
-          console.error(`[Active Trailing] TrueNorth MCP query failed for ${coin}:`, e.message);
+          logger.error(`[Active Trailing] TrueNorth MCP query failed for ${coin}: ${e.message}`, "events");
         }
       }
 
       // 1. Calculate recovery levels in case TP/SL are missing (passing entryPx as entryOverride, and currentCoin for current TA references)
       // FIX #2: maxTpPctOverride from config, null-safe
-      const coinMaxTpPct = COIN_TP_CAP[coin] ?? config.maxTpPct ?? 0.03;
+      const coinMaxTpPct = COIN_TP_CAP[coin] ?? 0.0075;
       const recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx, coinMaxTpPct);
 
       // 2. Self-healing recovery: if TP or SL order is missing, recreate them!
       if (!tpOrder || !slOrder) {
-        console.warn(`[Self-Healing] Missing TP or SL for active position ${coin}! (TP: ${!!tpOrder}, SL: ${!!slOrder})`);
+        logger.warn(`[Self-Healing] Missing TP or SL for active position ${coin}! (TP: ${!!tpOrder}, SL: ${!!slOrder})`, "events");
         if (!isDryRun) {
           const ordersToPlace = [];
           const posSizeAbs = Math.abs(size);
@@ -1580,7 +1791,7 @@ export default async function handler(req, res) {
               t: { trigger: { triggerPx: tpPxStr, isMarket: true, tpsl: "tp" } },
               c: generateBotCloid()
             });
-            console.log(`[Self-Healing] Queueing TP restore for ${coin} at ${tpPxStr}`);
+            logger.info(`[Self-Healing] Queueing TP restore for ${coin} at ${tpPxStr}`, "events");
           }
 
           if (!slOrder) {
@@ -1595,7 +1806,7 @@ export default async function handler(req, res) {
               t: { trigger: { triggerPx: slPxStr, isMarket: true, tpsl: "sl" } },
               c: generateBotCloid()
             });
-            console.log(`[Self-Healing] Queueing SL restore for ${coin} at ${slPxStr}`);
+            logger.info(`[Self-Healing] Queueing SL restore for ${coin} at ${slPxStr}`, "events");
           }
 
           if (ordersToPlace.length > 0) {
@@ -1603,14 +1814,14 @@ export default async function handler(req, res) {
               const orderRes = await exchange.order({
                 orders: attachBuilderFee(ordersToPlace)
               });
-              console.log(`[Self-Healing] Successfully restored missing TP/SL orders for ${coin}:`, JSON.stringify(orderRes));
+              logger.info(`[Self-Healing] Successfully restored missing TP/SL orders for ${coin}: ` + JSON.stringify(orderRes), "audit", { coin, orderRes });
               needsOrdersRefresh = true;
             } catch (e) {
-              console.error(`[Self-Healing] Failed to restore missing TP/SL for ${coin}:`, e.message);
+              logger.error(`[Self-Healing] Failed to restore missing TP/SL for ${coin}: ${e.message}`, "events");
             }
           }
         } else {
-          console.log(`[DRY RUN] Bypassed Self-Healing TP/SL restoration for ${coin}. TP target: ${recoveryLevels.tp}, SL target: ${recoveryLevels.sl}`);
+          logger.info(`[DRY RUN] Bypassed Self-Healing TP/SL restoration for ${coin}. TP target: ${recoveryLevels.tp}, SL target: ${recoveryLevels.sl}`, "events");
         }
         // Skip further trailing logic in this cycle to let the newly placed orders settle
         continue;
@@ -1618,19 +1829,29 @@ export default async function handler(req, res) {
 
       // 3. Hierarchical active trailing logic
       const tpPx = parseFloat(tpOrder.triggerPx);
-      const isNearTp = isLong ? currentPrice >= tpPx * 0.988 : currentPrice <= tpPx * 1.012;
+      
+      // Generalized isNearTp: true if price has completed >= 85% of the entry-to-TP distance
+      const totalTpDistance = Math.abs(tpPx - entryPx);
+      const currentTpDistance = Math.abs(currentPrice - entryPx);
+      const isNearTp = totalTpDistance > 0 && currentTpDistance >= totalTpDistance * 0.85 && (isLong ? currentPrice > entryPx : currentPrice < entryPx);
       
       const slIsWorseThanEntry = slOrder && (isLong ? parseFloat(slOrder.triggerPx) < entryPx : parseFloat(slOrder.triggerPx) > entryPx);
 
-      // Check A: Profit Trailing (highest priority)
-      if (isNearTp) {
+      // Check if this position has already been trailed (TP is moved far beyond normal cap)
+      const isAlreadyTrailed = tpOrder && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
+
+      if (isAlreadyTrailed) {
+        logger.info(`[Active Trailing] Position ${coin} is already trailed. Skipping further adjustments.`, "events");
+      }
+      // Check A: Profit Trailing (highest priority, only if not already trailed)
+      else if (isNearTp) {
         let trailedTp = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // default fallback trailing TP
         let smartTpAdjusted = false;
 
         // Fetch Options and Derivatives analysis to check for walls/magnets beyond currentPrice
         if (geckoIdActive) {
           try {
-            console.log(`[Profit Trailing] Fetching Options and Derivatives data from TrueNorth to calculate Smart TP for ${coin}...`);
+            logger.info(`[Profit Trailing] Fetching Options and Derivatives data from TrueNorth to calculate Smart TP for ${coin}...`, "events");
             const [derivRes, optRes] = await Promise.all([
               callTrueNorthMcp('derivatives_analysis', { token_address: geckoIdActive }).catch(() => null),
               callTrueNorthMcp('options_report', { token_address: geckoIdActive }).catch(() => null)
@@ -1662,17 +1883,17 @@ export default async function handler(req, res) {
             if (isValidSmartTp) {
               trailedTp = trailingLevels.tp;
               smartTpAdjusted = true;
-              console.log(`[Profit Trailing] Found valid Smart TP for ${coin} beyond currentPrice: ${trailedTp} (Reason: ${trailingLevels.reason})`);
+              logger.info(`[Profit Trailing] Found valid Smart TP for ${coin} beyond currentPrice: ${trailedTp} (Reason: ${trailingLevels.reason})`, "events");
             }
           } catch (e) {
-            console.error(`[Profit Trailing] Smart TP calculation failed for ${coin}:`, e.message);
+            logger.error(`[Profit Trailing] Smart TP calculation failed for ${coin}: ${e.message}`, "events");
           }
         }
 
         const newTpPx = trailedTp;
         const newSlPx = isLong ? tpPx * 0.990 : tpPx * 1.010;
 
-        console.log(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)}${smartTpAdjusted ? ' (Smart TP)' : ''} and locking SL at ${newSlPx.toFixed(4)}.`);
+        logger.info(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)}${smartTpAdjusted ? ' (Smart TP)' : ''} and locking SL at ${newSlPx.toFixed(4)}.`, "events");
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
@@ -1689,9 +1910,9 @@ export default async function handler(req, res) {
           let newTotalSize = currentSizeAbs;
 
           if (!isAlreadyPyramided) {
-            console.log(`[Profit Trailing] Executing Pyramided Market Order for ${coin}: Size=${targetSize}...`);
+            logger.info(`[Profit Trailing] Executing Pyramided Market Order for ${coin}: Size=${targetSize}...`, "audit", { coin, targetSize });
             if (isDryRun) {
-              console.log(`[DRY RUN] Bypassed placing Pyramided Market Order for ${coin}: Size=${targetSize}`);
+              logger.info(`[DRY RUN] Bypassed placing Pyramided Market Order for ${coin}: Size=${targetSize}`, "events");
               newTotalSize = currentSizeAbs + targetSize;
             } else {
               try {
@@ -1711,22 +1932,22 @@ export default async function handler(req, res) {
                 const firstStatus = statuses[0];
 
                 if (status === "ok" && firstStatus && !firstStatus.error) {
-                  console.log(`[Profit Trailing] Pyramided Market Order filled successfully:`, JSON.stringify(marketOrderRes));
+                  logger.info(`[Profit Trailing] Pyramided Market Order filled successfully: ` + JSON.stringify(marketOrderRes), "audit", { marketOrderRes });
                   newTotalSize = currentSizeAbs + targetSize;
                 } else {
                   const errMsg = firstStatus?.error || "Unknown exchange error";
-                  console.error(`[Profit Trailing] Pyramided Market Order rejected by exchange: ${errMsg}`);
-                  console.log(`[Profit Trailing] Falling back to standard trailing without pyramiding.`);
+                  logger.error(`[Profit Trailing] Pyramided Market Order rejected by exchange: ${errMsg}`, "events");
+                  logger.info(`[Profit Trailing] Falling back to standard trailing without pyramiding.`, "events");
                   newTotalSize = currentSizeAbs;
                 }
               } catch (e) {
-                console.error(`[Profit Trailing] Pyramided Market Order failed (likely insufficient margin):`, e.message);
-                console.log(`[Profit Trailing] Falling back to standard trailing without pyramiding.`);
+                logger.error(`[Profit Trailing] Pyramided Market Order failed (likely insufficient margin): ${e.message}`, "events");
+                logger.info(`[Profit Trailing] Falling back to standard trailing without pyramiding.`, "events");
                 newTotalSize = currentSizeAbs;
               }
             }
           } else {
-            console.log(`[Profit Trailing] Position ${coin} is already pyramided. Skipping pyramiding.`);
+            logger.info(`[Profit Trailing] Position ${coin} is already pyramided. Skipping pyramiding.`, "events");
           }
 
           const newTotalSzStr = formatSize(newTotalSize, currentCoin.assetInfo.szDecimals);
@@ -1737,7 +1958,7 @@ export default async function handler(req, res) {
           const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, newSlPx));
 
           if (isDryRun) {
-            console.log(`[DRY RUN] Bypassed trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`);
+            logger.info(`[DRY RUN] Bypassed trailed TP/SL for ${coin}: TP=${newTpPxStr}, SL=${newSlPxStr}`, "events");
           } else {
             // Cancel old TP and SL (using safe helper to avoid crashes if already cancelled)
             const cancelsToMake = [{ a: currentCoin.assetIndex, o: tpOrder.oid }];
@@ -1768,11 +1989,11 @@ export default async function handler(req, res) {
                 }
               ])
             });
-            console.log(`[Profit Trailing] Successfully trailed TP/SL for ${coin} with Size=${newTotalSzStr}:`, JSON.stringify(orderRes));
+            logger.info(`[Profit Trailing] Successfully trailed TP/SL for ${coin} with Size=${newTotalSzStr}: ` + JSON.stringify(orderRes), "audit", { coin, orderRes });
           }
           needsOrdersRefresh = true;
         } catch (e) {
-          console.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}:`, e.message);
+          logger.error(`[Profit Trailing] Failed to trail TP/SL for ${coin}: ${e.message}`, "events");
         }
       }
       
@@ -1799,14 +2020,14 @@ export default async function handler(req, res) {
         }
 
         if (smartTpTarget) {
-          console.log(`[Smart TP] ${coin}: Adjusting TP from ${tpPx} to nearest key level at ${smartTpTarget.toFixed(4)}.`);
+          logger.info(`[Smart TP] ${coin}: Adjusting TP from ${tpPx} to nearest key level at ${smartTpTarget.toFixed(4)}.`, "events");
           try {
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
             const newTpPxStr = formatPrice(smartTpTarget);
             const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, smartTpTarget));
 
             if (isDryRun) {
-              console.log(`[DRY RUN] Bypassed Smart TP adjustment for ${coin}: old TP=${tpPx}, new TP=${smartTpTarget}`);
+              logger.info(`[DRY RUN] Bypassed Smart TP adjustment for ${coin}: old TP=${tpPx}, new TP=${smartTpTarget}`, "events");
             } else {
               await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: tpOrder.oid }]);
               const orderRes = await exchange.order({
@@ -1820,11 +2041,11 @@ export default async function handler(req, res) {
                   c: generateBotCloid()
                 }])
               });
-              console.log(`[Smart TP] Successfully adjusted TP for ${coin}:`, JSON.stringify(orderRes));
+              logger.info(`[Smart TP] Successfully adjusted TP for ${coin}: ` + JSON.stringify(orderRes), "audit", { coin, orderRes });
             }
             needsOrdersRefresh = true;
           } catch (e) {
-            console.error(`[Smart TP] Failed to adjust TP for ${coin}:`, e.message);
+            logger.error(`[Smart TP] Failed to adjust TP for ${coin}: ${e.message}`, "events");
           }
         }
       }
@@ -1846,15 +2067,15 @@ export default async function handler(req, res) {
       if (!global.partialTpDone) global.partialTpDone = new Set();
       const partialKey = `${coin}-${entryPx}`;
 
-      if (partialTpEnabled && isAtMidpoint && !isNearTp && !global.partialTpDone.has(partialKey)) {
+      if (partialTpEnabled && isAtMidpoint && !isNearTp && !isAlreadyTrailed && !global.partialTpDone.has(partialKey)) {
         const partialSize = Math.abs(size) * partialTpPct;
         const partialSzStr = formatSize(partialSize, currentCoin.assetInfo.szDecimals);
         const partialPxStr = formatPrice(isLong ? currentPrice * 0.998 : currentPrice * 1.002);
 
-        console.log(`[Partial TP] ${coin}: At midpoint (${(returnPct * 100).toFixed(2)}% profit). Closing ${(partialTpPct * 100)}% (${partialSzStr} tokens) at market.`);
+        logger.info(`[Partial TP] ${coin}: At midpoint (${(returnPct * 100).toFixed(2)}% profit). Closing ${(partialTpPct * 100)}% (${partialSzStr} tokens) at market.`, "audit", { coin, partialSzStr });
 
         if (isDryRun) {
-          console.log(`[DRY RUN] Bypassed Partial TP for ${coin}: Size=${partialSzStr}`);
+          logger.info(`[DRY RUN] Bypassed Partial TP for ${coin}: Size=${partialSzStr}`, "events");
           global.partialTpDone.add(partialKey);
         } else {
           try {
@@ -1870,7 +2091,7 @@ export default async function handler(req, res) {
             const pStatus = partialRes?.response?.data?.statuses?.[0];
             if (partialRes?.status === 'ok' && pStatus && !pStatus.error) {
               global.partialTpDone.add(partialKey);
-              console.log(`[Partial TP] Successfully closed ${(partialTpPct * 100)}% of ${coin}:`, JSON.stringify(partialRes));
+              logger.info(`[Partial TP] Successfully closed ${(partialTpPct * 100)}% of ${coin}: ` + JSON.stringify(partialRes), "audit", { partialRes });
 
               // Update TP/SL size to reflect remaining position
               const remainingSize = Math.abs(size) - partialSize;
@@ -1891,7 +2112,7 @@ export default async function handler(req, res) {
                     { a: currentCoin.assetIndex, b: !isLong, p: slWPx, s: remainingSzStr, r: true, t: { trigger: { triggerPx: beSlPx, isMarket: true, tpsl: 'sl' } }, c: generateBotCloid() }
                   ])
                 });
-                console.log(`[Partial TP] Re-placed TP/SL for remaining ${remainingSzStr} tokens. SL moved to breakeven: ${entryPx}`);
+                logger.info(`[Partial TP] Re-placed TP/SL for remaining ${remainingSzStr} tokens. SL moved to breakeven: ${entryPx}`, "events");
               }
               await sendDiscordAlert(
                 `**Partial TP** 🎯\n**Coin:** ${coin}\n**Closed:** ${(partialTpPct * 100)}% at $${currentPrice}\n**Profit:** +${(returnPct * 100).toFixed(2)}%\n**Remaining:** ${remainingSzStr} tokens (SL → breakeven)`,
@@ -1899,25 +2120,25 @@ export default async function handler(req, res) {
               );
               needsOrdersRefresh = true;
             } else {
-              console.error(`[Partial TP] Order rejected for ${coin}:`, pStatus?.error || 'Unknown');
+              logger.error(`[Partial TP] Order rejected for ${coin}: ` + (pStatus?.error || 'Unknown'), "events");
             }
           } catch (e) {
-            console.error(`[Partial TP] Failed for ${coin}:`, e.message);
+            logger.error(`[Partial TP] Failed for ${coin}: ${e.message}`, "events");
           }
         }
       }
 
       // Check C: Breakeven Stop Loss (using coin-specific or configured threshold)
       const breakevenTrigger = coinRisk.breakevenTriggerPct;
-      if (returnPct >= breakevenTrigger && slOrder && slIsWorseThanEntry && !isNearTp) {
-        console.log(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}% (trigger: ${(breakevenTrigger * 100).toFixed(1)}%). Moving SL to entry: ${entryPx}`);
+      if (returnPct >= breakevenTrigger && slOrder && slIsWorseThanEntry && !isNearTp && !isAlreadyTrailed) {
+        logger.info(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}% (trigger: ${(breakevenTrigger * 100).toFixed(1)}%). Moving SL to entry: ${entryPx}`, "lock", { coin, entryPx });
         try {
           const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
           const entryPxStr = formatPrice(entryPx);
           const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
           if (isDryRun) {
-            console.log(`[DRY RUN] Bypassed SL cancellation and recreation at entry for ${coin}`);
+            logger.info(`[DRY RUN] Bypassed SL cancellation and recreation at entry for ${coin}`, "events");
           } else {
             await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: slOrder.oid }]);
             const orderRes = await exchange.order({
@@ -1931,16 +2152,16 @@ export default async function handler(req, res) {
                 c: generateBotCloid()
               }])
             });
-            console.log(`[Breakeven] Placed new SL at entry for ${coin}:`, JSON.stringify(orderRes));
+            logger.info(`[Breakeven] Placed new SL at entry for ${coin}: ` + JSON.stringify(orderRes), "lock", { orderRes });
           }
           needsOrdersRefresh = true;
         } catch (e) {
-          console.error(`[Breakeven] Failed to move SL for ${coin}:`, e.message);
+          logger.error(`[Breakeven] Failed to move SL for ${coin}: ${e.message}`, "events");
         }
       }
 
       // Check D: Counter-Divergence SL Tightening
-      else if (taDataActive?.support_resistance?.rsi_divergence && slOrder && slIsWorseThanEntry) {
+      else if (taDataActive?.support_resistance?.rsi_divergence && slOrder && slIsWorseThanEntry && !isAlreadyTrailed) {
         const divInfo = taDataActive.support_resistance.rsi_divergence;
         const divType = divInfo.latest_signal?.type || "";
         const isCounterDivergence = isLong 
@@ -1948,14 +2169,14 @@ export default async function handler(req, res) {
           : (divType.includes("bull_hidden") || divType.includes("bull_classic"));
 
         if (isCounterDivergence) {
-          console.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry: ${entryPx}`);
+          logger.warn(`[Active Trailing] Counter-divergence (${divType}) detected for ${coin}! Tightening SL to entry: ${entryPx}`, "events");
           try {
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
             const entryPxStr = formatPrice(entryPx);
             const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, entryPx));
 
             if (isDryRun) {
-              console.log(`[DRY RUN] Bypassed divergence SL tightening for ${coin}`);
+              logger.info(`[DRY RUN] Bypassed divergence SL tightening for ${coin}`, "events");
             } else {
               await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: slOrder.oid }]);
               const orderRes = await exchange.order({
@@ -1969,11 +2190,11 @@ export default async function handler(req, res) {
                   c: generateBotCloid()
                 }])
               });
-              console.log(`[Active Trailing] Successfully tightened SL for ${coin}:`, JSON.stringify(orderRes));
+              logger.info(`[Active Trailing] Successfully tightened SL for ${coin}: ` + JSON.stringify(orderRes), "lock", { orderRes });
             }
             needsOrdersRefresh = true;
           } catch (e) {
-            console.error(`[Active Trailing] Failed to tighten SL for ${coin}:`, e.message);
+            logger.error(`[Active Trailing] Failed to tighten SL for ${coin}: ${e.message}`, "events");
           }
         }
       }
@@ -1983,7 +2204,7 @@ export default async function handler(req, res) {
       try {
         openOrders = await info.frontendOpenOrders({ user: walletAddress });
       } catch (e) {
-        console.error("Failed to refresh openOrders after trailing:", e.message);
+        logger.error("Failed to refresh openOrders after trailing: " + e.message, "events");
       }
     }
 
@@ -1994,7 +2215,7 @@ export default async function handler(req, res) {
     let watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
     if (req.query.coin) {
       watchlist = [req.query.coin.toUpperCase()];
-      console.log(`[Query Coin Override] Watchlist restricted to: ${watchlist}`);
+      logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
     }
 
     // Every Execution Status Report Generator (5-minute frequency)
@@ -2041,7 +2262,7 @@ export default async function handler(req, res) {
 
     // FIX #8: Max concurrent positions guard — stop new entries if at limit
     if (activePositionCount >= maxConcurrentPositions) {
-      console.log(`[Risk] Max concurrent positions reached (${activePositionCount}/${maxConcurrentPositions}). Skipping new entry.`);
+      logger.info(`[Risk] Max concurrent positions reached (${activePositionCount}/${maxConcurrentPositions}). Skipping new entry.`, "events");
       return res.status(200).json({ status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
     }
 
@@ -2063,13 +2284,13 @@ export default async function handler(req, res) {
     // Fetch BTC technical analysis and Nansen flows in parallel
     let btcTrend = 'UNKNOWN';
     const topN = Math.min(tradeableCandidates.length, 3);
-    console.log(`[Nansen & BTC Check] Fetching global BTC trend and Nansen flows in parallel...`);
+    logger.info(`[Nansen & BTC Check] Fetching global BTC trend and Nansen flows in parallel...`, "events");
     
     await Promise.all([
       // 1. Fetch BTC trend
       (async () => {
         try {
-          console.log("[BTC Trend Filter] Querying BTC technical analysis from TrueNorth...");
+          logger.info("[BTC Trend Filter] Querying BTC technical analysis from TrueNorth...", "events");
           const btcTaRes = await callTrueNorthMcp('technical_analysis', { token_address: 'bitcoin', timeframe: '1h' });
           if (btcTaRes?.result?.content?.[0]?.text) {
             const btcTa = JSON.parse(btcTaRes.result.content[0].text);
@@ -2085,14 +2306,14 @@ export default async function handler(req, res) {
             }
           }
         } catch (e) {
-          console.error("[BTC Trend Filter] Failed to fetch or parse BTC TA from TrueNorth:", e.message);
+          logger.error("[BTC Trend Filter] Failed to fetch or parse BTC TA from TrueNorth: " + e.message, "events");
         }
-        console.log(`[BTC Trend Filter] Global BTC Trend determined: ${btcTrend}`);
+        logger.info(`[BTC Trend Filter] Global BTC Trend determined: ${btcTrend}`, "events");
       })(),
       // 2. Fetch Nansen flows
       (async () => {
         if (config.enableNansenScoring !== true) {
-          console.log(`[Nansen Integration] Nansen scoring is disabled in config. Skipping Nansen API calls.`);
+          logger.info(`[Nansen Integration] Nansen scoring is disabled in config. Skipping Nansen API calls.`, "events");
           tradeableCandidates.forEach(cand => {
             cand.nansenSmartMoney = 0;
             cand.nansenWhale = 0;
@@ -2101,19 +2322,19 @@ export default async function handler(req, res) {
           return;
         }
 
-        console.log(`[Nansen Integration] Querying Nansen Smart Money flows for top ${topN} candidates...`);
+        logger.info(`[Nansen Integration] Querying Nansen Smart Money flows for top ${topN} candidates...`, "events");
         await Promise.all(tradeableCandidates.slice(0, topN).map(async (cand) => {
           const nansenInfo = await getNansenTokenAddress(cand.symbol);
           if (nansenInfo) {
-            console.log(`[Nansen Integration] Resolved address for ${cand.symbol}: ${nansenInfo.address} (${nansenInfo.chain})`);
+            logger.info(`[Nansen Integration] Resolved address for ${cand.symbol}: ${nansenInfo.address} (${nansenInfo.chain})`, "events");
             const { bonus, details, nansenSmartMoney, nansenWhale, nansenExchange } = await getSmartMoneyBonus(nansenInfo.chain, nansenInfo.address);
             cand.nansenSmartMoney = nansenSmartMoney;
             cand.nansenWhale = nansenWhale;
             cand.nansenExchange = nansenExchange;
             cand.score = Math.min(100, Math.max(0, cand.score + bonus));
-            console.log(`[Nansen Integration] Adjusted candidate ${cand.symbol} score by ${bonus} to ${cand.score}. Flow details: ${details.replace(/\n/g, ' ')}`);
+            logger.info(`[Nansen Integration] Adjusted candidate ${cand.symbol} score by ${bonus} to ${cand.score}. Flow details: ${details.replace(/\n/g, ' ')}`, "events");
           } else {
-            console.log(`[Nansen Integration] Could not resolve Nansen address/chain for ${cand.symbol}`);
+            logger.info(`[Nansen Integration] Could not resolve Nansen address/chain for ${cand.symbol}`, "events");
             cand.nansenSmartMoney = 0;
             cand.nansenWhale = 0;
             cand.nansenExchange = 0;
@@ -2159,14 +2380,15 @@ export default async function handler(req, res) {
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
         if (timeSinceLastTrade < cooldownMs) {
-          console.log(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: ${cooldownHours * 60} mins)`);
+          logger.info(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: ${cooldownHours * 60} mins)`, "events");
           continue;
         }
       }
 
-      if (cand.symbol === 'HYPE' || cand.symbol === 'SUI') {
+      // Enforce consecutive loss cooldown (skipping SUI and HYPE per strategy optimization)
+      if (cand.symbol !== 'SUI' && cand.symbol !== 'HYPE') {
         if (isCoinInConsecutiveLossCooldown(cand.symbol, userFills)) {
-          console.log(`[Cooldown Filter] Skip ${cand.symbol}: ${cand.symbol} is in 24h consecutive loss cooldown`);
+          logger.info(`[Cooldown Filter] Skip ${cand.symbol}: ${cand.symbol} is in 24h consecutive loss cooldown`, "events");
           continue;
         }
       }
@@ -2178,7 +2400,7 @@ export default async function handler(req, res) {
 
       if (geckoId) {
         try {
-          console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`);
+          logger.info(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`, "events");
           const results = await Promise.allSettled([
             callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }),
             callTrueNorthMcp('derivatives_analysis', { token_address: geckoId }),
@@ -2199,11 +2421,11 @@ export default async function handler(req, res) {
               }
               cand.tnVwap = tnVwapVal;
             } catch (e) { 
-              console.error("Failed to parse taData:", e.message); 
+              logger.error("Failed to parse taData: " + e.message, "events"); 
             }
           }
           if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
-            try { parsedDeriv = JSON.parse(results[1].value.result.content[0].text); } catch (e) { console.error("Failed to parse derivData:", e.message); }
+            try { parsedDeriv = JSON.parse(results[1].value.result.content[0].text); } catch (e) { logger.error("Failed to parse derivData: " + e.message, "events"); }
           }
           if (results[2].status === 'fulfilled') {
             parsedOpt = results[2].value;
@@ -2228,30 +2450,30 @@ export default async function handler(req, res) {
                 });
                 if (highImpact.length > 0) {
                   const titles = highImpact.slice(0, 2).map(a => a?.post?.body?.slice(0, 80) || '').join(' | ');
-                  console.log(`[Combo] ⚠️ ${cand.symbol}: ${highImpact.length} томоохон мэдээ илэрлээ (advisory): ${titles}`);
-                  await sendDiscordMessage(`⚠️ **${cand.symbol} Мэдээний сануулга** (арилжаа хаагдахгүй)\n📰 ${highImpact.length} томоохон мэдээ илэрлээ:\n> ${titles}`).catch(() => {});
+                  logger.info(`[Combo] ⚠️ ${cand.symbol}: ${highImpact.length} томоохон мэдээ илэрлээ (advisory): ${titles}`, "events");
+                  await sendDiscordAlert(`⚠️ **${cand.symbol} Мэдээний сануулга** (арилжаа хаагдахгүй)\n📰 ${highImpact.length} томоохон мэдээ илэрлээ:\n> ${titles}`, 'info').catch(() => {});
                 } else {
-                  console.log(`[Combo] ✅ ${cand.symbol}: Томоохон мэдээ байхгүй — арилжаа үргэлжилнэ`);
+                  logger.info(`[Combo] ✅ ${cand.symbol}: Томоохон мэдээ байхгүй — арилжаа үргэлжилнэ`, "events");
                 }
               }
               // Token unlock шалгах
               const unlockData = comboData?.token_unlock;
               if (unlockData?.status === 'success' && unlockData?.upcoming_unlocks?.length > 0) {
                 const nextUnlock = unlockData.upcoming_unlocks[0];
-                console.log(`[Combo] 🔓 ${cand.symbol}: Token unlock ойрхон — ${JSON.stringify(nextUnlock).slice(0, 100)}`);
+                logger.info(`[Combo] 🔓 ${cand.symbol}: Token unlock ойрхон — ` + JSON.stringify(nextUnlock).slice(0, 100), "events");
               }
             }
           } catch (comboErr) {
             // Алдаа гарвал бүрэн алгасна — ямар ч нөлөөгүй
-            console.log(`[Combo] ${cand.symbol} combo_token_analysis алдаа (алгасав): ${comboErr.message}`);
+            logger.info(`[Combo] ${cand.symbol} combo_token_analysis алдаа (алгасав): ${comboErr.message}`, "events");
           }
           // ── combo_token_analysis end ──
 
         } catch (e) {
-          console.error(`TrueNorth MCP query failed for candidate ${cand.symbol}:`, e.message);
+          logger.error(`TrueNorth MCP query failed for candidate ${cand.symbol}: ${e.message}`, "events");
         }
       } else {
-        console.log(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`);
+        logger.info(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`, "events");
       }
 
       // Calculate 24h SMA, 50h SMA (for XRP trend lock), 200h SMA (for BTC/SUI trend lock), and volatility
@@ -2285,17 +2507,17 @@ export default async function handler(req, res) {
           const last50 = candles.slice(-51);
           const sumClose50 = last50.reduce((sum, c) => sum + parseFloat(c.c), 0);
           sma50 = sumClose50 / 51;
-          console.log(`[XRP Trend Lock] Calculated SMA50 for XRP: ${sma50.toFixed(4)} (Current price: ${cand.price})`);
+          logger.info(`[XRP Trend Lock] Calculated SMA50 for XRP: ${sma50.toFixed(4)} (Current price: ${cand.price})`, "events");
         }
 
         if ((cand.symbol === 'BTC' || cand.symbol === 'SUI') && candles && candles.length >= 201) {
           const last200 = candles.slice(-201);
           const sumClose200 = last200.reduce((sum, c) => sum + parseFloat(c.c), 0);
           sma200 = sumClose200 / 201;
-          console.log(`[${cand.symbol} Trend Lock] Calculated SMA200 for ${cand.symbol}: ${sma200.toFixed(4)} (Current price: ${cand.price})`);
+          logger.info(`[${cand.symbol} Trend Lock] Calculated SMA200 for ${cand.symbol}: ${sma200.toFixed(4)} (Current price: ${cand.price})`, "events");
         }
       } catch (e) {
-        console.error(`Failed to calculate SMA/volatility for candidate ${cand.symbol}:`, e.message);
+        logger.error(`Failed to calculate SMA/volatility for candidate ${cand.symbol}: ${e.message}`, "events");
       }
       const smaTrend = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? sma200 : (cand.symbol === 'XRP' ? sma50 : sma24);
       cand.volatility24h = volatility24h;
@@ -2305,50 +2527,51 @@ export default async function handler(req, res) {
 
       // Pre-calculate candidate levels using raw direction
       const useSmartSlTpForCand = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
-      const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand);
+      const candMaxTpPct = COIN_TP_CAP[cand.symbol] ?? 0.0075;
+      const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
       
       let bypassTrendFilter = false;
       if (rawDirection === 'LONG' && levels.reason.includes('support_rebound')) {
         const minDrop = config.minSupportDropPct !== undefined ? config.minSupportDropPct : 0.015;
         if (levels.entry <= cand.price * (1 - minDrop)) {
           bypassTrendFilter = true;
-          console.log(`[Support Rebound Bypass] Candidate ${cand.symbol} qualifies for Support Rebound limit buy (Entry: ${levels.entry} is >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}). Bypassing trend filters.`);
+          logger.info(`[Support Rebound Bypass] Candidate ${cand.symbol} qualifies for Support Rebound limit buy (Entry: ${levels.entry} is >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}). Bypassing trend filters.`, "events");
         } else {
-          console.log(`[Support Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}`);
+          logger.info(`[Support Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}`, "events");
         }
       } else if (rawDirection === 'SHORT' && levels.reason.includes('resistance_rebound')) {
         const minRise = config.minResistanceRisePct !== undefined ? config.minResistanceRisePct : 0.015;
         if (levels.entry >= cand.price * (1 + minRise)) {
           bypassTrendFilter = true;
-          console.log(`[Resistance Rebound Bypass] Candidate ${cand.symbol} qualifies for Resistance Rebound limit sell (Entry: ${levels.entry} is >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}). Bypassing trend filters.`);
+          logger.info(`[Resistance Rebound Bypass] Candidate ${cand.symbol} qualifies for Resistance Rebound limit sell (Entry: ${levels.entry} is >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}). Bypassing trend filters.`, "events");
         } else {
-          console.log(`[Resistance Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}`);
+          logger.info(`[Resistance Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}`, "events");
         }
       }
 
       // Evaluate direction with trend filters applied (if not bypassed)
       const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
       if (direction === 'SKIP') {
-        console.log(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`);
+        logger.info(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`, "events");
         continue;
       }
 
       // BTC Trend Filter Check
       if (!bypassTrendFilter) {
         if (btcTrend === 'BULLISH' && direction === 'SHORT') {
-          console.log(`[BTC Trend Filter] Skip SHORT candidate ${cand.symbol}: BTC is Bullish (Current BTC Trend: ${btcTrend})`);
+          logger.info(`[BTC Trend Filter] Skip SHORT candidate ${cand.symbol}: BTC is Bullish (Current BTC Trend: ${btcTrend})`, "events");
           continue;
         }
         if (btcTrend === 'BEARISH' && direction === 'LONG') {
-          console.log(`[BTC Trend Filter] Skip LONG candidate ${cand.symbol}: BTC is Bearish (Current BTC Trend: ${btcTrend})`);
+          logger.info(`[BTC Trend Filter] Skip LONG candidate ${cand.symbol}: BTC is Bearish (Current BTC Trend: ${btcTrend})`, "events");
           continue;
         }
         if (btcTrend === 'NEUTRAL') {
           const isReboundTrade = levels.reason.includes('support_rebound') || levels.reason.includes('resistance_rebound') || levels.reason.includes('sr_channel');
           if (isReboundTrade) {
-            console.log(`[BTC Trend Filter] BTC is Neutral, but candidate ${cand.symbol} is a Rebound Trade (${levels.reason}). Bypassing neutral filter.`);
+            logger.info(`[BTC Trend Filter] BTC is Neutral, but candidate ${cand.symbol} is a Rebound Trade (${levels.reason}). Bypassing neutral filter.`, "events");
           } else {
-            console.log(`[BTC Trend Filter] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral (No clear trend)`);
+            logger.info(`[BTC Trend Filter] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral (No clear trend)`, "events");
             continue;
           }
         }
@@ -2378,7 +2601,7 @@ export default async function handler(req, res) {
           }
 
           if (isCrowded) {
-            console.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Crowded Trade! Reason: ${crowdedReason}`);
+            logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Crowded Trade! Reason: ${crowdedReason}`, "events");
             continue;
           }
         }
@@ -2396,23 +2619,23 @@ export default async function handler(req, res) {
     }
 
     if (!target) {
-      console.warn("[Bot Execution] No trade: All candidates were filtered out by Crowded Trade rules.");
+      logger.warn("[Bot Execution] No trade: All candidates were filtered out by Crowded Trade rules.", "events");
       return res.status(200).json({ status: "success", message: "No trade: All candidates were filtered out by Crowded Trade rules." });
     }
 
-    console.log(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`);
+    logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
 
     const direction = target.direction;
     // FIX #2: always pass coin-specific maxTpPctOverride
-    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? config.maxTpPct ?? 0.03;
+    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.0075;
     const levels = (target.precalculatedLevels && direction === target.precalculatedDirection)
       ? target.precalculatedLevels
       : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
     if (!levels) {
-      console.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`);
+      logger.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`, "events");
       return res.status(200).json({ status: 'success', message: 'Level computation returned null. Skipped.' });
     }
-    console.log(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`);
+    logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
@@ -2428,13 +2651,13 @@ export default async function handler(req, res) {
     const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
 
     if (accountSize <= 5) {
-      console.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize}`);
+      logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize}`, "events");
       return res.status(200).json({ status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize}` });
     }
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
-      console.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`);
+      logger.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`, "events");
       return res.status(200).json({ status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
     }
 
@@ -2445,12 +2668,12 @@ export default async function handler(req, res) {
     let sizeFactor = baseSizeFactor;
     if (target.symbol === 'HYPE' && target.volatility24h) {
       sizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / target.volatility24h));
-      console.log(`[Volatility Sizing] HYPE sizeFactor scaled from ${baseSizeFactor} to ${sizeFactor.toFixed(3)} (24h Volatility: ${(target.volatility24h * 100).toFixed(2)}%)`);
+      logger.info(`[Volatility Sizing] HYPE sizeFactor scaled from ${baseSizeFactor} to ${sizeFactor.toFixed(3)} (24h Volatility: ${(target.volatility24h * 100).toFixed(2)}%)`, "events");
     }
     let positionSizeUsd = (accountSize * sizeFactor) * finalLeverage;
     // FIX #9: Cap position size to maxPositionSizeUsd
     if (positionSizeUsd > maxPositionSizeUsd) {
-      console.log(`[Risk] Position size $${positionSizeUsd.toFixed(2)} capped to $${maxPositionSizeUsd} (maxPositionSizeUsd)`);
+      logger.info(`[Risk] Position size $${positionSizeUsd.toFixed(2)} capped to $${maxPositionSizeUsd} (maxPositionSizeUsd)`, "events");
       positionSizeUsd = maxPositionSizeUsd;
     }
     
@@ -2482,11 +2705,20 @@ export default async function handler(req, res) {
       tnVwap: target.tnVwap || 0,
       direction
     });
-    console.log(`[Bot Execution] Generated encoded cloid for entry: ${entryCloid}`);
+    logger.info(`[Bot Execution] Generated encoded cloid for entry: ${entryCloid}`, "events");
 
     if (isDryRun) {
-      console.log(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to ${finalLeverage}x`);
-      console.log(`[DRY RUN] Bypassed placing GTC Limit bracket order for ${target.symbol}: Entry Limit=${entryPx}, TP Trigger=${tpPx}, SL Trigger=${slPx}, Size=${entrySz}, Cloid=${entryCloid}`);
+      logger.info(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to ${finalLeverage}x`, "events");
+      logger.info(`[DRY RUN] Bypassed placing GTC Limit bracket order for ${target.symbol}: Entry Limit=${entryPx}, TP Trigger=${tpPx}, SL Trigger=${slPx}, Size=${entrySz}, Cloid=${entryCloid}`, "events");
+      await sendDiscordAlert(
+        `**[DRY RUN]**\n` +
+        `**Coin:** ${target.symbol}\n` +
+        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
+        `**Entry Price:** $${entryPx}\n` +
+        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
+        `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
+        'open'
+      );
       return res.status(200).json({
         status: "success",
         message: "[DRY RUN] Simulated trade execution succeeded",
@@ -2503,15 +2735,6 @@ export default async function handler(req, res) {
           orderResult: { status: "simulated" }
         }
       });
-      await sendDiscordAlert(
-        `**[DRY RUN]**\n` +
-        `**Coin:** ${target.symbol}\n` +
-        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
-        `**Entry Price:** $${entryPx}\n` +
-        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
-        `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
-        'open'
-      );
     } else {
       // A. Update Leverage
       await exchange.updateLeverage({
@@ -2594,7 +2817,7 @@ export default async function handler(req, res) {
     }
 
   } catch (error) {
-    console.error("Bot execution error:", error);
+    logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
     return res.status(500).json({ error: error.message });
   }
 }

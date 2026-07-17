@@ -1,0 +1,10 @@
+﻿node.exe : Vercel CLI 54.12.0 (Node.js 24.15.0)
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Vercel CLI 54.12.0 (Node.js 24.15.0):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Resolving deployment "alpha-dashboard-beryl.vercel.app"
+Fetching project "prj_Up0IqLpTjIvhzF2ZDTdJQe3XWIIx"
+Fetching logs...

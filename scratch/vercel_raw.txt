@@ -1,0 +1,29 @@
+﻿node.exe : Vercel CLI 54.12.0 (Node.js 24.15.0)
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Vercel CLI 54.12.0 (Node.js 24.15.0):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Resolving deployment "alpha-dashboard-beryl.vercel.app"
+Fetching project "prj_Up0IqLpTjIvhzF2ZDTdJQe3XWIIx"
+Fetching logs...
+TIME         HOST                              LEVEL                        STATUS  MESSAGE                            
+ 
+20:29:12.43  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/pnl        304     [api/pnl] Querying Hyperliquid 
+statΓÇª
+20:29:10.44  alpha-dashboard-beryl.vercel.app  error  ╬╗ GET /api/bot        200     [BTC Trend Filter] Failed to 
+fetch ΓÇª
+20:28:43.47  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/pnl        304     [api/pnl] Querying Hyperliquid 
+statΓÇª
+20:28:42.42  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/config     304     (no message)                      
+  
+20:28:29.87  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/pnl        200     [api/pnl] Querying Hyperliquid 
+statΓÇª
+20:28:14.87  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/pnl        304     [api/pnl] Querying Hyperliquid 
+statΓÇª
+20:28:09.56  alpha-dashboard-beryl.vercel.app  error  ╬╗ GET /api/bot        200     (node:4) [DEP0169] 
+DeprecationWarniΓÇª
+20:27:44.87  alpha-dashboard-beryl.vercel.app  info   ╬╗ GET /api/pnl        304     [api/pnl] Querying Hyperliquid 
+statΓÇª
+Fetched 8 logs for tavmax-s-projects/alpha-dashboard
