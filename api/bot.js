@@ -489,10 +489,7 @@ async function withRetry(fn, maxRetries = 3, label = '', timeoutMs = 10000) {
 
 // Generic JSON-RPC tool caller helper for TrueNorth (with retry)
 async function callTrueNorthMcp(toolName, args) {
-  const token = process.env.TN_FINANCIAL_DATA_API_KEY;
-  if (!token) {
-    throw new Error("TN_FINANCIAL_DATA_API_KEY environment variable is not set");
-  }
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
 
   return withRetry(async () => {
@@ -2648,6 +2645,17 @@ export default async function handler(req, res) {
         }
       }
 
+      // Check if current market price is already past the calculated TP price
+      if (levels) {
+        if (direction === "LONG" && cand.price >= levels.tp) {
+          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already past TP $${levels.tp}`, "events");
+          continue;
+        } else if (direction === "SHORT" && cand.price <= levels.tp) {
+          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already past TP $${levels.tp}`, "events");
+          continue;
+        }
+      }
+
       // Valid candidate found
       target = cand;
       taData = parsedTa;
@@ -2677,16 +2685,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'success', message: 'Level computation returned null. Skipped.' });
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
-
-    // Check if current market price is already past the calculated TP price
-    const currentPrice = target.price;
-    if (direction === "LONG" && currentPrice >= levels.tp) {
-      logger.warn(`[Bot Execution] Skipping trade for ${target.symbol}: Current price $${currentPrice} is already past TP $${levels.tp}`, "events");
-      return res.status(200).json({ status: "success", message: `Skipped: Current price $${currentPrice} is already past TP $${levels.tp}` });
-    } else if (direction === "SHORT" && currentPrice <= levels.tp) {
-      logger.warn(`[Bot Execution] Skipping trade for ${target.symbol}: Current price $${currentPrice} is already past TP $${levels.tp}`, "events");
-      return res.status(200).json({ status: "success", message: `Skipped: Current price $${currentPrice} is already past TP $${levels.tp}` });
-    }
 
     // 6. Risk and Position Size Calculations
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
