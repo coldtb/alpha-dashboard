@@ -37,6 +37,11 @@
   "partialTpEnabled": false,
   "partialTpPercent": 50,
   "breakevenTriggerPct": 0.015,
+  "useSmartSlTp": false,
+  "enableSmaTrendLock": true,
+  "enableVwapFilter": true,
+  "enableProximityFilter": true,
+  "proximityFilterPct": 0.01,
 
   "_comment_api": "=== API Settings (NEW) ===",
   "apiRetryCount": 3,

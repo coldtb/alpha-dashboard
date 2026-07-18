@@ -533,20 +533,21 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     }
     const dir = coin.price >= sma24 ? 'LONG' : 'SHORT';
     // Key Level Proximity Filter
-    if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+    if (config.enableProximityFilter !== false && taData?.support_resistance?.['support and resistance channel']?.channels) {
       const channels = taData.support_resistance['support and resistance channel'].channels;
       const price = coin.price;
+      const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
       if (dir === 'SHORT') {
-        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
         if (nearSupport) {
-          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
+          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
-        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
         if (nearResistance) {
-          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
+          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
         }
       }
@@ -569,7 +570,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     let dir = score > 0 ? 'LONG' : (score < 0 ? 'SHORT' : (change24h >= 0 ? 'LONG' : 'SHORT'));
     
     // SMA200 Trend Lock: prevent counter-trend positions to keep drawdown small!
-    if (smaTrend !== null) {
+    if (config.enableSmaTrendLock !== false && smaTrend !== null) {
       if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
       if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
     }
@@ -587,20 +588,21 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     }
 
     // Key Level Proximity Filter
-    if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+    if (config.enableProximityFilter !== false && taData?.support_resistance?.['support and resistance channel']?.channels) {
       const channels = taData.support_resistance['support and resistance channel'].channels;
       const price = coin.price;
+      const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
       if (dir === 'SHORT') {
-        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
         if (nearSupport) {
-          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
+          logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
-        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
         if (nearResistance) {
-          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
+          logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
         }
       }
@@ -621,7 +623,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     score -= 1;
   }
 
-  if (taData?.support_resistance?.vwap?.cumulative) {
+  if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {
     const vwapData = taData.support_resistance.vwap.cumulative;
     if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
       score += 2;
@@ -652,7 +654,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
   else dir = change24h >= 0 ? 'LONG' : 'SHORT';
 
   // Apply Trend Lock: prevent counter-trend positions
-  if (smaTrend !== null) {
+  if (config.enableSmaTrendLock !== false && smaTrend !== null) {
     if (dir === 'LONG' && coin.price < smaTrend) return 'SKIP';
     if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
   }
@@ -674,7 +676,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       }
 
       // Check if TrueNorth cumulative VWAP is bearish
-      if (taData?.support_resistance?.vwap?.cumulative) {
+      if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
         if (vwapData.state === 'price_below' || vwapData.slope === 'down') {
           logger.info(`[VWAP Trend Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP is Bearish (Price below VWAP or slope down)`, "events");
@@ -692,7 +694,7 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       }
 
       // Check if TrueNorth cumulative VWAP is bullish
-      if (taData?.support_resistance?.vwap?.cumulative) {
+      if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
         if (vwapData.state === 'price_above' || vwapData.slope === 'up') {
           logger.info(`[VWAP Trend Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP is Bullish (Price above VWAP or slope up)`, "events");
@@ -703,20 +705,21 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
   }
 
   // Key Level Proximity Filter
-  if (taData?.support_resistance?.['support and resistance channel']?.channels) {
+  if (config.enableProximityFilter !== false && taData?.support_resistance?.['support and resistance channel']?.channels) {
     const channels = taData.support_resistance['support and resistance channel'].channels;
     const price = coin.price;
+    const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
     if (dir === 'SHORT') {
-      const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * 1.01);
+      const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
       if (nearSupport) {
-        logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within 1% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
+        logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
         return 'SKIP';
       }
     }
     if (dir === 'LONG') {
-      const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * 0.99 && price <= c.hi);
+      const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
       if (nearResistance) {
-        logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within 1% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
+        logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
         return 'SKIP';
       }
     }
@@ -1276,7 +1279,7 @@ export default async function handler(req, res) {
   }
 
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
-  const useSmartSlTp = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+  const useSmartSlTp = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
 
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
@@ -1588,7 +1591,7 @@ export default async function handler(req, res) {
           const currentEntryPrice = parseFloat(limitOrder.limitPx);
           const direction = limitOrder.side === "A" ? "SHORT" : "LONG";
 
-          const useSmartSlTpForPending = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+          const useSmartSlTpForPending = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
           const pendingMaxTpPct = COIN_TP_CAP[currentCoin.symbol] ?? 0.0075;
           // FIX #3: taDataPending may be null — computeStrategyLevels now handles null safely
           const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending, null, pendingMaxTpPct);
@@ -2564,7 +2567,7 @@ export default async function handler(req, res) {
       const rawDirection = detectAutoDirection(cand, parsedTa, null, null);
 
       // Pre-calculate candidate levels using raw direction
-      const useSmartSlTpForCand = process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+      const useSmartSlTpForCand = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
       const candMaxTpPct = COIN_TP_CAP[cand.symbol] ?? 0.0075;
       const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
       
@@ -2595,7 +2598,7 @@ export default async function handler(req, res) {
       }
 
       // BTC Trend Filter Check
-      if (!bypassTrendFilter) {
+      if (!bypassTrendFilter && config.enableVwapFilter !== false) {
         if (btcTrend === 'BULLISH' && direction === 'SHORT') {
           logger.info(`[BTC Trend Filter] Skip SHORT candidate ${cand.symbol}: BTC is Bullish (Current BTC Trend: ${btcTrend})`, "events");
           continue;
