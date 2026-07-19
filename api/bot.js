@@ -1869,9 +1869,6 @@ export default async function handler(req, res) {
       }
 
       // 3. Hierarchical active trailing logic
-      if (config.enableTrailingStop === false) {
-        continue;
-      }
       const tpPx = parseFloat(tpOrder.triggerPx);
       
       // Generalized isNearTp: true if price has completed >= 85% of the entry-to-TP distance
@@ -1917,7 +1914,7 @@ export default async function handler(req, res) {
               taDataActive,
               parsedDerivTrailing,
               parsedOptTrailing,
-              useSmartSlTp, // useSmartSlTp
+              true, // useSmartSlTp
               entryPx, // entryOverride
               0.15 // maxTpPctOverride
             );
@@ -2042,7 +2039,7 @@ export default async function handler(req, res) {
       }
       
       // Check B: Smart TP Adjustment (nearest resistance/support)
-      else if (useSmartSlTp && taDataActive?.support_resistance?.['support and resistance channel']?.channels) {
+      else if (taDataActive?.support_resistance?.['support and resistance channel']?.channels) {
         const srChannels = [...taDataActive.support_resistance['support and resistance channel'].channels]
           .sort((a, b) => b.strength - a.strength);
 
@@ -2205,7 +2202,7 @@ export default async function handler(req, res) {
       }
 
       // Check D: Counter-Divergence SL Tightening
-      else if (useSmartSlTp && taDataActive?.support_resistance?.rsi_divergence && slOrder && slIsWorseThanEntry && !isAlreadyTrailed) {
+      else if (taDataActive?.support_resistance?.rsi_divergence && slOrder && slIsWorseThanEntry && !isAlreadyTrailed) {
         const divInfo = taDataActive.support_resistance.rsi_divergence;
         const divType = divInfo.latest_signal?.type || "";
         const isCounterDivergence = isLong 
