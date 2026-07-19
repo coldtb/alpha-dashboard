@@ -28,7 +28,7 @@
   "maxTpPct": 0.03,
 
   "_comment_risk": "=== Phase 2: Risk Management (NEW) ===",
-  "maxConcurrentPositions": 2,
+  "maxConcurrentPositions": 3,
   "dailyLossLimitPct": 5,
   "maxPositionSizeUsd": 10000,
   "staleOrderTimeoutHours": 4,
