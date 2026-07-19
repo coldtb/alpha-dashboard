@@ -42,6 +42,8 @@
   "enableVwapFilter": false,
   "enableProximityFilter": false,
   "proximityFilterPct": 0.01,
+  "enableTrailingStop": false,
+  "enablePyramiding": false,
 
   "_comment_api": "=== API Settings (NEW) ===",
   "apiRetryCount": 3,
