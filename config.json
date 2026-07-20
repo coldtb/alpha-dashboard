@@ -40,8 +40,8 @@
   "useSmartSlTp": false,
   "enableSmaTrendLock": false,
   "enableVwapFilter": false,
-  "enableProximityFilter": false,
-  "proximityFilterPct": 0.01,
+  "enableProximityFilter": true,
+  "proximityFilterPct": 0.005,
 
   "_comment_api": "=== API Settings (NEW) ===",
   "apiRetryCount": 3,
