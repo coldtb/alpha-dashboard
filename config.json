@@ -46,5 +46,6 @@
   "_comment_api": "=== API Settings (NEW) ===",
   "apiRetryCount": 3,
   "apiRetryDelayMs": 600,
-  "apiTimeoutMs": 12000
+  "apiTimeoutMs": 12000,
+  "discordWebhookUrl": "https://discord.com/api/webhooks/1529047529528885322/E8IMwDZ1XdNAA3hC7RzPTsn2irvTTWfJ6HQQdyDiERjZGRgMmTi_R9LJ2F1f3C1FHn5f"
 }
