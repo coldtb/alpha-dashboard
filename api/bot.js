@@ -1284,10 +1284,12 @@ export default async function handler(req, res) {
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && process.env.NODE_ENV !== 'development') {
-    const authHeader = req.headers['authorization'] || req.query.secret;
-    const expected = `Bearer ${cronSecret}`;
-    if (authHeader !== expected && req.query.secret !== cronSecret) {
-      logger.warn("Unauthorized bot execution attempt", "audit");
+    const authHeader = req.headers['authorization'] || req.headers['x-cron-secret'];
+    const tokenFromHeader = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+    const tokenFromQuery = req.query.secret ? String(req.query.secret).trim() : '';
+    
+    if (tokenFromHeader !== cronSecret && tokenFromQuery !== cronSecret) {
+      logger.warn(`Unauthorized bot execution attempt. Query secret: '${tokenFromQuery}', Header: '${tokenFromHeader}'`, "audit");
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
