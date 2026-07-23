@@ -1124,21 +1124,18 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   const symbol = coin.symbol || '';
-  // Phase 3 #13: Use coin-specific SL cap from COIN_SL_CAP lookup
-  let slCap = COIN_SL_CAP[symbol] ?? 0.015;
-  if (dir === 'SHORT') {
-    slCap = 0.015; // Tighten stop loss to 1.5% max on shorts
-  }
+  let slCap = COIN_SL_CAP[symbol] ?? (dir === 'SHORT' ? 0.015 : 0.02);
   const defaultMaxTp = COIN_TP_CAP[symbol] ?? 0.0075;
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
+  const effectiveMinSlBuffer = Math.min(config.minSlBuffer || 0.005, slCap);
 
   if (dir === 'LONG') {
-    // Stop Loss must be at least config.minSlBuffer below entry (e.g. 1%)
-    const maxSlAllowed = entry * (1 - config.minSlBuffer);
+    // Stop Loss must be at least effectiveMinSlBuffer below entry
+    const maxSlAllowed = entry * (1 - effectiveMinSlBuffer);
     if (sl > maxSlAllowed) {
       sl = maxSlAllowed;
     }
-    // Stop Loss is capped at a maximum (e.g. -1.5% for BTC, -2% for others)
+    // Stop Loss is capped at a maximum slCap
     const minSlAllowed = entry * (1 - slCap);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
@@ -1154,8 +1151,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       tp = maxTpAllowed;
     }
   } else {
-    // Stop Loss must be at least config.minSlBuffer above entry (e.g. 1%)
-    const minSlAllowed = entry * (1 + config.minSlBuffer);
+    // Stop Loss must be at least effectiveMinSlBuffer above entry
+    const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
     if (sl < minSlAllowed) {
       sl = minSlAllowed;
     }
