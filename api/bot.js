@@ -1321,8 +1321,7 @@ export default async function handler(req, res) {
     const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
     const exchange = new ExchangeClient({
       transport,
-      wallet: account,
-      defaultVaultAddress: (walletAddress && walletAddress.toLowerCase() !== account.address.toLowerCase()) ? walletAddress : undefined
+      wallet: account
     });
 
     // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
