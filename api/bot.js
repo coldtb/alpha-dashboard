@@ -2763,11 +2763,21 @@ export default async function handler(req, res) {
       }
     }
 
-    const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
+    let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
+    if (accountSize < 5.0 && spotState && spotState.balances) {
+      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcBal) {
+        const availableSpotUsdc = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+        if (availableSpotUsdc >= 5.0) {
+          accountSize = availableSpotUsdc;
+          logger.info(`[Account Size Fallback] Using Spot USDC balance $${accountSize.toFixed(2)} as accountSize`, "events");
+        }
+      }
+    }
 
     if (accountSize <= 5) {
-      logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize}`, "events");
-      return res.status(200).json({ status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize}` });
+      logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
+      return res.status(200).json({ status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize.toFixed(2)}` });
     }
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
