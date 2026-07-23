@@ -2379,8 +2379,17 @@ export default async function handler(req, res) {
           const btcTaRes = await callTrueNorthMcp('technical_analysis', { token_address: 'bitcoin', timeframe: '1h' });
           if (btcTaRes?.result?.content?.[0]?.text) {
             const btcTa = JSON.parse(btcTaRes.result.content[0].text);
+            const btcSma20 = btcTa?.moving_averages?.sma_20;
+            const btcSma50 = btcTa?.moving_averages?.sma_50;
             const vwap = btcTa?.support_resistance?.vwap?.cumulative;
-            if (vwap) {
+
+            if (btcSma20 && btcSma50) {
+              if (btcSma20 > btcSma50) {
+                btcTrend = 'BULLISH';
+              } else if (btcSma20 < btcSma50) {
+                btcTrend = 'BEARISH';
+              }
+            } else if (vwap) {
               if (vwap.state === 'price_above' && vwap.slope === 'up') {
                 btcTrend = 'BULLISH';
               } else if (vwap.state === 'price_below' && vwap.slope === 'down') {
