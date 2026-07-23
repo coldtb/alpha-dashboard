@@ -1127,49 +1127,64 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   let slCap = COIN_SL_CAP[symbol] ?? (dir === 'SHORT' ? 0.015 : 0.02);
   const defaultMaxTp = COIN_TP_CAP[symbol] ?? 0.0075;
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
-  const effectiveMinSlBuffer = Math.min(config.minSlBuffer || 0.005, slCap);
 
-  if (dir === 'LONG') {
-    // Stop Loss must be at least effectiveMinSlBuffer below entry
-    const maxSlAllowed = entry * (1 - effectiveMinSlBuffer);
-    if (sl > maxSlAllowed) {
-      sl = maxSlAllowed;
-    }
-    // Stop Loss is capped at a maximum slCap
-    const minSlAllowed = entry * (1 - slCap);
-    if (sl < minSlAllowed) {
-      sl = minSlAllowed;
-    }
-    // Enforce Take Profit is at least config.minTpBuffer above entry
-    const minTpAllowed = entry * (1 + config.minTpBuffer);
-    if (tp < minTpAllowed) {
-      tp = minTpAllowed;
-    }
-    // Cap TP at a maximum of +maxTpPct to prevent unrealistic options targets
-    const maxTpAllowed = entry * (1 + maxTpPct);
-    if (tp > maxTpAllowed) {
-      tp = maxTpAllowed;
+  // Direct Coin-Specific TP/SL Enforcer for Pure Strict Rule Strategy
+  if (!useSmartSlTp && COIN_TP_CAP[symbol] !== undefined && COIN_SL_CAP[symbol] !== undefined) {
+    const targetTpPct = maxTpPctOverride !== null ? maxTpPctOverride : COIN_TP_CAP[symbol];
+    const targetSlPct = COIN_SL_CAP[symbol];
+    
+    if (dir === 'LONG') {
+      tp = entry * (1 + targetTpPct);
+      sl = entry * (1 - targetSlPct);
+    } else {
+      tp = entry * (1 - targetTpPct);
+      sl = entry * (1 + targetSlPct);
     }
   } else {
-    // Stop Loss must be at least effectiveMinSlBuffer above entry
-    const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
-    if (sl < minSlAllowed) {
-      sl = minSlAllowed;
-    }
-    // Stop Loss is capped at a maximum (e.g. +1.5% for BTC, +2% for others)
-    const maxSlAllowed = entry * (1 + slCap);
-    if (sl > maxSlAllowed) {
-      sl = maxSlAllowed;
-    }
-    // Enforce Take Profit is at least config.minTpBuffer below entry
-    const maxTpAllowed = entry * (1 - config.minTpBuffer);
-    if (tp > maxTpAllowed) {
-      tp = maxTpAllowed;
-    }
-    // Cap TP at a maximum of -maxTpPct to prevent unrealistic options targets
-    const minTpAllowed = entry * (1 - maxTpPct);
-    if (tp < minTpAllowed) {
-      tp = minTpAllowed;
+    const effectiveMinSlBuffer = Math.min(config.minSlBuffer || 0.005, slCap);
+
+    if (dir === 'LONG') {
+      // Stop Loss must be at least effectiveMinSlBuffer below entry
+      const maxSlAllowed = entry * (1 - effectiveMinSlBuffer);
+      if (sl > maxSlAllowed) {
+        sl = maxSlAllowed;
+      }
+      // Stop Loss is capped at a maximum slCap
+      const minSlAllowed = entry * (1 - slCap);
+      if (sl < minSlAllowed) {
+        sl = minSlAllowed;
+      }
+      // Enforce Take Profit is at least config.minTpBuffer above entry
+      const minTpAllowed = entry * (1 + config.minTpBuffer);
+      if (tp < minTpAllowed) {
+        tp = minTpAllowed;
+      }
+      // Cap TP at a maximum of +maxTpPct to prevent unrealistic options targets
+      const maxTpAllowed = entry * (1 + maxTpPct);
+      if (tp > maxTpAllowed) {
+        tp = maxTpAllowed;
+      }
+    } else {
+      // Stop Loss must be at least effectiveMinSlBuffer above entry
+      const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
+      if (sl < minSlAllowed) {
+        sl = minSlAllowed;
+      }
+      // Stop Loss is capped at a maximum (e.g. +1.5% for BTC, +2% for others)
+      const maxSlAllowed = entry * (1 + slCap);
+      if (sl > maxSlAllowed) {
+        sl = maxSlAllowed;
+      }
+      // Enforce Take Profit is at least config.minTpBuffer below entry
+      const maxTpAllowed = entry * (1 - config.minTpBuffer);
+      if (tp > maxTpAllowed) {
+        tp = maxTpAllowed;
+      }
+      // Cap TP at a maximum of -maxTpPct to prevent unrealistic options targets
+      const minTpAllowed = entry * (1 - maxTpPct);
+      if (tp < minTpAllowed) {
+        tp = minTpAllowed;
+      }
     }
   }
 
