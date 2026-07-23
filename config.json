@@ -19,7 +19,7 @@
   "maxDistancePct": 0.05,
   "enableNansenScoring": false,
   "cooldownHours": 1,
-  "positionSizeFactor": 0.10,
+  "positionSizeFactor": 0.35,
   "minFillValueUsd": 5.0,
   "watchlist": ["HYPE", "XRP", "SUI"],
   "watchlistBonus": 15,
