@@ -1587,16 +1587,26 @@ export default async function handler(req, res) {
       // Check if pre-deployment order TP/SL parameters mismatch the updated target caps
       if (!shouldCancel) {
         const limitOrder = openOrders.find(o => o.coin === coinSymbol && !o.isTrigger);
-        const tpOrder = openOrders.find(o => o.coin === coinSymbol && o.isTrigger && o.triggerPx && parseFloat(o.triggerPx) !== 0);
-        if (limitOrder && tpOrder) {
+        if (limitOrder) {
           const entryPxVal = parseFloat(limitOrder.limitPx);
-          const tpPxVal = parseFloat(tpOrder.triggerPx);
-          const actualTpPct = Math.abs(tpPxVal - entryPxVal) / entryPxVal;
-          const targetTpPct = COIN_TP_CAP[coinSymbol] ?? 0.0075;
-          
-          if (Math.abs(actualTpPct - targetTpPct) > 0.001) {
-            shouldCancel = true;
-            cancelReason = `Pre-deployment order parameters differ from updated strategy (Actual TP: ${(actualTpPct * 100).toFixed(2)}% vs Target: ${(targetTpPct * 100).toFixed(2)}%)`;
+          const isShort = limitOrder.side === "A";
+          const tpOrder = openOrders.find(o => 
+            o.coin === coinSymbol && 
+            o.isTrigger && 
+            o.triggerPx && 
+            parseFloat(o.triggerPx) !== 0 &&
+            (isShort ? parseFloat(o.triggerPx) < entryPxVal : parseFloat(o.triggerPx) > entryPxVal)
+          );
+
+          if (tpOrder) {
+            const tpPxVal = parseFloat(tpOrder.triggerPx);
+            const actualTpPct = Math.abs(tpPxVal - entryPxVal) / entryPxVal;
+            const targetTpPct = COIN_TP_CAP[coinSymbol] ?? 0.0075;
+            
+            if (Math.abs(actualTpPct - targetTpPct) > 0.001) {
+              shouldCancel = true;
+              cancelReason = `Pre-deployment order parameters differ from updated strategy (Actual TP: ${(actualTpPct * 100).toFixed(2)}% vs Target: ${(targetTpPct * 100).toFixed(2)}%)`;
+            }
           }
         }
       }
