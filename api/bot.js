@@ -2697,13 +2697,31 @@ export default async function handler(req, res) {
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
     let withdrawableUsd = parseFloat(userState.withdrawable || "0");
 
-    // Support Unified Accounts: fallback to spot USDC balance if perp balance is 0
-    if (withdrawableUsd === 0 && spotState && spotState.balances) {
+    // Auto Spot-to-Perp Transfer: If Perp withdrawable balance is < $5.0 but Spot has USDC, transfer automatically!
+    if (withdrawableUsd < 5.0 && spotState && spotState.balances) {
       const usdcBal = spotState.balances.find(b => b.coin === "USDC");
       if (usdcBal) {
-        withdrawableUsd = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+        const availableSpotUsdc = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+        if (availableSpotUsdc >= 5.0) {
+          logger.info(`[Auto Spot-to-Perp] Perp withdrawable balance ($${withdrawableUsd.toFixed(2)}) is < $5.0. Auto-transferring $${availableSpotUsdc.toFixed(2)} Spot USDC to Perp Margin...`, "events");
+          try {
+            if (!isDryRun) {
+              const transferAmt = (Math.floor(availableSpotUsdc * 100) / 100).toFixed(2);
+              const transferRes = await exchange.usdClassTransfer({ amount: transferAmt, toPerp: true });
+              logger.info(`[Auto Spot-to-Perp] Transferred $${transferAmt} USDC from Spot to Perp: ${JSON.stringify(transferRes)}`, "events");
+              await sendDiscordAlert(`💵 **Auto Spot-to-Perp Margin Transfer**\nSuccessfully moved **$${transferAmt} USDC** from Spot to Perp Margin!`, 'info').catch(() => {});
+              userState = await info.clearinghouseState({ user: walletAddress });
+              withdrawableUsd = parseFloat(userState.withdrawable || "0");
+            } else {
+              withdrawableUsd = availableSpotUsdc;
+            }
+          } catch (tErr) {
+            logger.error(`[Auto Spot-to-Perp] Spot to Perp transfer failed: ${tErr.message}`, "events");
+          }
+        }
       }
     }
+
     const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
 
     if (accountSize <= 5) {
