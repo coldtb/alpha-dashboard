@@ -291,7 +291,7 @@ const COIN_TP_CAP = {
   BTC:  0.02,   // BTC: 2.0% TP
   XRP:  0.02,   // XRP: 2.0% TP (+99.10% Return, 71.6% Win Rate)
   SUI:  0.01,   // SUI: 1.0% TP (+38.91% Return, 72.8% Win Rate)
-  HYPE: 0.005,  // HYPE: 0.5% TP (+41.86% Return, 64.5% Win Rate, 3.38% Max DD)
+  HYPE: 0.010,  // HYPE: 1.0% TP (Noise-resistant live parameter)
 };
 
 // Phase 3 #13: Coin-specific SL caps
@@ -299,7 +299,7 @@ const COIN_SL_CAP = {
   BTC:  0.015,  // 1.5% max SL for BTC
   XRP:  0.02,   // 2.0% max SL for XRP
   SUI:  0.02,   // 2.0% max SL for SUI
-  HYPE: 0.005,  // 0.5% max SL for HYPE
+  HYPE: 0.015,  // 1.5% max SL for HYPE (Eliminates 1m candle noise stopouts)
 };
 
 const COIN_RISK_CONFIG = {

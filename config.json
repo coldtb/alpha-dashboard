@@ -29,12 +29,12 @@
   "coinTpCap": {
     "XRP": 0.02,
     "SUI": 0.01,
-    "HYPE": 0.005
+    "HYPE": 0.010
   },
   "coinSlCap": {
     "XRP": 0.02,
     "SUI": 0.02,
-    "HYPE": 0.005
+    "HYPE": 0.015
   },
 
   "_comment_risk": "=== Phase 2: Risk Management (NEW) ===",
