@@ -2082,7 +2082,7 @@ export default async function handler(req, res) {
         }
       }
       
-      // Check B: Smart TP Adjustment (nearest resistance/support)
+      // Check B: TrueNorth Dynamic Smart TP Expansion & S/R Level Adjuster
       else if (taDataActive?.support_resistance?.['support and resistance channel']?.channels) {
         const srChannels = [...taDataActive.support_resistance['support and resistance channel'].channels]
           .sort((a, b) => b.strength - a.strength);
@@ -2093,26 +2093,29 @@ export default async function handler(req, res) {
 
         let smartTpTarget = null;
         if (isLong) {
+          // If in strong profit (returnPct >= 0.8%), look for higher TrueNorth Resistance 2 to expand TP!
+          const expansionMode = returnPct >= 0.008;
           const resistances = srChannels
-            .filter(c => c.lo >= minTpAllowed && c.lo < tpPx)
-            .sort((a, b) => b.lo - a.lo); // nearest valid resistance
+            .filter(c => expansionMode ? c.lo > tpPx : (c.lo >= minTpAllowed && c.lo < tpPx))
+            .sort((a, b) => b.lo - a.lo); // highest valid resistance for expansion
           if (resistances.length > 0) smartTpTarget = resistances[0].lo;
         } else {
+          const expansionMode = returnPct >= 0.008;
           const supports = srChannels
-            .filter(c => c.hi <= minTpAllowed && c.hi > tpPx)
-            .sort((a, b) => b.hi - a.hi); // nearest valid support
+            .filter(c => expansionMode ? c.hi < tpPx : (c.hi <= minTpAllowed && c.hi > tpPx))
+            .sort((a, b) => a.hi - b.hi); // lowest valid support for expansion
           if (supports.length > 0) smartTpTarget = supports[0].hi;
         }
 
-        if (smartTpTarget) {
-          logger.info(`[Smart TP] ${coin}: Adjusting TP from ${tpPx} to nearest key level at ${smartTpTarget.toFixed(4)}.`, "events");
+        if (smartTpTarget && Math.abs((smartTpTarget - tpPx) / tpPx) >= 0.003) {
+          logger.info(`[TrueNorth Dynamic TP] ${coin}: Expanding TP from ${tpPx} to higher TrueNorth level at ${smartTpTarget.toFixed(4)} (Profit: ${(returnPct * 100).toFixed(2)}%).`, "events");
           try {
             const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
             const newTpPxStr = formatPrice(smartTpTarget);
             const tpWorstPx = formatPrice(getTriggerLimitPrice(!isLong, smartTpTarget));
 
             if (isDryRun) {
-              logger.info(`[DRY RUN] Bypassed Smart TP adjustment for ${coin}: old TP=${tpPx}, new TP=${smartTpTarget}`, "events");
+              logger.info(`[DRY RUN] Bypassed Smart TP expansion for ${coin}: old TP=${tpPx}, new TP=${smartTpTarget}`, "events");
             } else {
               await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: tpOrder.oid }]);
               const orderRes = await exchange.order({
@@ -2126,11 +2129,11 @@ export default async function handler(req, res) {
                   c: generateBotCloid()
                 }])
               });
-              logger.info(`[Smart TP] Successfully adjusted TP for ${coin}: ` + JSON.stringify(orderRes), "audit", { coin, orderRes });
+              logger.info(`[TrueNorth Dynamic TP] Successfully expanded TP for ${coin}: ` + JSON.stringify(orderRes), "audit", { coin, orderRes });
             }
             needsOrdersRefresh = true;
           } catch (e) {
-            logger.error(`[Smart TP] Failed to adjust TP for ${coin}: ${e.message}`, "events");
+            logger.error(`[TrueNorth Dynamic TP] Failed to adjust TP for ${coin}: ${e.message}`, "events");
           }
         }
       }
@@ -2213,10 +2216,10 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check C: Breakeven Stop Loss (using coin-specific or configured threshold)
-      const breakevenTrigger = coinRisk.breakevenTriggerPct;
+      // Check C: 2-Tiered Asymmetric Breakeven Lock (Requires returnPct >= 1.0% to prevent early noise stopouts)
+      const breakevenTrigger = Math.max(0.010, coinRisk.breakevenTriggerPct);
       if (returnPct >= breakevenTrigger && slOrder && slIsWorseThanEntry && !isNearTp && !isAlreadyTrailed) {
-        logger.info(`[Breakeven] Position ${coin} is in profit by ${(returnPct * 100).toFixed(2)}% (trigger: ${(breakevenTrigger * 100).toFixed(1)}%). Moving SL to entry: ${entryPx}`, "lock", { coin, entryPx });
+        logger.info(`[Asymmetric Breakeven] Position ${coin} reached +${(returnPct * 100).toFixed(2)}% profit (threshold: ${(breakevenTrigger * 100).toFixed(1)}%). Moving SL to entry: ${entryPx}`, "lock", { coin, entryPx });
         try {
           const entrySz = formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals);
           const entryPxStr = formatPrice(entryPx);
@@ -2237,11 +2240,11 @@ export default async function handler(req, res) {
                 c: generateBotCloid()
               }])
             });
-            logger.info(`[Breakeven] Placed new SL at entry for ${coin}: ` + JSON.stringify(orderRes), "lock", { orderRes });
+            logger.info(`[Asymmetric Breakeven] Placed new SL at entry for ${coin}: ` + JSON.stringify(orderRes), "lock", { orderRes });
           }
           needsOrdersRefresh = true;
         } catch (e) {
-          logger.error(`[Breakeven] Failed to move SL for ${coin}: ${e.message}`, "events");
+          logger.error(`[Asymmetric Breakeven] Failed to move SL for ${coin}: ${e.message}`, "events");
         }
       }
 
