@@ -1635,20 +1635,26 @@ export default async function handler(req, res) {
           const currentEntryPrice = parseFloat(limitOrder.limitPx);
           const direction = limitOrder.side === "A" ? "SHORT" : "LONG";
 
-          const useSmartSlTpForPending = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
-          const pendingMaxTpPct = COIN_TP_CAP[currentCoin.symbol] ?? 0.0075;
-          // FIX #3: taDataPending may be null — computeStrategyLevels now handles null safely
-          const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending, null, pendingMaxTpPct);
+          // Proximity Lock: If market price is within 0.5% of limit entry price (about to fill), DO NOT CANCEL!
+          const distToMarketPct = Math.abs(currentCoin.price - currentEntryPrice) / currentEntryPrice;
+          if (distToMarketPct <= 0.005) {
+            logger.info(`[Proximity Lock] ${coinSymbol} limit order at ${currentEntryPrice} is within ${(distToMarketPct * 100).toFixed(2)}% of market price (${currentCoin.price}). Bypassing level-shift cancellation to let order fill!`, "events");
+            shouldCancel = false;
+          } else {
+            const useSmartSlTpForPending = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
+            const pendingMaxTpPct = COIN_TP_CAP[currentCoin.symbol] ?? 0.0075;
+            const newLevels = computeStrategyLevels(currentCoin, direction, taDataPending, null, null, useSmartSlTpForPending, null, pendingMaxTpPct);
 
-          if (newLevels && newLevels.entry) {
-            const priceDiffPct = Math.abs(newLevels.entry - currentEntryPrice) / currentEntryPrice;
-            const entryThreshold = config.entryShiftThreshold || 0.01;
+            if (newLevels && newLevels.entry) {
+              const priceDiffPct = Math.abs(newLevels.entry - currentEntryPrice) / currentEntryPrice;
+              const entryThreshold = config.entryShiftThreshold || 0.02;
 
-            if (priceDiffPct >= entryThreshold) {
-              shouldCancel = true;
-              cancelReason = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
-            } else {
-              logger.info(`[Stale Cleanup] ${coinSymbol} entry diff within threshold: ${(priceDiffPct * 100).toFixed(2)}%`, "events");
+              if (priceDiffPct >= entryThreshold) {
+                shouldCancel = true;
+                cancelReason = `Entry price shifted by ${(priceDiffPct * 100).toFixed(2)}% (Current: ${currentEntryPrice}, New: ${newLevels.entry})`;
+              } else {
+                logger.info(`[Stale Cleanup] ${coinSymbol} entry diff within threshold: ${(priceDiffPct * 100).toFixed(2)}%`, "events");
+              }
             }
           }
         }

@@ -2,7 +2,7 @@
   "minScore": 0,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.005,
-  "entryShiftThreshold": 0.0075,
+  "entryShiftThreshold": 0.020,
   "replacementScoreDiff": 10,
   "nansenBuilderAddress": "",
   "nansenBuilderFeeRate": 80,
