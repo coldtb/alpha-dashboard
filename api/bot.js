@@ -2653,29 +2653,40 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // BTC Trend Filter Check (Option A: Smart Hybrid Confluence Gate)
-      if (!bypassTrendFilter && config.enableVwapFilter !== false) {
+      // Dual Timeframe Confluence Gate (1h Macro Trend + 15m Micro Entry Alignment)
+      if (!bypassTrendFilter) {
         const isReboundTrade = levels.reason && (
           levels.reason.includes('support_rebound') || 
           levels.reason.includes('resistance_rebound') || 
           levels.reason.includes('sr_channel')
         );
 
+        // BTC-specific strict v9.0 CHOP/ADX check
+        if (cand.symbol === 'BTC') {
+          const chopVal = parsedTa?.indicators?.choppiness_index || 50;
+          const adxVal = parsedTa?.indicators?.adx || 20;
+          if (chopVal >= 50 || adxVal <= 25) {
+            logger.info(`[BTC v9.0 Filter] Skip BTC candidate: 15m CHOP (${chopVal}) >= 50 or ADX (${adxVal}) <= 25 (Requires strong trend)`, "events");
+            continue;
+          }
+        }
+
+        // Dual 1h Macro + 15m Micro Confluence Check
         if (btcTrend === 'BULLISH' && direction === 'SHORT' && !isReboundTrade) {
-          logger.info(`[Smart Hybrid Gate] Skip SHORT candidate ${cand.symbol}: BTC is Bullish (${btcTrend}) and setup is not a Rebound Trade`, "events");
+          logger.info(`[Dual Confluence Gate] Skip SHORT candidate ${cand.symbol}: 1h Macro Trend is Bullish (${btcTrend}) and 15m setup is not a Rebound Trade`, "events");
           continue;
         }
         if (btcTrend === 'BEARISH' && direction === 'LONG' && !isReboundTrade) {
-          logger.info(`[Smart Hybrid Gate] Skip LONG candidate ${cand.symbol}: BTC is Bearish (${btcTrend}) and setup is not a Rebound Trade`, "events");
+          logger.info(`[Dual Confluence Gate] Skip LONG candidate ${cand.symbol}: 1h Macro Trend is Bearish (${btcTrend}) and 15m setup is not a Rebound Trade`, "events");
           continue;
         }
         if (btcTrend === 'NEUTRAL' && !isReboundTrade) {
-          logger.info(`[Smart Hybrid Gate] Skip ${direction} candidate ${cand.symbol}: BTC is Neutral and setup is not a Rebound Trade`, "events");
+          logger.info(`[Dual Confluence Gate] Skip ${direction} candidate ${cand.symbol}: 1h Macro Trend is Neutral and setup is not a Rebound Trade`, "events");
           continue;
         }
 
         if (isReboundTrade && (btcTrend === 'NEUTRAL' || (btcTrend === 'BULLISH' && direction === 'SHORT') || (btcTrend === 'BEARISH' && direction === 'LONG'))) {
-          logger.info(`[Smart Hybrid Gate] Rebound Trade Bypass active for ${cand.symbol} (${direction}) via ${levels.reason}. Bypassing BTC macro mismatch!`, "events");
+          logger.info(`[Dual Confluence Gate] Rebound Trade Bypass active for ${cand.symbol} (${direction}) via ${levels.reason}. Bypassing macro mismatch!`, "events");
         }
       }
 
