@@ -288,7 +288,7 @@ const geckoIdMap = {
 
 // FIX #2: Coin-specific TP caps (used in computeStrategyLevels + recovery)
 const COIN_TP_CAP = {
-  BTC:  0.02,   // BTC: 2.0% TP
+  BTC:  0.033,  // BTC: 3.3% TP (v9.0 Macro Scalper)
   XRP:  0.02,   // XRP: 2.0% TP (+99.10% Return, 71.6% Win Rate)
   SUI:  0.01,   // SUI: 1.0% TP (+38.91% Return, 72.8% Win Rate)
   HYPE: 0.010,  // HYPE: 1.0% TP (Noise-resistant live parameter)
@@ -296,7 +296,7 @@ const COIN_TP_CAP = {
 
 // Phase 3 #13: Coin-specific SL caps
 const COIN_SL_CAP = {
-  BTC:  0.015,  // 1.5% max SL for BTC
+  BTC:  0.020,  // 2.0% max SL for BTC (v9.0 Macro Scalper)
   XRP:  0.02,   // 2.0% max SL for XRP
   SUI:  0.02,   // 2.0% max SL for SUI
   HYPE: 0.015,  // 1.5% max SL for HYPE (Eliminates 1m candle noise stopouts)
