@@ -30,13 +30,13 @@
     "BTC": 0.033,
     "XRP": 0.02,
     "SUI": 0.01,
-    "HYPE": 0.010
+    "HYPE": 0.015
   },
   "coinSlCap": {
     "BTC": 0.020,
     "XRP": 0.02,
     "SUI": 0.02,
-    "HYPE": 0.015
+    "HYPE": 0.020
   },
 
   "_comment_risk": "=== Phase 2: Risk Management (NEW) ===",
