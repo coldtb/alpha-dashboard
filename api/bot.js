@@ -1981,10 +1981,16 @@ export default async function handler(req, res) {
           }
         }
 
-        const newTpPx = trailedTp;
-        const newSlPx = isLong ? tpPx * 0.990 : tpPx * 1.010;
+        // Uncapped Megatrend Rider: If profit >= 3.5%, expand TP out by +5.0% and lock SL 0.5% behind current price
+        const isMegatrend = returnPct >= 0.035;
+        const newTpPx = isMegatrend 
+          ? (isLong ? currentPrice * 1.050 : currentPrice * 0.950) 
+          : trailedTp;
+        const newSlPx = isLong 
+          ? Math.max(entryPx, currentPrice * 0.995) 
+          : Math.min(entryPx, currentPrice * 1.005);
 
-        logger.info(`[Profit Trailing] Position ${coin} is near TP (${tpPx}). Trailing TP to ${newTpPx.toFixed(4)}${smartTpAdjusted ? ' (Smart TP)' : ''} and locking SL at ${newSlPx.toFixed(4)}.`, "events");
+        logger.info(`[Profit Trailing] Position ${coin} return is ${(returnPct * 100).toFixed(2)}%${isMegatrend ? ' (MEGATREND RIDER ACTIVE!)' : ''}. Trailing TP to ${newTpPx.toFixed(4)} and locking SL at ${newSlPx.toFixed(4)}.`, "events");
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
