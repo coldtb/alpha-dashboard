@@ -1981,16 +1981,21 @@ export default async function handler(req, res) {
           }
         }
 
-        // Uncapped Megatrend Rider: If profit >= 3.5%, expand TP out by +5.0% and lock SL 0.5% behind current price
-        const isMegatrend = returnPct >= 0.035;
-        const newTpPx = isMegatrend 
-          ? (isLong ? currentPrice * 1.050 : currentPrice * 0.950) 
-          : trailedTp;
-        const newSlPx = isLong 
-          ? Math.max(entryPx, currentPrice * 0.995) 
-          : Math.min(entryPx, currentPrice * 1.005);
+        // Infinite Ratchet Step Profit Locking:
+        // Automatically locks SL in progressive profit tiers (+0.5%, +1.5%, +2.5%, +4.0%, +N-1.0% infinitely)
+        // Keeps TP anchored at a reachable target so price can hit TP and close at the peak!
+        let ratchetLockedReturnPct = 0;
+        if (returnPct >= 0.050) ratchetLockedReturnPct = returnPct - 0.010; // Infinitely trails 1.0% behind peak for return >= 5.0%
+        else if (returnPct >= 0.035) ratchetLockedReturnPct = 0.025;       // Lock at +2.5% when return >= 3.5%
+        else if (returnPct >= 0.025) ratchetLockedReturnPct = 0.015;       // Lock at +1.5% when return >= 2.5%
+        else if (returnPct >= 0.015) ratchetLockedReturnPct = 0.005;       // Lock at +0.5% when return >= 1.5%
 
-        logger.info(`[Profit Trailing] Position ${coin} return is ${(returnPct * 100).toFixed(2)}%${isMegatrend ? ' (MEGATREND RIDER ACTIVE!)' : ''}. Trailing TP to ${newTpPx.toFixed(4)} and locking SL at ${newSlPx.toFixed(4)}.`, "events");
+        const newTpPx = trailedTp; // Keep TP reachable at technical cap
+        const newSlPx = isLong 
+          ? Math.max(entryPx * (1 + ratchetLockedReturnPct), currentPrice * 0.992) 
+          : Math.min(entryPx * (1 - ratchetLockedReturnPct), currentPrice * 1.008);
+
+        logger.info(`[Ratchet Profit Lock] Position ${coin} return is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock: ${(ratchetLockedReturnPct * 100).toFixed(2)}%. Trailing TP at ${newTpPx.toFixed(4)}, SL locked at ${newSlPx.toFixed(4)}.`, "events");
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
