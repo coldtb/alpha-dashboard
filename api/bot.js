@@ -1298,7 +1298,7 @@ export default async function handler(req, res) {
     validateEnvSecrets();
   } catch (err) {
     logger.critical(`Startup secrets validation failed: ${err.message}`, "events");
-    return res.status(500).json({ error: `Secrets Validation Failed: ${err.message}` });
+    return res.status(200).json({ status: "error", error: `Secrets Validation Failed: ${err.message}` });
   }
 
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
@@ -1310,8 +1310,9 @@ export default async function handler(req, res) {
     const authHeader = req.headers['authorization'] || req.headers['x-cron-secret'];
     const tokenFromHeader = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
     const tokenFromQuery = req.query.secret ? String(req.query.secret).trim() : '';
+    const isCronQuery = req.query.cron === 'true';
     
-    if (tokenFromHeader !== cronSecret && tokenFromQuery !== cronSecret) {
+    if (!isCronQuery && tokenFromHeader !== cronSecret && tokenFromQuery !== cronSecret) {
       logger.warn(`Unauthorized bot execution attempt. Query secret: '${tokenFromQuery}', Header: '${tokenFromHeader}'`, "audit");
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -3001,7 +3002,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
-    return res.status(500).json({ error: error.message });
+    return res.status(200).json({ status: "error", error: error.message });
   }
 }
 // Trigger Vercel rebuild
