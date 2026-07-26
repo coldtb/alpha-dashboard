@@ -2504,7 +2504,7 @@ export default async function handler(req, res) {
     const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    for (const cand of tradeableCandidates) {
+    for (const cand of tradeableCandidates.slice(0, 8)) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
