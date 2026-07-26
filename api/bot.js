@@ -2658,6 +2658,10 @@ export default async function handler(req, res) {
       const useSmartSlTpForCand = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
       const candMaxTpPct = COIN_TP_CAP[cand.symbol] ?? 0.0075;
       const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
+      if (!levels) {
+        logger.info(`[Candidate Loop] Skip candidate ${cand.symbol}: computeStrategyLevels returned null (Filtered by R:R or invalid parameters).`, "events");
+        continue;
+      }
       
       let bypassTrendFilter = false;
       if (rawDirection === 'LONG' && levels.reason.includes('support_rebound')) {
