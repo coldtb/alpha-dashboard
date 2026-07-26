@@ -1188,6 +1188,17 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     }
   }
 
+  // Enforce Minimum Reward-to-Risk Ratio (R:R >= minRewardRiskRatio)
+  const minRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.5;
+  const riskDist = Math.abs(entry - sl);
+  const rewardDist = Math.abs(tp - entry);
+  const currentRR = riskDist > 0 ? rewardDist / riskDist : 0;
+
+  if (currentRR < minRR) {
+    logger.info(`[R:R Ratio Filter] Skip candidate ${symbol}: R:R ratio ${currentRR.toFixed(2)} is below minimum ${minRR.toFixed(2)}`, "events");
+    return null;
+  }
+
   return {
     entry: parseFloat(entry.toFixed(dec)),
     sl:    parseFloat(sl.toFixed(dec)),

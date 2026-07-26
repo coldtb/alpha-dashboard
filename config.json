@@ -1,5 +1,6 @@
 {
   "minScore": 0,
+  "minRewardRiskRatio": 1.5,
   "minSlBuffer": 0.010,
   "minTpBuffer": 0.005,
   "entryShiftThreshold": 0.020,
