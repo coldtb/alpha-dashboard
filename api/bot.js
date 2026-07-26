@@ -1981,21 +1981,24 @@ export default async function handler(req, res) {
           }
         }
 
-        // Infinite Ratchet Step Profit Locking:
-        // Automatically locks SL in progressive profit tiers (+0.5%, +1.5%, +2.5%, +4.0%, +N-1.0% infinitely)
-        // Keeps TP anchored at a reachable target so price can hit TP and close at the peak!
-        let ratchetLockedReturnPct = 0;
-        if (returnPct >= 0.050) ratchetLockedReturnPct = returnPct - 0.010; // Infinitely trails 1.0% behind peak for return >= 5.0%
-        else if (returnPct >= 0.035) ratchetLockedReturnPct = 0.025;       // Lock at +2.5% when return >= 3.5%
-        else if (returnPct >= 0.025) ratchetLockedReturnPct = 0.015;       // Lock at +1.5% when return >= 2.5%
-        else if (returnPct >= 0.015) ratchetLockedReturnPct = 0.005;       // Lock at +0.5% when return >= 1.5%
+        // Infinite Ratchet Step Profit Locking (Leverage-Adjusted):
+        // Automatically locks SL in progressive profit tiers (+0.5%, +1.5%, +2.5%, +4.0%, +N-1.0% ROE)
+        // Divide ROE return by leverage (5x) so SL steps up immediately on exact price movements!
+        const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
+        const finalLeverage = Math.min(5, maxLeverage);
+
+        let ratchetLockedPricePct = 0;
+        if (returnPct >= 0.050) ratchetLockedPricePct = (returnPct - 0.010) / finalLeverage;
+        else if (returnPct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
+        else if (returnPct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
+        else if (returnPct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
 
         const newTpPx = trailedTp; // Keep TP reachable at technical cap
         const newSlPx = isLong 
-          ? Math.max(entryPx * (1 + ratchetLockedReturnPct), currentPrice * 0.992) 
-          : Math.min(entryPx * (1 - ratchetLockedReturnPct), currentPrice * 1.008);
+          ? Math.max(entryPx * (1 + ratchetLockedPricePct), isLong ? entryPx * 1.001 : entryPx * 0.999) 
+          : Math.min(entryPx * (1 - ratchetLockedPricePct), isLong ? entryPx * 1.001 : entryPx * 0.999);
 
-        logger.info(`[Ratchet Profit Lock] Position ${coin} return is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock: ${(ratchetLockedReturnPct * 100).toFixed(2)}%. Trailing TP at ${newTpPx.toFixed(4)}, SL locked at ${newSlPx.toFixed(4)}.`, "events");
+        logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Price Lock: ${(ratchetLockedPricePct * 100).toFixed(2)}%. Trailing TP at ${newTpPx.toFixed(4)}, SL locked at ${newSlPx.toFixed(4)}.`, "events");
         try {
           // Pyramiding check and calculation
           const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
