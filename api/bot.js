@@ -1968,7 +1968,7 @@ export default async function handler(req, res) {
             if (!isDryRun) {
               // Cancel old SL order
               if (slOrder) {
-                const assetIndex = hlMeta.universe.findIndex(a => a.name === coin);
+                const assetIndex = currentCoin.assetIndex;
                 await exchange.cancel({ cancels: [{ a: assetIndex, o: slOrder.oid }] });
               }
               // Place new ratchet locked SL order
