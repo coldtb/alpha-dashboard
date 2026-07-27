@@ -2357,38 +2357,62 @@ export default async function handler(req, res) {
       logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
     }
 
-    // Every Execution Status Report Generator (5-minute frequency)
-    let displayBalance = parseFloat(userState.withdrawable || "0");
-    if (displayBalance === 0 && spotState && spotState.balances) {
-      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
-      if (usdcBal) {
-        displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
-      }
-    }
-    let reportMessage = `**💰 Account Balance:** $${displayBalance.toFixed(2)}\n\n`;
-    reportMessage += `**📊 Watchlist Candidates Status:**\n`;
-    for (const symbol of watchlist) {
-      const cand = scoredCoins.find(c => c.symbol === symbol);
-      if (cand) {
-        const hasPosition = userState.assetPositions.some(p => p.position.coin === symbol && parseFloat(p.position.szi) !== 0);
-        const hasOpenOrder = openOrders.some(order => order.coin === symbol);
-        
-        const coinMinScore = symbol === 'BTC' ? 40 : minScore;
-        let statusText = "Scanning (No setup)";
-        if (hasPosition) statusText = "Position Open 🟢";
-        else if (hasOpenOrder) statusText = "Open Order Pending ⏳";
-        else if (cand.score < coinMinScore) statusText = `Skipped (Score ${cand.score} < ${coinMinScore})`;
-        
-        reportMessage += `• **${symbol}**: Score **${cand.score}** | Price: $${cand.price} | Status: ${statusText}\n`;
-      } else {
-        reportMessage += `• **${symbol}**: Not found in market scanner\n`;
-      }
-    }
-    
-    // Send general status report only once every 15 minutes to prevent channel spam
+    // 5-Minute Frequency Discord Status Report Generator (Formatted exactly like the image table)
     const currentMin = new Date().getMinutes();
-    if (currentMin % 15 === 0) {
-      await sendDiscordAlert(reportMessage, 'info');
+    if (currentMin % 5 === 0) {
+      if (!global.lastDiscordReportMin || global.lastDiscordReportMin !== currentMin) {
+        global.lastDiscordReportMin = currentMin;
+
+        let displayBalance = parseFloat(userState.withdrawable || "0");
+        if (displayBalance === 0 && spotState && spotState.balances) {
+          const usdcBal = spotState.balances.find(b => b.coin === "USDC");
+          if (usdcBal) {
+            displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
+          }
+        }
+
+        const activeCount = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0).length;
+
+        let reportMsg = `**💰 Account Balance:** $${displayBalance.toFixed(2)} | **Active Positions:** ${activeCount}/${maxConcurrentPositions}\n\n`;
+        reportMsg += `\`\`\`text\n`;
+        reportMsg += `LIVE CANDIDATES MONITORING FOR SLOTS 2 & 3\n\n`;
+        reportMsg += `Зоос    | Направление | Одоогийн Үнэ | Дэмжлэгийн Бүс | Зайн Зөрүү % | 0.3% Touch Gate Төлөв\n`;
+        reportMsg += `--------+-------------+--------------+----------------+--------------+-------------------------\n`;
+
+        const topCandidates = scoredCoins.slice(0, 7);
+
+        for (const cand of topCandidates) {
+          const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.szi) !== 0);
+          const hasOpenOrder = openOrders.some(order => order.coin === cand.symbol);
+
+          let statusStr = "";
+          let direction = cand.change >= 0 ? "LONG 🟢" : "SHORT 🔴";
+          let suppZone = (cand.price * (direction.includes("LONG") ? 0.995 : 1.005)).toFixed(cand.price < 1 ? 4 : 2);
+          let distPct = (Math.abs((cand.price - parseFloat(suppZone)) / parseFloat(suppZone)) * 100);
+
+          if (hasPosition) {
+            statusStr = "Position Open 🟢";
+          } else if (hasOpenOrder) {
+            statusStr = "Open Order Pending ⏳";
+          } else if (distPct <= 0.30) {
+            statusStr = "🟢 ШУУД ОРОХОД БЭЛЭН! (Inside 0.3%)";
+          } else {
+            const needPct = Math.max(0, distPct - 0.30).toFixed(2);
+            statusStr = `⏳ ${needPct}% хүлээж байна`;
+          }
+
+          const symStr = cand.symbol.padEnd(7);
+          const dirStr = direction.padEnd(12);
+          const pxStr = (`$` + cand.price).padEnd(12);
+          const suppStr = (`$` + suppZone).padEnd(14);
+          const distStr = (distPct.toFixed(2) + `%`).padEnd(13);
+
+          reportMsg += `${symStr}| ${dirStr}| ${pxStr}| ${suppStr}| ${distStr}| ${statusStr}\n`;
+        }
+
+        reportMsg += `\`\`\``;
+        await sendDiscordAlert(reportMsg, 'info');
+      }
     }
 
     const candidates = scoredCoins.filter(c => {
