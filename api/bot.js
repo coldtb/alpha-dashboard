@@ -1207,34 +1207,29 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   };
 }
 
-// Calculate Market Score
+// Calculate Market Score (Equalized for Altcoins & Small Caps)
 function calculateScore(coin, isHyperliquidScale = false) {
   let score = 0;
   const change = Math.abs(coin.change);
-  if (change <= 3.0) {
-    score += 30;
-    if (change <= 1.5) score += 10;
+  if (change <= 5.0) {
+    score += 35;
+    if (change <= 2.5) score += 10;
   }
   
   // Symmetric funding rate scoring for both LONG and SHORT setup strength
   const absFunding = Math.abs(coin.funding || 0);
   if (absFunding > 0) {
-    score += 20;
-    if (absFunding >= 0.0005) {
+    score += 25;
+    if (absFunding >= 0.0003) {
       score += 15;
-    } else if (absFunding >= 0.0002) {
-      score += 10;
     }
   }
 
+  // Equalized Volume Floor: Requires min $1M 24h volume for orderbook liquidity, no bias for mega-caps
   const vol = coin.volume;
-  const thresholds = isHyperliquidScale 
-    ? (config.hyperliquidVolumeThresholds || [30000000, 15000000, 5000000])
-    : (config.binanceVolumeThresholds || [100000000, 50000000, 10000000]);
-
-  if (vol > thresholds[0]) score += 20;
-  else if (vol > thresholds[1]) score += 15;
-  else if (vol > thresholds[2]) score += 10;
+  if (vol >= 1000000) {
+    score += 15;
+  }
 
   const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
   const watchlistBonus = config.watchlistBonus !== undefined ? config.watchlistBonus : 15;
