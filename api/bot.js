@@ -2736,13 +2736,13 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check if current market price is already past the calculated TP price
-      if (levels) {
-        if (direction === "LONG" && cand.price >= levels.tp) {
-          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already past TP $${levels.tp}`, "events");
+      // Check if current market price is already significantly past the calculated TP price (at least 0.3% past)
+      if (levels && levels.tp) {
+        if (direction === "LONG" && cand.price >= levels.tp * 1.003) {
+          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already 0.3%+ past TP $${levels.tp}`, "events");
           continue;
-        } else if (direction === "SHORT" && cand.price <= levels.tp) {
-          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already past TP $${levels.tp}`, "events");
+        } else if (direction === "SHORT" && cand.price <= levels.tp * 0.997) {
+          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already 0.3%+ past TP $${levels.tp}`, "events");
           continue;
         }
       }
