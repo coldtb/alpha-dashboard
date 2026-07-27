@@ -2760,8 +2760,8 @@ export default async function handler(req, res) {
     }
 
     if (!target) {
-      logger.warn("[Bot Execution] No trade: All candidates were filtered out by Crowded Trade rules.", "events");
-      return res.status(200).json({ status: "success", message: "No trade: All candidates were filtered out by Crowded Trade rules." });
+      logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
+      return res.status(200).json({ status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
     }
 
     logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
