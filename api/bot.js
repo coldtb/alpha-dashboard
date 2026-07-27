@@ -1821,14 +1821,30 @@ export default async function handler(req, res) {
         }
       }
 
-      // Find active trigger orders for this coin
-      const coinOrders = openOrders.filter(o => o.coin === coin && o.isTrigger);
+      // Find active trigger orders for this coin robustly from Hyperliquid open orders format
+      const coinOrders = openOrders.filter(o => o.coin === coin);
       
-      // Stop Loss is a trigger order whose price is on the loss side of the currentPrice
-      let slOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) < currentPrice : parseFloat(o.triggerPx) > currentPrice));
-      
-      // Take Profit is a trigger order whose price is on the profit side of the currentPrice
-      const tpOrder = coinOrders.find(o => o.triggerPx && parseFloat(o.triggerPx) !== 0 && (isLong ? parseFloat(o.triggerPx) > currentPrice : parseFloat(o.triggerPx) < currentPrice));
+      const slOrder = coinOrders.find(o => {
+        const cond = (o.triggerCondition || '').toLowerCase();
+        const oType = (o.orderType || '').toLowerCase();
+        if (oType.includes('stop') || o.isPositionTpsl) {
+          if (isLong && (cond.includes('below') || cond.includes('<'))) return true;
+          if (!isLong && (cond.includes('above') || cond.includes('>'))) return true;
+          return true;
+        }
+        if (cond.includes('below') && isLong) return true;
+        if (cond.includes('above') && !isLong) return true;
+        return false;
+      });
+
+      const tpOrder = coinOrders.find(o => {
+        const cond = (o.triggerCondition || '').toLowerCase();
+        const oType = (o.orderType || '').toLowerCase();
+        if (oType.includes('take profit')) return true;
+        if (cond.includes('above') && isLong) return true;
+        if (cond.includes('below') && !isLong) return true;
+        return false;
+      });
 
       // Fetch TrueNorth technical analysis for divergence check
       let taDataActive = null;
