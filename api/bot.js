@@ -2504,7 +2504,7 @@ export default async function handler(req, res) {
     const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    for (const cand of tradeableCandidates.slice(0, 5)) {
+    for (const cand of tradeableCandidates.slice(0, 3)) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
@@ -2532,7 +2532,7 @@ export default async function handler(req, res) {
           logger.info(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`, "events");
           const mcpTimeout = (fn) => Promise.race([
             fn,
-            new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 2s")), 2000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 1.2s")), 1200))
           ]).catch(() => null);
 
           const results = await Promise.allSettled([
