@@ -1966,10 +1966,12 @@ export default async function handler(req, res) {
           logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock SL to $${targetSlPx.toFixed(4)} (Current SL: $${currentSlPx.toFixed(4)})...`, "events");
           try {
             if (!isDryRun) {
-              // Cancel old SL order
-              if (slOrder) {
+              // Cancel old SL order safely with explicit Number casting
+              if (slOrder && slOrder.oid) {
                 const assetIndex = currentCoin.assetIndex;
-                await exchange.cancel({ cancels: [{ a: assetIndex, o: slOrder.oid }] });
+                await exchange.cancel({ cancels: [{ a: assetIndex, o: Number(slOrder.oid) }] }).catch(err => {
+                  logger.warn(`[Ratchet Lock Cancel Warning] ${err.message}`, "events");
+                });
               }
               // Place new ratchet locked SL order
               // Determine correct Hyperliquid tpsl tag and market worst price buffer
