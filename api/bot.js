@@ -2713,17 +2713,18 @@ export default async function handler(req, res) {
         if (fundingInfo) {
           const percentile = fundingInfo.current_funding_percentile_7d || 50;
           const fundingRate = fundingInfo.current_funding_rate_in_percentage || 0;
+          const crowdedPercentileLimit = 98; // Only block extreme 98%+ overcrowded leverage squeezes
           
           let isCrowded = false;
           let crowdedReason = "";
 
           if (direction === 'LONG') {
-            if (fundingRate > 0 && percentile >= crowdedPercentileLimit) {
+            if (fundingRate >= 0.0008 && percentile >= crowdedPercentileLimit) {
               isCrowded = true;
               crowdedReason = `Long funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
             }
           } else {
-            if (fundingRate < 0 && percentile >= crowdedPercentileLimit) {
+            if (fundingRate <= -0.0008 && percentile >= crowdedPercentileLimit) {
               isCrowded = true;
               crowdedReason = `Short funding percentile ${percentile}% is >= ${crowdedPercentileLimit}% (Rate: ${fundingRate.toFixed(4)}%)`;
             }
