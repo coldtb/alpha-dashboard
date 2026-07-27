@@ -1918,72 +1918,59 @@ export default async function handler(req, res) {
       // Check if this position has already been trailed (TP is moved far beyond normal cap)
       const isAlreadyTrailed = tpOrder && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
 
+      // Check A: Infinite Ratchet Step Profit Locking (Runs on every 1-minute cycle for all open positions)
+      const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
+      const finalLeverage = Math.min(5, maxLeverage);
+
+      let ratchetLockedPricePct = 0;
+      if (returnPct >= 0.050) ratchetLockedPricePct = (returnPct - 0.010) / finalLeverage;
+      else if (returnPct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
+      else if (returnPct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
+      else if (returnPct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
+
+      if (ratchetLockedPricePct > 0) {
+        const targetSlPx = isLong 
+          ? entryPx * (1 + ratchetLockedPricePct)
+          : entryPx * (1 - ratchetLockedPricePct);
+
+        const currentSlPx = slOrder ? parseFloat(slOrder.triggerPx) : (isLong ? 0 : 999999);
+        const isBetterSl = isLong ? targetSlPx > currentSlPx : targetSlPx < currentSlPx;
+
+        if (isBetterSl) {
+          logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock SL to $${targetSlPx.toFixed(4)} (Current SL: $${currentSlPx.toFixed(4)})...`, "events");
+          try {
+            if (!isDryRun) {
+              // Cancel old SL order
+              if (slOrder) {
+                const assetIndex = hlMeta.universe.findIndex(a => a.name === coin);
+                await exchange.cancel({ cancels: [{ a: assetIndex, o: slOrder.oid }] });
+              }
+              // Place new ratchet locked SL order
+              const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, targetSlPx));
+              await exchange.order({
+                orders: attachBuilderFee([{
+                  a: currentCoin.assetIndex,
+                  b: !isLong,
+                  p: slWorstPx,
+                  s: formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals),
+                  r: true,
+                  t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: "sl" } }
+                }])
+              });
+              logger.info(`[Ratchet Profit Lock] Successfully updated SL for ${coin} to $${targetSlPx.toFixed(4)}!`, "events");
+              await sendDiscordAlert(`🛡️ **Ratchet Profit Lock Updated!**\n**Coin:** ${coin}\n**ROE:** +${(returnPct * 100).toFixed(2)}%\n**New SL:** $${targetSlPx.toFixed(4)} (Guaranteed Profit Lock)`, 'open').catch(() => {});
+            }
+          } catch (rErr) {
+            logger.error(`[Ratchet Profit Lock] Error updating SL for ${coin}: ${rErr.message}`, "events");
+          }
+        }
+      }
+
       if (isAlreadyTrailed) {
         logger.info(`[Active Trailing] Position ${coin} is already trailed. Skipping further adjustments.`, "events");
       }
-      // Check A: Profit Trailing (highest priority, only if not already trailed)
+      // Check B: Profit Trailing when price is near TP (85%+ distance)
       else if (isNearTp) {
-        let trailedTp = isLong ? currentPrice * 1.02 : currentPrice * 0.98; // default fallback trailing TP
-        let smartTpAdjusted = false;
-
-        // Fetch Options and Derivatives analysis to check for walls/magnets beyond currentPrice
-        if (geckoIdActive) {
-          try {
-            logger.info(`[Profit Trailing] Fetching Options and Derivatives data from TrueNorth to calculate Smart TP for ${coin}...`, "events");
-            const [derivRes, optRes] = await Promise.all([
-              callTrueNorthMcp('derivatives_analysis', { token_address: geckoIdActive }).catch(() => null),
-              callTrueNorthMcp('options_report', { token_address: geckoIdActive }).catch(() => null)
-            ]);
-            
-            let parsedDerivTrailing = null;
-            let parsedOptTrailing = null;
-            if (derivRes?.result?.content?.[0]?.text) {
-              parsedDerivTrailing = JSON.parse(derivRes.result.content[0].text);
-            }
-            if (optRes?.result?.content?.[0]?.text) {
-              parsedOptTrailing = JSON.parse(optRes.result.content[0].text);
-            }
-
-            // Calculate strategy levels with maxTpPctOverride = 0.15 (allow up to 15% price change target for second stage!)
-            const trailingLevels = computeStrategyLevels(
-              currentCoin,
-              isLong ? 'LONG' : 'SHORT',
-              taDataActive,
-              parsedDerivTrailing,
-              parsedOptTrailing,
-              true, // useSmartSlTp
-              entryPx, // entryOverride
-              0.15 // maxTpPctOverride
-            );
-
-            // Verify if the calculated smart TP is further in the profit direction than currentPrice
-            const isValidSmartTp = isLong ? trailingLevels.tp > currentPrice * 1.005 : trailingLevels.tp < currentPrice * 0.995;
-            if (isValidSmartTp) {
-              trailedTp = trailingLevels.tp;
-              smartTpAdjusted = true;
-              logger.info(`[Profit Trailing] Found valid Smart TP for ${coin} beyond currentPrice: ${trailedTp} (Reason: ${trailingLevels.reason})`, "events");
-            }
-          } catch (e) {
-            logger.error(`[Profit Trailing] Smart TP calculation failed for ${coin}: ${e.message}`, "events");
-          }
-        }
-
-        // Infinite Ratchet Step Profit Locking (Leverage-Adjusted):
-        // Automatically locks SL in progressive profit tiers (+0.5%, +1.5%, +2.5%, +4.0%, +N-1.0% ROE)
-        // Divide ROE return by leverage (5x) so SL steps up immediately on exact price movements!
-        const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
-        const finalLeverage = Math.min(5, maxLeverage);
-
-        let ratchetLockedPricePct = 0;
-        if (returnPct >= 0.050) ratchetLockedPricePct = (returnPct - 0.010) / finalLeverage;
-        else if (returnPct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
-        else if (returnPct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
-        else if (returnPct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
-
-        const newTpPx = trailedTp; // Keep TP reachable at technical cap
-        const newSlPx = isLong 
-          ? Math.max(entryPx * (1 + ratchetLockedPricePct), isLong ? entryPx * 1.001 : entryPx * 0.999) 
-          : Math.min(entryPx * (1 - ratchetLockedPricePct), isLong ? entryPx * 1.001 : entryPx * 0.999);
 
         logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Price Lock: ${(ratchetLockedPricePct * 100).toFixed(2)}%. Trailing TP at ${newTpPx.toFixed(4)}, SL locked at ${newSlPx.toFixed(4)}.`, "events");
         try {
