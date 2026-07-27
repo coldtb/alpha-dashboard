@@ -1146,45 +1146,25 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
     if (dir === 'LONG') {
       // Stop Loss must be at least effectiveMinSlBuffer below entry
       const maxSlAllowed = entry * (1 - effectiveMinSlBuffer);
-      if (sl > maxSlAllowed) {
-        sl = maxSlAllowed;
-      }
-      // Stop Loss is capped at a maximum slCap
+      if (sl > maxSlAllowed) sl = maxSlAllowed;
       const minSlAllowed = entry * (1 - slCap);
-      if (sl < minSlAllowed) {
-        sl = minSlAllowed;
-      }
-      // Enforce Take Profit is at least config.minTpBuffer above entry
-      const minTpAllowed = entry * (1 + config.minTpBuffer);
-      if (tp < minTpAllowed) {
-        tp = minTpAllowed;
-      }
-      // Cap TP at a maximum of +maxTpPct to prevent unrealistic options targets
-      const maxTpAllowed = entry * (1 + maxTpPct);
-      if (tp > maxTpAllowed) {
-        tp = maxTpAllowed;
-      }
+      if (sl < minSlAllowed) sl = minSlAllowed;
+
+      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio
+      const slDistPct = (entry - sl) / entry;
+      const minTpPct = Math.max(slDistPct * 1.8, 0.015);
+      tp = Math.max(tp, entry * (1 + minTpPct));
     } else {
       // Stop Loss must be at least effectiveMinSlBuffer above entry
       const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
-      if (sl < minSlAllowed) {
-        sl = minSlAllowed;
-      }
-      // Stop Loss is capped at a maximum (e.g. +1.5% for BTC, +2% for others)
+      if (sl < minSlAllowed) sl = minSlAllowed;
       const maxSlAllowed = entry * (1 + slCap);
-      if (sl > maxSlAllowed) {
-        sl = maxSlAllowed;
-      }
-      // Enforce Take Profit is at least config.minTpBuffer below entry
-      const maxTpAllowed = entry * (1 - config.minTpBuffer);
-      if (tp > maxTpAllowed) {
-        tp = maxTpAllowed;
-      }
-      // Cap TP at a maximum of -maxTpPct to prevent unrealistic options targets
-      const minTpAllowed = entry * (1 - maxTpPct);
-      if (tp < minTpAllowed) {
-        tp = minTpAllowed;
-      }
+      if (sl > maxSlAllowed) sl = maxSlAllowed;
+
+      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio
+      const slDistPct = (sl - entry) / entry;
+      const minTpPct = Math.max(slDistPct * 1.8, 0.015);
+      tp = Math.min(tp, entry * (1 - minTpPct));
     }
   }
 
