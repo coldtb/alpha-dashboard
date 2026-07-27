@@ -1211,6 +1211,16 @@ function calculateScore(coin, isHyperliquidScale = false) {
     score += 15;
   }
 
+  // Volatility & Momentum Surge Boost (+25 Points for high-volatility explosive movers):
+  // Gives high 24h momentum/volatility altcoins (abs 24h change >= 4.0%) an extra boost so top movers rank at the top!
+  const absChange = Math.abs(coin.change || 0);
+  if (absChange >= 4.0) {
+    score += 15;
+    if (absChange >= 8.0) {
+      score += 10;
+    }
+  }
+
   const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
   const watchlistBonus = config.watchlistBonus !== undefined ? config.watchlistBonus : 15;
   if (watchlist.includes(coin.symbol)) {
