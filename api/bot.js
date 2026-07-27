@@ -1956,17 +1956,18 @@ export default async function handler(req, res) {
                 await exchange.cancel({ cancels: [{ a: assetIndex, o: slOrder.oid }] });
               }
               // Place new ratchet locked SL order
-              // Determine correct Hyperliquid tpsl tag: if target SL is in profit relative to entry, set appropriate trigger
+              // Determine correct Hyperliquid tpsl tag and market worst price buffer
               const tpslTag = isLong 
                 ? (targetSlPx < currentPrice ? "sl" : "tp")
                 : (targetSlPx > currentPrice ? "sl" : "tp");
 
-              const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, targetSlPx));
+              const ratchetWorstPx = formatPrice(isLong ? targetSlPx * 0.90 : targetSlPx * 1.10);
+
               await exchange.order({
                 orders: attachBuilderFee([{
                   a: currentCoin.assetIndex,
                   b: !isLong,
-                  p: slWorstPx,
+                  p: ratchetWorstPx,
                   s: formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals),
                   r: true,
                   t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: tpslTag } }
