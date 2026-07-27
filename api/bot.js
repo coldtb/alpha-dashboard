@@ -2759,6 +2759,17 @@ export default async function handler(req, res) {
         }
       }
 
+      // Strict Support/Resistance Zone Touch Check: Only execute if price is inside/touching Support/Resistance Zone (within 0.3%)
+      if (levels && levels.entry) {
+        if (direction === 'LONG' && cand.price > levels.entry * 1.003) {
+          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.3% Support Zone $${levels.entry} (waiting for support touch)`, "events");
+          continue;
+        } else if (direction === 'SHORT' && cand.price < levels.entry * 0.997) {
+          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.3% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
+          continue;
+        }
+      }
+
       // Valid candidate found
       target = cand;
       taData = parsedTa;
