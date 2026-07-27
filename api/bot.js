@@ -2915,14 +2915,14 @@ export default async function handler(req, res) {
       // B. Place Bracket Order (Limit Entry + TP/SL bracket)
       const orderResult = await exchange.order({
         orders: attachBuilderFee([
-          // Limit Maker Entry (Gtc)
+          // Direct Market Order Entry (IOC at market worst price for instant fill)
           {
             a: target.assetIndex,
             b: isBuy,
-            p: entryPx,
+            p: entryMarketWorstPx,
             s: entrySz,
             r: false,
-            t: { limit: { tif: "Gtc" } },
+            t: { limit: { tif: "Ioc" } },
             c: entryCloid
           },
           // Take Profit Trigger Order (Market Trigger to guarantee fill)
