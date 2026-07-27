@@ -1966,15 +1966,17 @@ export default async function handler(req, res) {
           logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock SL to $${targetSlPx.toFixed(4)} (Current SL: $${currentSlPx.toFixed(4)})...`, "events");
           try {
             if (!isDryRun) {
+              const assetIdx = hlMeta ? hlMeta.universe.findIndex(a => a.name === coin) : meta[0].universe.findIndex(a => a.name === coin);
+              const szDec = hlMeta ? hlMeta.universe[assetIdx].szDecimals : meta[0].universe[assetIdx].szDecimals;
+
               // Cancel old SL order safely with explicit Number casting
               if (slOrder && slOrder.oid) {
-                const assetIndex = currentCoin.assetIndex;
-                await exchange.cancel({ cancels: [{ a: assetIndex, o: Number(slOrder.oid) }] }).catch(err => {
+                await exchange.cancel({ cancels: [{ a: assetIdx, o: Number(slOrder.oid) }] }).catch(err => {
                   logger.warn(`[Ratchet Lock Cancel Warning] ${err.message}`, "events");
                 });
               }
+
               // Place new ratchet locked SL order
-              // Determine correct Hyperliquid tpsl tag and market worst price buffer
               const tpslTag = isLong 
                 ? (targetSlPx < currentPrice ? "sl" : "tp")
                 : (targetSlPx > currentPrice ? "sl" : "tp");
@@ -1983,10 +1985,10 @@ export default async function handler(req, res) {
 
               await exchange.order({
                 orders: attachBuilderFee([{
-                  a: currentCoin.assetIndex,
+                  a: assetIdx,
                   b: !isLong,
                   p: ratchetWorstPx,
-                  s: formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals),
+                  s: formatSize(Math.abs(size), szDec),
                   r: true,
                   t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: tpslTag } }
                 }])
