@@ -2357,7 +2357,7 @@ export default async function handler(req, res) {
       logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
     }
 
-    // 5-Minute Frequency Discord Status Report Generator (Formatted exactly like the image table)
+    // 5-Minute Frequency Discord Status Report Generator (Formatted exactly like the image table + detailed entry rules)
     const currentMin = new Date().getMinutes();
     if (currentMin % 5 === 0) {
       if (!global.lastDiscordReportMin || global.lastDiscordReportMin !== currentMin) {
@@ -2371,9 +2371,35 @@ export default async function handler(req, res) {
           }
         }
 
-        const activeCount = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0).length;
+        const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
+        const activeCount = activePositionsList.length;
 
         let reportMsg = `**💰 Account Balance:** $${displayBalance.toFixed(2)} | **Active Positions:** ${activeCount}/${maxConcurrentPositions}\n\n`;
+
+        // 1. Active Positions Live Status & Ratchet Lock Progress
+        if (activeCount > 0) {
+          reportMsg += `**📊 ИДЭВХТЭЙ НЭЭЛТТЭЙ АРИЛЖААНУУД (Active Open Positions):**\n`;
+          activePositionsList.forEach(ap => {
+            const pos = ap.position;
+            const size = parseFloat(pos.szi);
+            const isLong = size > 0;
+            const coinName = pos.coin;
+            const entryPx = parseFloat(pos.entryPx);
+            const roePct = (parseFloat(pos.returnOnEquity || '0') * 100).toFixed(2);
+            const coinOrders = openOrders.filter(o => o.coin === coinName);
+            const slOrder = coinOrders.find(o => o.orderType === 'Stop Market' || (o.triggerCondition && o.triggerCondition.includes('below') && isLong) || (o.triggerCondition && o.triggerCondition.includes('above') && !isLong));
+            const tpOrder = coinOrders.find(o => o.orderType === 'Take Profit Market' || (o.triggerCondition && o.triggerCondition.includes('above') && isLong) || (o.triggerCondition && o.triggerCondition.includes('below') && !isLong));
+
+            const slText = slOrder ? (slOrder.triggerCondition || `Stop Market @ $${slOrder.limitPx}`) : 'No SL Set';
+            const tpText = tpOrder ? (tpOrder.triggerCondition || `Take Profit @ $${tpOrder.limitPx}`) : 'No TP Set';
+
+            reportMsg += `• **${coinName} ${isLong ? 'LONG 🟢' : 'SHORT 🔴'}**: Entry **$${entryPx}** | ROE **${roePct}%**\n`;
+            reportMsg += `  └ 🛡️ **Stop Loss:** ${slText} | 🎯 **Take Profit:** ${tpText}\n`;
+          });
+          reportMsg += `\n`;
+        }
+
+        // 2. Candidates Monitoring Table (Formatted exactly like user screenshot)
         reportMsg += `\`\`\`text\n`;
         reportMsg += `LIVE CANDIDATES MONITORING FOR SLOTS 2 & 3\n\n`;
         reportMsg += `Зоос    | Направление | Одоогийн Үнэ | Дэмжлэгийн Бүс | Зайн Зөрүү % | 0.3% Touch Gate Төлөв\n`;
@@ -2410,7 +2436,13 @@ export default async function handler(req, res) {
           reportMsg += `${symStr}| ${dirStr}| ${pxStr}| ${suppStr}| ${distStr}| ${statusStr}\n`;
         }
 
-        reportMsg += `\`\`\``;
+        reportMsg += `\`\`\`\n`;
+        reportMsg += `**🎯 ИДЭВХТЭЙ ОРОЛТЫН ШААРДЛАГА (Entry Rules Checklist):**\n`;
+        reportMsg += `1. **1h Macro Trend:** Price > 1h SMA20 > 1h SMA50 (Bullish Alignment)\n`;
+        reportMsg += `2. **0.3% Touch Gate:** Market Price must be <= 0.3% from TrueNorth Support/Resistance Zone\n`;
+        reportMsg += `3. **Risk Guard:** Funding Rate Percentile < 98% (No Crowded Trap)\n`;
+        reportMsg += `4. **Execution:** Instant Taker Direct Market Order (100ms Execution)`;
+
         await sendDiscordAlert(reportMsg, 'info');
       }
     }
