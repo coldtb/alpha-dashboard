@@ -1933,8 +1933,18 @@ export default async function handler(req, res) {
           ? entryPx * (1 + ratchetLockedPricePct)
           : entryPx * (1 - ratchetLockedPricePct);
 
-        const currentSlPx = slOrder ? parseFloat(slOrder.triggerPx) : (isLong ? 0 : 999999);
-        const isBetterSl = isLong ? targetSlPx > currentSlPx : targetSlPx < currentSlPx;
+        let currentSlPx = isLong ? 0 : 999999;
+        if (slOrder) {
+          const parsedVal = parseFloat(slOrder.triggerPx || slOrder.limitPx || "0");
+          if (!isNaN(parsedVal) && parsedVal > 0) {
+            currentSlPx = parsedVal;
+          } else if (slOrder.triggerCondition) {
+            const match = slOrder.triggerCondition.match(/[\d.]+/);
+            if (match) currentSlPx = parseFloat(match[0]);
+          }
+        }
+
+        const isBetterSl = isLong ? (targetSlPx > currentSlPx) : (targetSlPx < currentSlPx);
 
         if (isBetterSl) {
           logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock SL to $${targetSlPx.toFixed(4)} (Current SL: $${currentSlPx.toFixed(4)})...`, "events");
