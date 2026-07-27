@@ -2737,28 +2737,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check if current market price is already significantly past the calculated TP price (at least 0.3% past)
-      if (levels && levels.tp) {
-        if (direction === "LONG" && cand.price >= levels.tp * 1.003) {
-          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already 0.3%+ past TP $${levels.tp}`, "events");
-          continue;
-        } else if (direction === "SHORT" && cand.price <= levels.tp * 0.997) {
-          logger.warn(`[Bot Execution] Skip candidate ${cand.symbol}: Current price $${cand.price} is already 0.3%+ past TP $${levels.tp}`, "events");
-          continue;
-        }
-      }
-
-      // Strict Support/Resistance Zone Touch Check: Only execute if price is inside/touching Support/Resistance Zone (within 0.25%)
-      if (levels && levels.entry) {
-        if (direction === 'LONG' && cand.price > levels.entry * 1.0025) {
-          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above Support Zone $${levels.entry} (waiting for support touch)`, "events");
-          continue;
-        } else if (direction === 'SHORT' && cand.price < levels.entry * 0.9975) {
-          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
-          continue;
-        }
-      }
-
       // Strict Support/Resistance Zone Touch Check: Only execute if price is inside/touching Support/Resistance Zone (within 0.3%)
       if (levels && levels.entry) {
         if (direction === 'LONG' && cand.price > levels.entry * 1.003) {
