@@ -1906,17 +1906,17 @@ export default async function handler(req, res) {
       }
 
       // 3. Hierarchical active trailing logic
-      const tpPx = parseFloat(tpOrder.triggerPx);
+      const tpPx = tpOrder ? parseFloat(tpOrder.triggerPx || tpOrder.limitPx || "0") : 0;
       
       // Generalized isNearTp: true if price has completed >= 85% of the entry-to-TP distance
-      const totalTpDistance = Math.abs(tpPx - entryPx);
+      const totalTpDistance = tpPx > 0 ? Math.abs(tpPx - entryPx) : 0;
       const currentTpDistance = Math.abs(currentPrice - entryPx);
       const isNearTp = totalTpDistance > 0 && currentTpDistance >= totalTpDistance * 0.85 && (isLong ? currentPrice > entryPx : currentPrice < entryPx);
       
-      const slIsWorseThanEntry = slOrder && (isLong ? parseFloat(slOrder.triggerPx) < entryPx : parseFloat(slOrder.triggerPx) > entryPx);
+      const slIsWorseThanEntry = slOrder && (isLong ? parseFloat(slOrder.triggerPx || slOrder.limitPx || "0") < entryPx : parseFloat(slOrder.triggerPx || slOrder.limitPx || "0") > entryPx);
 
       // Check if this position has already been trailed (TP is moved far beyond normal cap)
-      const isAlreadyTrailed = tpOrder && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
+      const isAlreadyTrailed = tpOrder && tpPx > 0 && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
 
       // Check A: Infinite Ratchet Step Profit Locking (Runs on every 1-minute cycle for all open positions)
       const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
