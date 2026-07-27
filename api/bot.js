@@ -1947,12 +1947,13 @@ export default async function handler(req, res) {
       // Check A: Infinite Ratchet Step Profit Locking (Runs on every 1-minute cycle for all open positions)
       const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
       const finalLeverage = Math.min(5, maxLeverage);
+      const roePct = returnPct * finalLeverage;
 
       let ratchetLockedPricePct = 0;
-      if (returnPct >= 0.050) ratchetLockedPricePct = (returnPct - 0.010) / finalLeverage;
-      else if (returnPct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
-      else if (returnPct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
-      else if (returnPct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
+      if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage;
+      else if (roePct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
+      else if (roePct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
+      else if (roePct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
