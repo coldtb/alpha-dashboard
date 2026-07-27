@@ -1956,6 +1956,11 @@ export default async function handler(req, res) {
                 await exchange.cancel({ cancels: [{ a: assetIndex, o: slOrder.oid }] });
               }
               // Place new ratchet locked SL order
+              // Determine correct Hyperliquid tpsl tag: if target SL is in profit relative to entry, set appropriate trigger
+              const tpslTag = isLong 
+                ? (targetSlPx < currentPrice ? "sl" : "tp")
+                : (targetSlPx > currentPrice ? "sl" : "tp");
+
               const slWorstPx = formatPrice(getTriggerLimitPrice(!isLong, targetSlPx));
               await exchange.order({
                 orders: attachBuilderFee([{
@@ -1964,7 +1969,7 @@ export default async function handler(req, res) {
                   p: slWorstPx,
                   s: formatSize(Math.abs(size), currentCoin.assetInfo.szDecimals),
                   r: true,
-                  t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: "sl" } }
+                  t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: tpslTag } }
                 }])
               });
               logger.info(`[Ratchet Profit Lock] Successfully updated SL for ${coin} to $${targetSlPx.toFixed(4)}!`, "events");
