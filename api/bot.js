@@ -1741,10 +1741,20 @@ export default async function handler(req, res) {
       const entryPx = parseFloat(pos.position.entryPx || "0");
       if (entryPx === 0) continue;
 
-      // Find current mark price from scanner
-      const currentCoin = scoredCoins.find(c => c.symbol === coin);
-      if (!currentCoin) continue;
-      const currentPrice = currentCoin.price;
+      // Resolve asset metadata and live mark price directly from Hyperliquid universe (100% reliable)
+      const assetIdx = hlMeta ? hlMeta.universe.findIndex(a => a.name === coin) : meta[0].universe.findIndex(a => a.name === coin);
+      if (assetIdx === -1) continue;
+
+      const ctx = hlAssetCtxs ? hlAssetCtxs[assetIdx] : meta[1][assetIdx];
+      const currentPrice = parseFloat(ctx?.markPx || ctx?.midPx || "0");
+      if (currentPrice === 0) continue;
+
+      const currentCoin = {
+        symbol: coin,
+        price: currentPrice,
+        assetIndex: assetIdx,
+        assetInfo: hlMeta ? hlMeta.universe[assetIdx] : meta[0].universe[assetIdx]
+      };
 
       // Send Discord notification when a position is newly filled and becomes active
       const positionId = `${coin}-${entryPx}-${size > 0 ? 'LONG' : 'SHORT'}`;
