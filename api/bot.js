@@ -2774,12 +2774,17 @@ export default async function handler(req, res) {
       }
       
       let bypassTrendFilter = false;
+      let targetDirection = rawDirection;
+
       // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.5%)
       if (levels && levels.entry) {
-        if (rawDirection === 'LONG') {
+        // If price is near support level, direction MUST be LONG (rebound from support floor)
+        const isNearSupport = levels.reason && (levels.reason.includes('support') || levels.reason.includes('sr_channel'));
+        if (rawDirection === 'LONG' || isNearSupport) {
           if (cand.price <= levels.entry * 1.005) {
             bypassTrendFilter = true;
-            logger.info(`[Support Zone Gate] Candidate ${cand.symbol} touched 0.5% Support Zone ($${levels.entry}). Bypassing trend filters for Direct Market Entry!`, "events");
+            targetDirection = 'LONG'; // ALWAYS LONG at Support Zone!
+            logger.info(`[Support Zone Gate] Candidate ${cand.symbol} touched 0.5% Support Zone ($${levels.entry}). Executing Direct LONG Market Entry!`, "events");
           } else {
             logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
             continue;
@@ -2787,7 +2792,8 @@ export default async function handler(req, res) {
         } else if (rawDirection === 'SHORT') {
           if (cand.price >= levels.entry * 0.995) {
             bypassTrendFilter = true;
-            logger.info(`[Resistance Zone Gate] Candidate ${cand.symbol} touched 0.5% Resistance Zone ($${levels.entry}). Bypassing trend filters for Direct Market Entry!`, "events");
+            targetDirection = 'SHORT'; // ALWAYS SHORT at Resistance Zone!
+            logger.info(`[Resistance Zone Gate] Candidate ${cand.symbol} touched 0.5% Resistance Zone ($${levels.entry}). Executing Direct SHORT Market Entry!`, "events");
           } else {
             logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
             continue;
@@ -2795,8 +2801,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // Evaluate direction with trend filters applied (if not bypassed)
-      const direction = bypassTrendFilter ? rawDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
+      // Evaluate final direction
+      const direction = bypassTrendFilter ? targetDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
       if (direction === 'SKIP') {
         logger.info(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`, "events");
         continue;
