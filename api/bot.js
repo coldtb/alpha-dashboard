@@ -2773,12 +2773,22 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.5%)
       if (levels && levels.entry) {
-        if (rawDirection === 'LONG' && cand.price > levels.entry * 1.005) {
-          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
-          continue;
-        } else if (rawDirection === 'SHORT' && cand.price < levels.entry * 0.995) {
-          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
-          continue;
+        if (rawDirection === 'LONG') {
+          if (cand.price <= levels.entry * 1.005) {
+            bypassTrendFilter = true;
+            logger.info(`[Support Zone Gate] Candidate ${cand.symbol} touched 0.5% Support Zone ($${levels.entry}). Bypassing trend filters for Direct Market Entry!`, "events");
+          } else {
+            logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
+            continue;
+          }
+        } else if (rawDirection === 'SHORT') {
+          if (cand.price >= levels.entry * 0.995) {
+            bypassTrendFilter = true;
+            logger.info(`[Resistance Zone Gate] Candidate ${cand.symbol} touched 0.5% Resistance Zone ($${levels.entry}). Bypassing trend filters for Direct Market Entry!`, "events");
+          } else {
+            logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
+            continue;
+          }
         }
       }
 
