@@ -2416,7 +2416,7 @@ export default async function handler(req, res) {
         // 2. Candidates Monitoring Table (Using REAL Volatility Boosted Candidates & TrueNorth Entry Levels)
         reportMsg += `\`\`\`text\n`;
         reportMsg += `LIVE CANDIDATES MONITORING FOR SLOTS 1, 2 & 3\n\n`;
-        reportMsg += `Зоос    | Направление | Одоогийн Үнэ | Дэмжлэгийн Бүс | Зайн Зөрүү % | 0.3% Touch Gate Төлөв\n`;
+        reportMsg += `Зоос    | Направление | Одоогийн Үнэ | Дэмжлэгийн Бүс | Зайн Зөрүү % | 0.5% Touch Gate Төлөв\n`;
         reportMsg += `--------+-------------+--------------+----------------+--------------+-------------------------\n`;
 
         // Filter tradeable candidates dynamically for Discord report
@@ -2466,7 +2466,7 @@ export default async function handler(req, res) {
         reportMsg += `\`\`\`\n`;
         reportMsg += `**🎯 ИДЭВХТЭЙ ОРОЛТЫН ШААРДЛАГА (Entry Rules Checklist):**\n`;
         reportMsg += `1. **1h Macro Trend:** Price > 1h SMA20 > 1h SMA50 (Bullish Alignment)\n`;
-        reportMsg += `2. **0.3% Touch Gate:** Market Price must be <= 0.3% from TrueNorth Support/Resistance Zone\n`;
+        reportMsg += `2. **0.5% Touch Gate:** Market Price must be <= 0.5% from TrueNorth Support/Resistance Zone\n`;
         reportMsg += `3. **Risk Guard:** Funding Rate Percentile < 98% (No Crowded Trap)\n`;
         reportMsg += `4. **Execution:** Instant Taker Direct Market Order (100ms Execution)`;
 
