@@ -2332,6 +2332,7 @@ export default async function handler(req, res) {
               logger.info(`[DRY RUN] Bypassed divergence SL tightening for ${coin}`, "events");
             } else {
               await safeCancelOrders(exchange, [{ a: currentCoin.assetIndex, o: slOrder.oid }]);
+              await new Promise(r => setTimeout(r, 100)); // Rate limit protection
               const orderRes = await exchange.order({
                 orders: attachBuilderFee([{
                   a: currentCoin.assetIndex,
