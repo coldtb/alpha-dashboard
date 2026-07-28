@@ -267,6 +267,20 @@ const geckoIdMap = {
   "SUI": "sui",
   "TIA": "celestia",
   "FTM": "fantom",
+  "BTC": "bitcoin",
+  "ETH": "ethereum",
+  "SOL": "solana",
+  "BNB": "binancecoin",
+  "TRUMP": "official-trump",
+  "TRX": "tron",
+  "PAXG": "pax-gold",
+  "PUMP": "pump-eth",
+  "HYPE": "hyperliquid",
+  "SUI": "sui",
+  "LINK": "chainlink",
+  "XRP": "ripple",
+  "INJ": "injective-protocol",
+  "WLD": "worldcoin-wld",
   "AVAX": "avalanche-2",
   "NEAR": "near",
   "OP": "optimism",
@@ -2610,7 +2624,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const geckoId = geckoIdMap[cand.symbol];
+      const geckoId = geckoIdMap[cand.symbol] || cand.symbol.toLowerCase();
       let parsedTa = null;
       let parsedDeriv = null;
       let parsedOpt = null;
