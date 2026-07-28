@@ -2433,10 +2433,10 @@ export default async function handler(req, res) {
             statusStr = "Position Open 🟢";
           } else if (hasOpenOrder) {
             statusStr = "Open Order Pending ⏳";
-          } else if (distPct <= 0.30) {
-            statusStr = "🟢 ШУУД ОРОХОД БЭЛЭН! (Inside 0.3%)";
+          } else if (distPct <= 0.50) {
+            statusStr = "🟢 ШУУД ОРОХОД БЭЛЭН! (Inside 0.5%)";
           } else {
-            const needPct = Math.max(0, distPct - 0.30).toFixed(2);
+            const needPct = Math.max(0, distPct - 0.50).toFixed(2);
             statusStr = `⏳ ${needPct}% хүлээж байна`;
           }
 
@@ -2757,16 +2757,14 @@ export default async function handler(req, res) {
       }
       
       let bypassTrendFilter = false;
-      // For Instant Taker Direct Market Entry, if market price is touching Support/Resistance Zone (within 0.3%), bypass trend filter and execute instantly
-      if (rawDirection === 'LONG' && levels.reason.includes('support_rebound')) {
-        if (cand.price <= levels.entry * 1.003) {
-          bypassTrendFilter = true;
-          logger.info(`[Support Rebound Touch] Candidate ${cand.symbol} touched Support Zone ($${levels.entry}). Bypassing trend filter for Direct Market Order.`, "events");
-        }
-      } else if (rawDirection === 'SHORT' && levels.reason.includes('resistance_rebound')) {
-        if (cand.price >= levels.entry * 0.997) {
-          bypassTrendFilter = true;
-          logger.info(`[Resistance Rebound Touch] Candidate ${cand.symbol} touched Resistance Zone ($${levels.entry}). Bypassing trend filter for Direct Market Order.`, "events");
+      // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.5%)
+      if (levels && levels.entry) {
+        if (direction === 'LONG' && cand.price > levels.entry * 1.005) {
+          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
+          continue;
+        } else if (direction === 'SHORT' && cand.price < levels.entry * 0.995) {
+          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
+          continue;
         }
       }
 
