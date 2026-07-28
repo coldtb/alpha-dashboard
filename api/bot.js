@@ -918,7 +918,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           tp = vwap > minTp ? vwap : entry + (entry - sl) * 2;
         }
       } else {
-        sl    = low * 0.985;
+        entry = price;
+        sl    = Math.min(low * 0.985, entry * 0.985);
         reason = 'fib_fallback';
 
         const minTp = entry + (entry - sl) * 1.5;
@@ -963,7 +964,8 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
           tp = vwap < minTp ? vwap : entry - (sl - entry) * 2;
         }
       } else {
-        sl    = high * 1.015;
+        entry = price;
+        sl    = Math.max(high * 1.015, entry * 1.015);
         reason = 'fib_fallback';
 
         const minTp = entry - (sl - entry) * 1.5;
