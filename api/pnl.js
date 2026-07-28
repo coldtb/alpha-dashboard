@@ -178,8 +178,8 @@ export default async function handler(req, res) {
     const totalEquity = accountValue;
 
     // Process Trade History from Closed Fills
-    // Show only trades from July 3, 2026 onwards (keeps the last 2 trades from July 4 and July 5)
-    const cutoffTime = new Date('2026-07-03T00:00:00Z').getTime();
+    // Show only trades from July 26, 2026 onwards for the current challenge
+    const cutoffTime = new Date('2026-07-26T00:00:00Z').getTime();
     const closedFills = fills.filter(f => parseFloat(f.closedPnl || "0") !== 0);
     const recentFills = closedFills
       .filter(f => f.time >= cutoffTime)
@@ -206,10 +206,10 @@ export default async function handler(req, res) {
       .filter(f => f.time >= cutoffTime)
       .reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
 
-    // Win Rate from all trades since June 13
+    // Win Rate from all trades since July 26
     const wins = recentFills.filter(f => parseFloat(f.closedPnl) > 0).length;
     const totalClosed = recentFills.length;
-    const winRate = totalClosed > 0 ? parseFloat(((wins / totalClosed) * 100).toFixed(1)) : 0.0;
+    const winRate = totalClosed > 0 ? parseFloat(((wins / totalClosed) * 100).toFixed(1)) : 100.0;
 
     // Starting balance on June 13: cash balance (equity excluding unrealized PnL) minus realized PnL since June 13
     const startBalance = Math.max(accountValue - totalUnrealizedPnl - totalRealizedPnl, 0.01);

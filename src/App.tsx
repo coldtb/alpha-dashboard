@@ -79,19 +79,19 @@ const DashboardContent: React.FC = () => {
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Jun 13+ PnL (All)</span>
+            <span className="perf-label">Jul 26+ PnL (All)</span>
             <span className={`perf-val ${botRealizedPnl >= 0 ? 'change-up' : 'change-down'}`} id="perf-bot-realized-pnl" style={{ background: 'none', padding: 0 }}>
               {botRealizedPnl >= 0 ? '+' : ''}${botRealizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Balance Growth (Jun 13)</span>
+            <span className="perf-label">Balance Growth (Jul 26)</span>
             <span className={`perf-val ${balanceGrowth >= 0 ? 'change-up' : 'change-down'}`} id="perf-balance-growth" style={{ background: 'none', padding: 0 }}>
               {balanceGrowth >= 0 ? '+' : ''}{balanceGrowth.toFixed(2)}%
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Win Rate (Jun 13+)</span>
+            <span className="perf-label">Win Rate (Jul 26+)</span>
             <span className={`perf-val ${winRate >= 50 ? 'change-up' : 'change-down'}`} id="perf-win-rate" style={{ background: 'none', padding: 0 }}>
               {winRate.toFixed(1)}%
             </span>
