@@ -8,6 +8,7 @@ import { ClosedTrades } from './features/trading/components/ClosedTrades';
 import { FuturesScanner } from './features/dashboard/components/FuturesScanner';
 import { PromptsHub } from './features/analytics/components/PromptsHub';
 import { DeepInsightsDrawer } from './features/analytics/components/DeepInsightsDrawer';
+import { EternaSignalStream } from './features/analytics/components/EternaSignalStream';
 
 const DashboardContent: React.FC = () => {
   const {
@@ -54,6 +55,9 @@ const DashboardContent: React.FC = () => {
         />
         <OpportunityPodium onApplyPlan={handleApplyPlan} />
       </div>
+
+      {/* Live Eterna AI & TrueNorth Signals Feed */}
+      <EternaSignalStream />
 
       {/* Bot Performance & Active Positions Section */}
       <section className="performance-section">
