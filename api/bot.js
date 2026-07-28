@@ -2757,21 +2757,16 @@ export default async function handler(req, res) {
       }
       
       let bypassTrendFilter = false;
+      // For Instant Taker Direct Market Entry, if market price is touching Support/Resistance Zone (within 0.3%), bypass trend filter and execute instantly
       if (rawDirection === 'LONG' && levels.reason.includes('support_rebound')) {
-        const minDrop = config.minSupportDropPct !== undefined ? config.minSupportDropPct : 0.015;
-        if (levels.entry <= cand.price * (1 - minDrop)) {
+        if (cand.price <= levels.entry * 1.003) {
           bypassTrendFilter = true;
-          logger.info(`[Support Rebound Bypass] Candidate ${cand.symbol} qualifies for Support Rebound limit buy (Entry: ${levels.entry} is >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}). Bypassing trend filters.`, "events");
-        } else {
-          logger.info(`[Support Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minDrop * 100).toFixed(1)}% below market price: ${cand.price}`, "events");
+          logger.info(`[Support Rebound Touch] Candidate ${cand.symbol} touched Support Zone ($${levels.entry}). Bypassing trend filter for Direct Market Order.`, "events");
         }
       } else if (rawDirection === 'SHORT' && levels.reason.includes('resistance_rebound')) {
-        const minRise = config.minResistanceRisePct !== undefined ? config.minResistanceRisePct : 0.015;
-        if (levels.entry >= cand.price * (1 + minRise)) {
+        if (cand.price >= levels.entry * 0.997) {
           bypassTrendFilter = true;
-          logger.info(`[Resistance Rebound Bypass] Candidate ${cand.symbol} qualifies for Resistance Rebound limit sell (Entry: ${levels.entry} is >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}). Bypassing trend filters.`, "events");
-        } else {
-          logger.info(`[Resistance Rebound Bypass Check] Candidate ${cand.symbol} did not qualify: Entry: ${levels.entry} is not >= ${(minRise * 100).toFixed(1)}% above market price: ${cand.price}`, "events");
+          logger.info(`[Resistance Rebound Touch] Candidate ${cand.symbol} touched Resistance Zone ($${levels.entry}). Bypassing trend filter for Direct Market Order.`, "events");
         }
       }
 
