@@ -199,12 +199,9 @@ export default async function handler(req, res) {
       };
     });
 
-    // All fills (ever) for total PnL
-    const botClosedFills = closedFills.filter(f => f.cloid && f.cloid.startsWith("0x626f745f"));
+    // All fills since July 26th for total PnL
     const totalRealizedPnl = recentFills.reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
-    const botRealizedPnl = botClosedFills
-      .filter(f => f.time >= cutoffTime)
-      .reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
+    const botRealizedPnl = totalRealizedPnl;
 
     // Win Rate from all trades since July 26
     const wins = recentFills.filter(f => parseFloat(f.closedPnl) > 0).length;
