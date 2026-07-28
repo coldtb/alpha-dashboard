@@ -2808,6 +2808,17 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // Hard Macro Trend Protection Guard (NEVER trade against a strong macro trend!)
+      const macroTrend = parsedTa?.trend || 'UNKNOWN';
+      if (direction === 'SHORT' && (macroTrend === 'Bullish' || (sma24 && cand.price > sma24 * 1.005))) {
+        logger.warn(`[Macro Trend Guard] Blocked SHORT candidate ${cand.symbol}: Cannot open SHORT during strong Bullish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+        continue;
+      }
+      if (direction === 'LONG' && (macroTrend === 'Bearish' || (sma24 && cand.price < sma24 * 0.995))) {
+        logger.warn(`[Macro Trend Guard] Blocked LONG candidate ${cand.symbol}: Cannot open LONG during strong Bearish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+        continue;
+      }
+
       // Dual Timeframe Confluence Gate (1h Macro Trend + 15m Micro Entry Alignment)
       if (!bypassTrendFilter) {
         const isReboundTrade = levels.reason && (
