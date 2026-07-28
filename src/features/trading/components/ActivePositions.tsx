@@ -51,9 +51,16 @@ export const ActivePositions: React.FC = () => {
                       })}
                     </td>
                     <td>
-                      <span className={`ticker-change ${pnlClass}`} style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0.15rem 0.45rem' }}>
-                        {pnlPrefix}${pnlNum.toFixed(2)}
-                      </span>
+                      {(() => {
+                        const roeVal = marginUsedNum > 0 ? (pnlNum / marginUsedNum) * 100 : 0;
+                        const roePrefix = roeVal >= 0 ? '+' : '';
+                        const roeText = `${roePrefix}${roeVal.toFixed(1)}% ROE`;
+                        return (
+                          <span className={`ticker-change ${pnlClass}`} style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0.15rem 0.45rem' }}>
+                            {pnlPrefix}${pnlNum.toFixed(2)} <span style={{ fontSize: '0.75rem', opacity: 0.85, marginLeft: '4px' }}>({roeText})</span>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
                       ${marginUsedNum.toFixed(2)} ({pos.leverage}x)
