@@ -2418,9 +2418,9 @@ export default async function handler(req, res) {
           const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.szi) !== 0);
           const hasOpenOrder = openOrders.some(order => order.coin === cand.symbol);
 
-          // Estimate TrueNorth direction and entry level
-          let direction = (cand.change >= 0) ? "LONG 🟢" : "LONG 🟢";
-          if (cand.symbol === 'ARB') direction = "SHORT 🔴";
+          // Use real direction from detectAutoDirection — same logic as trading loop
+          const realDir = detectAutoDirection(cand, null, null, null);
+          let direction = (realDir === 'SHORT') ? "SHORT 🔴" : "LONG 🟢";
 
           let suppZoneVal = cand.price;
           if (cand.symbol === "BNB") suppZoneVal = 571.50;
@@ -2454,6 +2454,8 @@ export default async function handler(req, res) {
 
           reportMsg += `${symStr}| ${dirStr}| ${pxStr}| ${suppStr}| ${distStr}| ${statusStr}\n`;
         }
+
+
 
         reportMsg += `\`\`\`\n`;
         reportMsg += `**🎯 ИДЭВХТЭЙ ОРОЛТЫН ШААРДЛАГА (Entry Rules Checklist):**\n`;
