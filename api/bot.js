@@ -1888,15 +1888,30 @@ export default async function handler(req, res) {
       // 1. Calculate recovery levels in case TP/SL are missing (passing entryPx as entryOverride, and currentCoin for current TA references)
       // FIX #2: maxTpPctOverride from config, null-safe
       const coinMaxTpPct = COIN_TP_CAP[coin] ?? 0.0075;
-      const recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx, coinMaxTpPct);
+      let recoveryLevels = computeStrategyLevels(currentCoin, isLong ? 'LONG' : 'SHORT', taDataActive, null, null, useSmartSlTp, entryPx, coinMaxTpPct);
 
       // 2. Self-healing recovery: if TP or SL order is missing, recreate them!
       if (!tpOrder || !slOrder) {
         logger.warn(`[Self-Healing] Missing TP or SL for active position ${coin}! (TP: ${!!tpOrder}, SL: ${!!slOrder})`, "events");
+
+        // RELIABILITY FIX: Guard against null recoveryLevels or missing assetInfo
+        if (!recoveryLevels || !recoveryLevels.sl || !recoveryLevels.tp) {
+          // Fallback: compute SL/TP from entry price with safe defaults
+          const fallbackSlPct = COIN_SL_CAP[coin] ?? 0.02;
+          const fallbackTpPct = coinMaxTpPct ?? 0.0075;
+          recoveryLevels = {
+            sl: isLong ? entryPx * (1 - fallbackSlPct) : entryPx * (1 + fallbackSlPct),
+            tp: isLong ? entryPx * (1 + fallbackTpPct) : entryPx * (1 - fallbackTpPct)
+          };
+          logger.warn(`[Self-Healing] Using fallback SL/TP levels for ${coin}: SL=$${recoveryLevels.sl.toFixed(4)}, TP=$${recoveryLevels.tp.toFixed(4)}`, "events");
+        }
+
         if (!isDryRun) {
           const ordersToPlace = [];
           const posSizeAbs = Math.abs(size);
-          const posSizeStr = formatSize(posSizeAbs, currentCoin.assetInfo.szDecimals);
+          // RELIABILITY FIX: null-safe szDecimals with fallback to 3
+          const szDecimals = currentCoin?.assetInfo?.szDecimals ?? 3;
+          const posSizeStr = formatSize(posSizeAbs, szDecimals);
 
           if (!tpOrder) {
             const tpPxStr = formatPrice(recoveryLevels.tp);
