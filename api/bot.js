@@ -256,6 +256,7 @@ const geckoIdMap = {
   "BTC": "bitcoin",
   "ETH": "ethereum",
   "SOL": "solana",
+  "BNB": "binancecoin",
   "HYPE": "hyperliquid",
   "LINK": "chainlink",
   "XRP": "ripple",
@@ -267,20 +268,8 @@ const geckoIdMap = {
   "SUI": "sui",
   "TIA": "celestia",
   "FTM": "fantom",
-  "BTC": "bitcoin",
-  "ETH": "ethereum",
-  "SOL": "solana",
-  "BNB": "binancecoin",
   "TRUMP": "official-trump",
-  "TRX": "tron",
-  "PAXG": "pax-gold",
   "PUMP": "pump-eth",
-  "HYPE": "hyperliquid",
-  "SUI": "sui",
-  "LINK": "chainlink",
-  "XRP": "ripple",
-  "INJ": "injective-protocol",
-  "WLD": "worldcoin-wld",
   "AVAX": "avalanche-2",
   "NEAR": "near",
   "OP": "optimism",
@@ -2809,14 +2798,19 @@ export default async function handler(req, res) {
       }
 
       // Hard Macro Trend Protection Guard (NEVER trade against a strong macro trend!)
+      // NOTE: bypassTrendFilter=true means price is AT Support/Resistance Zone — zone touch overrides macro trend filter.
       const macroTrend = parsedTa?.trend || 'UNKNOWN';
-      if (direction === 'SHORT' && (macroTrend === 'Bullish' || (sma24 && cand.price > sma24 * 1.005))) {
-        logger.warn(`[Macro Trend Guard] Blocked SHORT candidate ${cand.symbol}: Cannot open SHORT during strong Bullish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
-        continue;
-      }
-      if (direction === 'LONG' && (macroTrend === 'Bearish' || (sma24 && cand.price < sma24 * 0.995))) {
-        logger.warn(`[Macro Trend Guard] Blocked LONG candidate ${cand.symbol}: Cannot open LONG during strong Bearish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
-        continue;
+      if (!bypassTrendFilter) {
+        if (direction === 'SHORT' && (macroTrend === 'Bullish' || (sma24 && cand.price > sma24 * 1.005))) {
+          logger.warn(`[Macro Trend Guard] Blocked SHORT candidate ${cand.symbol}: Cannot open SHORT during strong Bullish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+          continue;
+        }
+        if (direction === 'LONG' && (macroTrend === 'Bearish' || (sma24 && cand.price < sma24 * 0.995))) {
+          logger.warn(`[Macro Trend Guard] Blocked LONG candidate ${cand.symbol}: Cannot open LONG during strong Bearish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+          continue;
+        }
+      } else {
+        logger.info(`[Macro Trend Guard] Skipped macro guard for ${cand.symbol}: Support/Resistance Zone touch bypasses macro trend filter (bypassTrendFilter=true, direction=${direction})`, "events");
       }
 
       // Dual Timeframe Confluence Gate (1h Macro Trend + 15m Micro Entry Alignment)
