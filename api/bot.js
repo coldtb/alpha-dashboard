@@ -2451,8 +2451,6 @@ export default async function handler(req, res) {
           if (usdcBal) {
             displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
           }
-        }
-
         const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
         const activeCount = activePositionsList.length;
 
@@ -2460,7 +2458,8 @@ export default async function handler(req, res) {
 
         // 1. Active Positions Live Status & Ratchet Lock Progress
         if (activeCount > 0) {
-          reportMsg += `**📊 ИДЭВХТЭЙ НЭЭЛТТЭЙ АРИЛЖААНУУД (Active Open Positions):**\n`;
+
+          reportMsg += `**📊 ACTIVE OPEN POSITIONS:**\n`;
           activePositionsList.forEach(ap => {
             const pos = ap.position;
             const size = parseFloat(pos.szi);
@@ -2481,11 +2480,11 @@ export default async function handler(req, res) {
           reportMsg += `\n`;
         }
 
-        // 2. Candidates Monitoring Table (Using REAL Volatility Boosted Candidates & TrueNorth Entry Levels)
+        // 2. Candidates Monitoring Table (Using REAL Dynamic TrueNorth Support & Eterna Data)
         reportMsg += `\`\`\`text\n`;
         reportMsg += `LIVE CANDIDATES MONITORING FOR SLOTS 1, 2 & 3\n\n`;
-        reportMsg += `Зоос    | Направление | Одоогийн Үнэ | Дэмжлэгийн Бүс | Зайн Зөрүү % | 0.5% Touch Gate Төлөв\n`;
-        reportMsg += `--------+-------------+--------------+----------------+--------------+-------------------------\n`;
+        reportMsg += `Coin   | Direction   | Price        | TN Support   | Distance %   | 0.5% Gate Status\n`;
+        reportMsg += `-------+-------------+--------------+--------------+--------------+-------------------------\n`;
 
         // Filter tradeable candidates dynamically for Discord report
         const displayCandidates = scoredCoins.filter(c => !(config.blacklist || []).includes(c.symbol)).slice(0, 7);
@@ -2498,15 +2497,12 @@ export default async function handler(req, res) {
           const realDir = detectAutoDirection(cand, null, null, null);
           let direction = (realDir === 'SHORT') ? "SHORT 🔴" : "LONG 🟢";
 
-          let suppZoneVal = cand.price;
-          if (cand.symbol === "BNB") suppZoneVal = 571.50;
-          else if (cand.symbol === "LTC") suppZoneVal = 46.80;
-          else if (cand.symbol === "SUI") suppZoneVal = 0.7110;
-          else if (cand.symbol === "ARB") suppZoneVal = 0.08190;
-          else if (cand.symbol === "NEAR") suppZoneVal = 1.8180;
-          else if (cand.symbol === "HYPE") suppZoneVal = 59.35;
-          else if (cand.symbol === "TRUMP") suppZoneVal = cand.price;
-          else suppZoneVal = cand.price * 0.997;
+          let suppZoneVal = cand.price * 0.995; // Default 0.5% support floor
+          if (cand.tnTa?.support_resistance?.['support and resistance channel']?.channels) {
+            const channels = cand.tnTa.support_resistance['support and resistance channel'].channels;
+            const supp = channels.find(c => c.hi <= cand.price && c.strength >= 70);
+            if (supp) suppZoneVal = (supp.hi + supp.lo) / 2;
+          }
 
           let distPct = Math.abs((cand.price - suppZoneVal) / suppZoneVal) * 100;
           let statusStr = "";
@@ -2516,33 +2512,32 @@ export default async function handler(req, res) {
           } else if (hasOpenOrder) {
             statusStr = "Open Order Pending ⏳";
           } else if (distPct <= 0.50) {
-            statusStr = "🟢 ШУУД ОРОХОД БЭЛЭН! (Inside 0.5%)";
+            statusStr = "🟢 ENTRY READY NOW! (Inside 0.5%)";
           } else {
             const needPct = Math.max(0, distPct - 0.50).toFixed(2);
-            statusStr = `⏳ ${needPct}% хүлээж байна`;
+            statusStr = `⏳ Waiting for ${needPct}% touch`;
           }
 
           const symStr = cand.symbol.padEnd(7);
           const dirStr = direction.padEnd(12);
           const pxStr = (`$` + cand.price).padEnd(12);
-          const suppStr = (`$` + (typeof suppZoneVal === 'number' ? suppZoneVal.toFixed(suppZoneVal < 1 ? 4 : 2) : suppZoneVal)).padEnd(14);
+          const suppStr = (`$` + (typeof suppZoneVal === 'number' ? suppZoneVal.toFixed(suppZoneVal < 1 ? 4 : 2) : suppZoneVal)).padEnd(13);
           const distStr = (distPct.toFixed(2) + `%`).padEnd(13);
 
           reportMsg += `${symStr}| ${dirStr}| ${pxStr}| ${suppStr}| ${distStr}| ${statusStr}\n`;
         }
 
-
-
         reportMsg += `\`\`\`\n`;
-        reportMsg += `**🎯 ИДЭВХТЭЙ ОРОЛТЫН ШААРДЛАГА (Entry Rules Checklist):**\n`;
-        reportMsg += `1. **1h Macro Trend:** Price > 1h SMA20 > 1h SMA50 (Bullish Alignment)\n`;
-        reportMsg += `2. **0.5% Touch Gate:** Market Price must be <= 0.5% from TrueNorth Support/Resistance Zone\n`;
-        reportMsg += `3. **Risk Guard:** Funding Rate Percentile < 98% (No Crowded Trap)\n`;
-        reportMsg += `4. **Execution:** Instant Taker Direct Market Order (100ms Execution)`;
+        reportMsg += `**🎯 ENTRY RULES CHECKLIST:**\n`;
+        reportMsg += `1. **TrueNorth 1h VWAP Filter:** Trend alignment strictly required\n`;
+        reportMsg += `2. **TrueNorth RSI14 Guard:** No LONG if RSI>=68, No SHORT if RSI<=32\n`;
+        reportMsg += `3. **Eterna Market Proxy:** Live 24h momentum & mark price verified\n`;
+        reportMsg += `4. **Strict Risk:** 1.5% Max SL Cap | 0.25 Margin Factor (25% Buffer)`;
 
         await sendDiscordAlert(reportMsg, 'info');
       }
     }
+
 
     const candidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
@@ -3206,8 +3201,9 @@ export default async function handler(req, res) {
         }
       });
     }
-
+  }
   } catch (error) {
+
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
     return res.status(200).json({ status: "error", error: error.message });
   }
