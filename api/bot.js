@@ -2671,7 +2671,7 @@ export default async function handler(req, res) {
     const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    for (const cand of tradeableCandidates.slice(0, 10)) {
+    for (const cand of tradeableCandidates.slice(0, 3)) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
@@ -2736,7 +2736,7 @@ export default async function handler(req, res) {
           // XRP болон HYPE-д томоохон events/token_unlock байгаа эсэхийг шалгана.
           // Хэрэв алдаа гарвал бүрэн алгасна — одоогийн логик огт өөрчлөгдөхгүй.
           try {
-            const comboTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('combo timeout')), 8000));
+            const comboTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('combo timeout')), 1000));
             const comboCall = callTrueNorthMcp('combo_token_analysis', { token_address: geckoId, timeframe: '1h', analysis_type: 'standard' });
             const comboRes = await Promise.race([comboCall, comboTimeout]).catch(() => null);
             if (comboRes?.result?.content?.[0]?.text) {
