@@ -509,7 +509,35 @@ async function withRetry(fn, maxRetries = 3, label = '', timeoutMs = 10000) {
   return withRetryAndTimeout(fn, label, { retries: maxRetries, timeoutMs });
 }
 
+
+// Eterna Exchange Proxy Market Data Fetcher
+async function fetchEternaMarketTicker(symbol) {
+  try {
+    const etrSymbol = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
+    const res = await withRetryAndTimeout(
+      () => fetch(`https://proxy.eterna.exchange/v5/market/tickers?category=linear&symbol=${etrSymbol}`).then(r => r.json()),
+      `Eterna Market Data (${symbol})`,
+      { retries: 2, delayMs: 300, timeoutMs: 4000 }
+    );
+    if (res?.retCode === 0 && res?.result?.list?.[0]) {
+      const item = res.result.list[0];
+      return {
+        lastPrice: parseFloat(item.lastPrice) || 0,
+        markPrice: parseFloat(item.markPrice) || 0,
+        price24hPcnt: parseFloat(item.price24hPcnt) || 0,
+        highPrice24h: parseFloat(item.highPrice24h) || 0,
+        lowPrice24h: parseFloat(item.lowPrice24h) || 0,
+        turnover24h: parseFloat(item.turnover24h) || 0
+      };
+    }
+  } catch (e) {
+    logger.warn(`Failed to fetch Eterna proxy data for ${symbol}: ${e.message}`, "events");
+  }
+  return null;
+}
+
 // Generic JSON-RPC tool caller helper for TrueNorth (with retry)
+
 async function callTrueNorthMcp(toolName, args) {
   const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
@@ -726,7 +754,21 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     }
   }
 
+  // TrueNorth RSI Overbought / Oversold Protection Filter
+  if (taData?.technical_indicators?.rsi14?.value !== undefined) {
+    const rsi = parseFloat(taData.technical_indicators.rsi14.value);
+    if (dir === 'LONG' && rsi >= 68) {
+      logger.info(`[TrueNorth RSI Filter] Skip LONG candidate ${coin.symbol}: RSI14 is Overbought (${rsi.toFixed(1)} >= 68)`, "events");
+      return 'SKIP';
+    }
+    if (dir === 'SHORT' && rsi <= 32) {
+      logger.info(`[TrueNorth RSI Filter] Skip SHORT candidate ${coin.symbol}: RSI14 is Oversold (${rsi.toFixed(1)} <= 32)`, "events");
+      return 'SKIP';
+    }
+  }
+
   // Key Level Proximity Filter
+
   if (config.enableProximityFilter !== false && taData?.support_resistance?.['support and resistance channel']?.channels) {
     const channels = taData.support_resistance['support and resistance channel'].channels;
     const price = coin.price;

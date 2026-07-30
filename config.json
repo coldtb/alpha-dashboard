@@ -72,7 +72,7 @@
   "breakevenTriggerPct": 0.015,
   "useSmartSlTp": false,
   "enableSmaTrendLock": false,
-  "enableVwapFilter": false,
+  "enableVwapFilter": true,
   "enableProximityFilter": true,
   "proximityFilterPct": 0.005,
 
