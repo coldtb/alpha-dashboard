@@ -2980,52 +2980,47 @@ export default async function handler(req, res) {
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
-    // 6. Risk and Position Size Calculations
+    // 6. Risk and Position Size Calculations: Combine Perp Margin + Spot USDC balance
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
     let withdrawableUsd = parseFloat(userState.withdrawable || "0");
+    let spotUsdcBal = 0;
+
+    if (spotState && spotState.balances) {
+      const usdcObj = spotState.balances.find(b => b.coin === "USDC");
+      if (usdcObj) {
+        spotUsdcBal = parseFloat(usdcObj.total || "0") - parseFloat(usdcObj.hold || "0");
+      }
+    }
 
     // Auto Spot-to-Perp Transfer: If Perp withdrawable balance is < $5.0 but Spot has USDC, transfer automatically!
-    if (withdrawableUsd < 5.0 && spotState && spotState.balances) {
-      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
-      if (usdcBal) {
-        const availableSpotUsdc = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
-        if (availableSpotUsdc >= 5.0) {
-          logger.info(`[Auto Spot-to-Perp] Perp withdrawable balance ($${withdrawableUsd.toFixed(2)}) is < $5.0. Auto-transferring $${availableSpotUsdc.toFixed(2)} Spot USDC to Perp Margin...`, "events");
-          try {
-            if (!isDryRun) {
-              const transferAmt = (Math.floor(availableSpotUsdc * 100) / 100).toFixed(2);
-              const transferRes = await exchange.usdClassTransfer({ amount: transferAmt, toPerp: true });
-              logger.info(`[Auto Spot-to-Perp] Transferred $${transferAmt} USDC from Spot to Perp: ${JSON.stringify(transferRes)}`, "events");
-              await sendDiscordAlert(`💵 **Auto Spot-to-Perp Margin Transfer**\nSuccessfully moved **$${transferAmt} USDC** from Spot to Perp Margin!`, 'info').catch(() => {});
-              userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
-              withdrawableUsd = parseFloat(userState.withdrawable || "0");
-
-            } else {
-              withdrawableUsd = availableSpotUsdc;
-            }
-          } catch (tErr) {
-            logger.error(`[Auto Spot-to-Perp] Spot to Perp transfer failed: ${tErr.message}`, "events");
-          }
+    if (withdrawableUsd < 5.0 && spotUsdcBal >= 5.0) {
+      logger.info(`[Auto Spot-to-Perp] Perp withdrawable balance ($${withdrawableUsd.toFixed(2)}) is < $5.0. Auto-transferring $${spotUsdcBal.toFixed(2)} Spot USDC to Perp Margin...`, "events");
+      try {
+        if (!isDryRun) {
+          const transferAmt = (Math.floor(spotUsdcBal * 100) / 100).toFixed(2);
+          const transferRes = await exchange.usdClassTransfer({ amount: transferAmt, toPerp: true });
+          logger.info(`[Auto Spot-to-Perp] Transferred $${transferAmt} USDC from Spot to Perp: ${JSON.stringify(transferRes)}`, "events");
+          await sendDiscordAlert(`💵 **Auto Spot-to-Perp Margin Transfer**\nSuccessfully moved **$${transferAmt} USDC** from Spot to Perp Margin!`, 'info').catch(() => {});
+          userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
+          withdrawableUsd = parseFloat(userState.withdrawable || "0");
+        } else {
+          withdrawableUsd = spotUsdcBal;
         }
+      } catch (tErr) {
+        logger.error(`[Auto Spot-to-Perp] Spot to Perp transfer failed: ${tErr.message}`, "events");
       }
     }
 
-    let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : withdrawableUsd;
-    if (accountSize < 5.0 && spotState && spotState.balances) {
-      const usdcBal = spotState.balances.find(b => b.coin === "USDC");
-      if (usdcBal) {
-        const availableSpotUsdc = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
-        if (availableSpotUsdc >= 5.0) {
-          accountSize = availableSpotUsdc;
-          logger.info(`[Account Size Fallback] Using Spot USDC balance $${accountSize.toFixed(2)} as accountSize`, "events");
-        }
-      }
-    }
+    // Calculate Total Account Size (Perp Margin + Spot USDC, with minimum $18.53 fallback)
+    const totalCapitalUsd = Math.max(withdrawableUsd + spotUsdcBal, 18.53);
+    let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
+    logger.info(`[Account Size] Effective trading capital: $${accountSize.toFixed(2)} (Perp: $${withdrawableUsd.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
 
-    if (accountSize <= 5) {
+    if (accountSize <= 5.0) {
       logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
       return sendResponse(200, { status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize.toFixed(2)}` });
     }
+
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
