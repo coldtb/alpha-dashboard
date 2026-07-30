@@ -1406,19 +1406,27 @@ export default async function handler(req, res) {
       { retries: 1, delayMs: 200, timeoutMs: 3500 }
     );
 
-    // User-specific calls — silently fall back if rate limited
+    // Vault / Prop Challenge Account ("dundiin dans") support
+    const vaultAddress = process.env.HYPERLIQUID_VAULT_ADDRESS || req.query.vault || null;
+    const effectiveUserAddress = vaultAddress || walletAddress;
+    if (vaultAddress) {
+      logger.info(`[Vault Mode] Operating on Vault / Prop Challenge Account: ${vaultAddress}`, "events");
+    }
+
+    // User-specific calls — query effectiveUserAddress (Vault or Main Wallet)
     const [initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
-      info.clearinghouseState({ user: walletAddress }).catch(err => {
+      info.clearinghouseState({ user: effectiveUserAddress }).catch(err => {
         logger.warn(`[Rate Limit] clearinghouseState blocked: ${err.message}`, "events");
         return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } };
       }),
-      info.frontendOpenOrders({ user: walletAddress }).catch(err => {
+      info.frontendOpenOrders({ user: effectiveUserAddress }).catch(err => {
         logger.warn(`[Rate Limit] frontendOpenOrders blocked: ${err.message}`, "events");
         return [];
       }),
       info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-      info.userFills({ user: walletAddress }).catch(() => [])
+      info.userFills({ user: effectiveUserAddress }).catch(() => [])
     ]);
+
 
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
 
@@ -3104,14 +3112,16 @@ export default async function handler(req, res) {
       });
     } else {
       // A. Update Leverage
-      await exchange.updateLeverage({
+      const levPayload = {
         asset: target.assetIndex,
         isCross: true,
         leverage: finalLeverage
-      });
+      };
+      if (vaultAddress) levPayload.vaultAddress = vaultAddress;
+      await exchange.updateLeverage(levPayload);
 
       // B. Place Bracket Order (Limit Entry + TP/SL bracket)
-      const orderResult = await exchange.order({
+      const orderPayload = {
         orders: attachBuilderFee([
           // Direct Market Order Entry (IOC at market worst price for instant fill)
           {
@@ -3157,7 +3167,10 @@ export default async function handler(req, res) {
           }
         ]),
         grouping: "normalTpsl"
-      });
+      };
+      if (vaultAddress) orderPayload.vaultAddress = vaultAddress;
+      const orderResult = await exchange.order(orderPayload);
+
       await sendDiscordAlert(
         `**Coin:** ${target.symbol}\n` +
         `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
