@@ -1391,8 +1391,8 @@ export default async function handler(req, res) {
     const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState, userFills] = await withRetryAndTimeout(
       () => Promise.all([
         info.metaAndAssetCtxs(),
-        info.clearinghouseState({ user: walletAddress }),
-        info.frontendOpenOrders({ user: walletAddress }),
+        info.clearinghouseState({ user: walletAddress }).catch(err => { logger.warn(`clearinghouseState rate limited: ${err.message}`, "events"); return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }; }),
+        info.frontendOpenOrders({ user: walletAddress }).catch(err => { logger.warn(`frontendOpenOrders rate limited: ${err.message}`, "events"); return []; }),
         info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
         info.userFills({ user: walletAddress }).catch(() => [])
       ]),
