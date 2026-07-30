@@ -13,7 +13,7 @@ let config = {
   replacementScoreDiff: 10,
   nansenBuilderAddress: "",
   nansenBuilderFeeRate: 80,
-  blacklist: ["PAXG"],
+  blacklist: ["PAXG", "FET"],
   enableSupportRebound: true,
   minSupportDropPct: 0.015,
   supportMinStrength: 50,
