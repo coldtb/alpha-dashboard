@@ -1220,10 +1220,11 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       const minSlAllowed = entry * (1 - slCap);
       if (sl < minSlAllowed) sl = minSlAllowed;
 
-      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio
+      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio and cap max TP to 2.5x R:R / maxTpPct
       const slDistPct = (entry - sl) / entry;
       const minTpPct = Math.max(slDistPct * 1.8, 0.015);
-      tp = Math.max(tp, entry * (1 + minTpPct));
+      const maxTpCapPct = Math.min(slDistPct * 2.5, config.maxTpPct || 0.033);
+      tp = entry * (1 + maxTpCapPct);
     } else {
       // Stop Loss must be at least effectiveMinSlBuffer above entry
       const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
@@ -1231,10 +1232,11 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
       const maxSlAllowed = entry * (1 + slCap);
       if (sl > maxSlAllowed) sl = maxSlAllowed;
 
-      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio
+      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio and cap max TP to 2.5x R:R / maxTpPct
       const slDistPct = (sl - entry) / entry;
       const minTpPct = Math.max(slDistPct * 1.8, 0.015);
-      tp = Math.min(tp, entry * (1 - minTpPct));
+      const maxTpCapPct = Math.min(slDistPct * 2.5, config.maxTpPct || 0.033);
+      tp = entry * (1 - maxTpCapPct);
     }
   }
 
