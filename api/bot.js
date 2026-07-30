@@ -2730,8 +2730,18 @@ export default async function handler(req, res) {
             new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 1.2s")), 1200))
           ]).catch(() => null);
 
-          const taRes = await mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }));
+          const [taRes, eternaData] = await Promise.all([
+            mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' })),
+            fetchEternaMarketTicker(cand.symbol).catch(() => null)
+          ]);
           
+          if (eternaData) {
+            cand.eternaPrice = eternaData.lastPrice || cand.price;
+            cand.eternaChange24h = eternaData.price24hPcnt || cand.change;
+            cand.eternaTurnover = eternaData.turnover24h || cand.volume;
+            logger.info(`[Eterna Proxy] Candidate ${cand.symbol}: 24h Change ${cand.eternaChange24h.toFixed(2)}%, Mark Price $${eternaData.markPrice}`, "events");
+          }
+
           if (taRes?.result?.content?.[0]?.text) {
             try { 
               parsedTa = JSON.parse(taRes.result.content[0].text); 
@@ -2749,6 +2759,7 @@ export default async function handler(req, res) {
               logger.error("Failed to parse taData: " + e.message, "events"); 
             }
           }
+
 
           // ── combo_token_analysis: Зөвхөн мэдээлэл (advisory) — арилжааг хаахгүй ──
           // XRP болон HYPE-д томоохон events/token_unlock байгаа эсэхийг шалгана.
