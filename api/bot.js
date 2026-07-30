@@ -2728,9 +2728,9 @@ export default async function handler(req, res) {
               let tnVwapVal = 0;
               if (parsedTa?.support_resistance?.vwap?.cumulative) {
                 const vwapData = parsedTa.support_resistance.vwap.cumulative;
-                if (vwapData.state === 'price_above' && vwapData.slope === 'up') {
+                if (vwapData.state === 'price_above') {
                   tnVwapVal = 1;
-                } else if (vwapData.state === 'price_below' && vwapData.slope === 'down') {
+                } else if (vwapData.state === 'price_below') {
                   tnVwapVal = 2;
                 }
               }
