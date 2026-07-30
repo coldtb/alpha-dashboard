@@ -7,7 +7,7 @@
   "replacementScoreDiff": 10,
   "nansenBuilderAddress": "",
   "nansenBuilderFeeRate": 80,
-  "dryRun": false,
+  "dryRun": true,
   "blacklist": ["PAXG"],
   "enableSupportRebound": true,
   "minSupportDropPct": 0.005,
