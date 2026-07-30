@@ -1424,7 +1424,8 @@ export default async function handler(req, res) {
         info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
         info.userFills({ user: walletAddress }).catch(() => [])
       ]),
-      "Hyperliquid User & Market State Initialization"
+      "Hyperliquid User & Market State Initialization",
+      { retries: 1, delayMs: 200, timeoutMs: 3500 }
     );
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
     let openOrders = initialOpenOrders;
