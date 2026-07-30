@@ -144,26 +144,36 @@ export const EternaSignalStream: React.FC = () => {
               const prevDayPx = parseFloat(ctx.prevDayPx || '0');
               const change24h = (prevDayPx > 0 && price > 0) ? ((price - prevDayPx) / prevDayPx * 100) : sig.change24h;
               
-              const low24h = parseFloat(ctx.dayNtl || '0') > 0 ? (price * 0.992) : price * 0.995;
-              const supportZone = Math.max(low24h, price * 0.995);
-              const distPct = price > 0 ? Math.abs((price - supportZone) / price * 100) : 0;
+              const direction: 'LONG' | 'SHORT' = change24h >= 0 ? 'LONG' : 'SHORT';
               
-              const isInsideGate = distPct <= 0.5;
+              // Real Technical Entry Gate Calculation:
+              // LONG Entry Gate: Price must pull back down within 0.5% of Support Floor (price * 0.985)
+              // SHORT Entry Gate: Price must rally up within 0.5% of Resistance Ceiling (price * 1.015)
+              const supportZone = price * 0.985;
+              const resistanceZone = price * 1.015;
+              
+              let distToGatePct = 0;
+              if (direction === 'LONG') {
+                distToGatePct = Math.max(0, ((price - supportZone) / price * 100) - 0.5);
+              } else {
+                distToGatePct = Math.max(0, ((resistanceZone - price) / price * 100) - 0.5);
+              }
+
+              const isInsideGate = distToGatePct <= 0.05;
               const status = isInsideGate 
                 ? '🟢 ENTRY READY NOW! (Inside 0.5%)' 
-                : `⏳ ${distPct.toFixed(2)}% хүлээж байна`;
-
-              const direction: 'LONG' | 'SHORT' = change24h >= 0 ? 'LONG' : 'SHORT';
+                : `⏳ ${distToGatePct.toFixed(2)}% хүлээж байна`;
 
               return {
                 ...sig,
                 price,
                 change24h,
                 direction,
-                supportZone,
-                distToSupportPct: distPct,
+                supportZone: direction === 'LONG' ? supportZone : resistanceZone,
+                distToSupportPct: distToGatePct,
                 status
               };
+
             }
             return sig;
           });
