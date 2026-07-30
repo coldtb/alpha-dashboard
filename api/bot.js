@@ -542,30 +542,41 @@ async function callTrueNorthMcp(toolName, args) {
   const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
 
-  return withRetry(async () => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: { name: toolName, arguments: args }
-      })
-    });
-    if (!response.ok) throw new Error(`TrueNorth MCP Server error: ${response.status} ${response.statusText}`);
-    const text = await response.text();
-    const lines = text.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        return JSON.parse(line.substring(6).trim());
+  const fetchWithTimeout = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/event-stream'
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method: 'tools/call',
+          params: { name: toolName, arguments: args }
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (!response.ok) throw new Error(`TrueNorth MCP Server error: ${response.status}`);
+      const text = await response.text();
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          return JSON.parse(line.substring(6).trim());
+        }
       }
+      throw new Error("Invalid TrueNorth SSE response format");
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
     }
-    throw new Error("Invalid TrueNorth SSE response format");
-  }, 3, `TrueNorth:${toolName}`, 12000);
+  };
+
+  return withRetry(fetchWithTimeout, 1, `TrueNorth:${toolName}`, 2500).catch(() => null);
 }
 
 // Direction detection
