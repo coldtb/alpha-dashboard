@@ -1408,19 +1408,30 @@ export default async function handler(req, res) {
       wallet: account
     });
 
-    // 4. Fetch Scanner Data directly from Hyperliquid and try fetching from Binance
-    const [metaAndCtxs, initialUserState, initialOpenOrders, initialSpotState, userFills] = await withRetryAndTimeout(
-      () => Promise.all([
-        info.metaAndAssetCtxs(),
-        info.clearinghouseState({ user: walletAddress }).catch(err => { logger.warn(`clearinghouseState rate limited: ${err.message}`, "events"); return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }; }),
-        info.frontendOpenOrders({ user: walletAddress }).catch(err => { logger.warn(`frontendOpenOrders rate limited: ${err.message}`, "events"); return []; }),
-        info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-        info.userFills({ user: walletAddress }).catch(() => [])
-      ]),
-      "Hyperliquid User & Market State Initialization",
+    // 4. Fetch Scanner Data - metaAndAssetCtxs is public (unlimited), user calls are rate-limited
+    // Always fetch public market data first
+    const metaAndCtxs = await withRetryAndTimeout(
+      () => info.metaAndAssetCtxs(),
+      "Hyperliquid Market Data",
       { retries: 1, delayMs: 200, timeoutMs: 3500 }
     );
+
+    // User-specific calls — silently fall back if rate limited
+    const [initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
+      info.clearinghouseState({ user: walletAddress }).catch(err => {
+        logger.warn(`[Rate Limit] clearinghouseState blocked: ${err.message}`, "events");
+        return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } };
+      }),
+      info.frontendOpenOrders({ user: walletAddress }).catch(err => {
+        logger.warn(`[Rate Limit] frontendOpenOrders blocked: ${err.message}`, "events");
+        return [];
+      }),
+      info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
+      info.userFills({ user: walletAddress }).catch(() => [])
+    ]);
+
     const [hlMeta, hlAssetCtxs] = metaAndCtxs;
+
     let openOrders = initialOpenOrders;
     let userState = initialUserState;
     let spotState = initialSpotState;
