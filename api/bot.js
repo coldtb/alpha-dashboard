@@ -2705,6 +2705,9 @@ export default async function handler(req, res) {
 
       const geckoId = geckoIdMap[cand.symbol] || cand.symbol.toLowerCase();
       let parsedTa = null;
+      let parsedDeriv = null;
+      let parsedOpt = null;
+
 
       if (geckoId) {
         try {
