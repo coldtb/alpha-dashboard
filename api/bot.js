@@ -2497,11 +2497,14 @@ export default async function handler(req, res) {
           const realDir = detectAutoDirection(cand, null, null, null);
           let direction = (realDir === 'SHORT') ? "SHORT 🔴" : "LONG 🟢";
 
-          let suppZoneVal = cand.price * 0.995; // Default 0.5% support floor
+          let suppZoneVal = null;
           if (cand.tnTa?.support_resistance?.['support and resistance channel']?.channels) {
             const channels = cand.tnTa.support_resistance['support and resistance channel'].channels;
-            const supp = channels.find(c => c.hi <= cand.price && c.strength >= 70);
+            const supp = channels.find(c => (realDir === 'SHORT' ? c.lo >= cand.price : c.hi <= cand.price) && c.strength >= 70);
             if (supp) suppZoneVal = (supp.hi + supp.lo) / 2;
+          }
+          if (!suppZoneVal) {
+            suppZoneVal = realDir === 'SHORT' ? (cand.high || cand.price * 1.009) : (cand.low || cand.price * 0.991);
           }
 
           let distPct = Math.abs((cand.price - suppZoneVal) / suppZoneVal) * 100;
@@ -2514,7 +2517,7 @@ export default async function handler(req, res) {
           } else if (distPct <= 0.50) {
             statusStr = "🟢 ENTRY READY NOW! (Inside 0.5%)";
           } else {
-            const needPct = Math.max(0, distPct - 0.50).toFixed(2);
+            const needPct = Math.max(0.01, distPct - 0.50).toFixed(2);
             statusStr = `⏳ Waiting for ${needPct}% touch`;
           }
 
