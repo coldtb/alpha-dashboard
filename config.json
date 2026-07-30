@@ -1,7 +1,7 @@
 {
   "minScore": 0,
   "minRewardRiskRatio": 1.5,
-  "minSlBuffer": 0.010,
+  "minSlBuffer": 0.008,
   "minTpBuffer": 0.005,
   "entryShiftThreshold": 0.020,
   "replacementScoreDiff": 10,
@@ -38,10 +38,26 @@
     "HYPE": 0.015
   },
   "coinSlCap": {
-    "BTC": 0.020,
-    "XRP": 0.02,
-    "SUI": 0.02,
-    "HYPE": 0.020
+    "BTC":   0.015,
+    "ETH":   0.015,
+    "SOL":   0.015,
+    "BNB":   0.015,
+    "XRP":   0.015,
+    "DOGE":  0.015,
+    "LINK":  0.015,
+    "NEAR":  0.015,
+    "SUI":   0.015,
+    "ARB":   0.015,
+    "LTC":   0.015,
+    "HYPE":  0.015,
+    "TRUMP": 0.015,
+    "WLD":   0.015,
+    "ZEC":   0.015,
+    "INJ":   0.015,
+    "TRX":   0.015,
+    "AVAX":  0.015,
+    "DOT":   0.015,
+    "ADA":   0.015
   },
 
   "_comment_risk": "=== Phase 2: Risk Management (NEW) ===",

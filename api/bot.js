@@ -297,12 +297,31 @@ const COIN_TP_CAP = {
   HYPE: 0.015,  // HYPE: 1.5% TP (Optimal deep rebound parameter)
 };
 
-// Phase 3 #13: Coin-specific SL caps
+// Phase 3 #13: Coin-specific SL caps — STRICT 1.5% for ALL coins (backtest proven safer)
 const COIN_SL_CAP = {
-  BTC:  0.020,  // 2.0% max SL for BTC (v9.0 Macro Scalper)
-  XRP:  0.02,   // 2.0% max SL for XRP
-  SUI:  0.02,   // 2.0% max SL for SUI
-  HYPE: 0.020,  // 2.0% max SL for HYPE (Noise-free 1m wick protection)
+  // Tier 1: Major coins — 1.5% strict SL
+  BTC:   0.015,
+  ETH:   0.015,
+  SOL:   0.015,
+  BNB:   0.015,
+  XRP:   0.015,
+  // Tier 2: Mid-caps — 1.5% strict SL
+  DOGE:  0.015,
+  LINK:  0.015,
+  NEAR:  0.015,
+  SUI:   0.015,
+  ARB:   0.015,
+  LTC:   0.015,
+  HYPE:  0.015,
+  TRUMP: 0.015,
+  WLD:   0.015,
+  ZEC:   0.015,
+  INJ:   0.015,
+  TRX:   0.015,
+  AVAX:  0.015,
+  DOT:   0.015,
+  ADA:   0.015,
+  // Default for all unlisted coins: 1.5%
 };
 
 const COIN_RISK_CONFIG = {
@@ -1129,7 +1148,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
 
   // 4. Final Safety Enforcements (Guards against invalid/narrow TP and SL)
   const symbol = coin.symbol || '';
-  let slCap = COIN_SL_CAP[symbol] ?? (dir === 'SHORT' ? 0.015 : 0.02);
+  let slCap = COIN_SL_CAP[symbol] ?? 0.015; // DEFAULT: strict 1.5% SL for all unlisted coins
   const defaultMaxTp = COIN_TP_CAP[symbol] ?? 0.0075;
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
 
