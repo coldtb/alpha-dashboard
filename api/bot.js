@@ -1776,8 +1776,9 @@ export default async function handler(req, res) {
           logger.info("Stale/orphaned orders cancelled successfully: " + JSON.stringify(cancelRes), "audit", { cancelRes });
         }
         // Refresh openOrders and userState to reflect freed margin
-        openOrders = await info.frontendOpenOrders({ user: walletAddress });
-        userState = await info.clearinghouseState({ user: walletAddress });
+        openOrders = await info.frontendOpenOrders({ user: walletAddress }).catch(() => []);
+        userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
+
         if (spotState) {
           spotState = await info.spotClearinghouseState({ user: walletAddress }).catch(() => null);
         }
@@ -3038,8 +3039,9 @@ export default async function handler(req, res) {
               const transferRes = await exchange.usdClassTransfer({ amount: transferAmt, toPerp: true });
               logger.info(`[Auto Spot-to-Perp] Transferred $${transferAmt} USDC from Spot to Perp: ${JSON.stringify(transferRes)}`, "events");
               await sendDiscordAlert(`💵 **Auto Spot-to-Perp Margin Transfer**\nSuccessfully moved **$${transferAmt} USDC** from Spot to Perp Margin!`, 'info').catch(() => {});
-              userState = await info.clearinghouseState({ user: walletAddress });
+              userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
               withdrawableUsd = parseFloat(userState.withdrawable || "0");
+
             } else {
               withdrawableUsd = availableSpotUsdc;
             }
