@@ -1257,47 +1257,38 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   };
 }
 
-// Calculate Market Score (Equalized for Altcoins & Small Caps)
+// Calculate Market Score (Equalized for Altcoins & Small-Caps across all 184 Hyperliquid assets)
 function calculateScore(coin, isHyperliquidScale = false) {
   let score = 0;
-  const change = Math.abs(coin.change);
-  if (change <= 5.0) {
-    score += 35;
-    if (change <= 2.5) score += 10;
+  
+  // 1. Altcoin Momentum Surge Boost (Explosive movers get highest priority)
+  const absChange = Math.abs(coin.change || 0);
+  if (absChange >= 2.0) {
+    score += 25;
+    if (absChange >= 5.0) score += 15;
+    if (absChange >= 10.0) score += 10;
+  } else {
+    score += 15;
   }
   
-  // Symmetric funding rate scoring for both LONG and SHORT setup strength
+  // 2. Funding Rate Squeeze Opportunities
   const absFunding = Math.abs(coin.funding || 0);
   if (absFunding > 0) {
     score += 25;
-    if (absFunding >= 0.0003) {
+    if (absFunding >= 0.0002) {
       score += 15;
     }
   }
 
-  // Equalized Volume Floor: Requires min $1M 24h volume for orderbook liquidity, no bias for mega-caps
-  const vol = coin.volume;
-  if (vol >= 1000000) {
-    score += 15;
+  // 3. Small-Cap Altcoin Liquidity Equalizer (Min $100k 24h volume requirement)
+  const vol = coin.volume || 0;
+  if (vol >= 100000) {
+    score += 20;
   }
 
-  // Volatility & Momentum Surge Boost (+25 Points for high-volatility explosive movers):
-  // Gives high 24h momentum/volatility altcoins (abs 24h change >= 4.0%) an extra boost so top movers rank at the top!
-  const absChange = Math.abs(coin.change || 0);
-  if (absChange >= 4.0) {
-    score += 15;
-    if (absChange >= 8.0) {
-      score += 10;
-    }
-  }
-
-  const watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
-  const watchlistBonus = config.watchlistBonus !== undefined ? config.watchlistBonus : 15;
-  if (watchlist.includes(coin.symbol)) {
-    score += watchlistBonus;
-  }
   return Math.min(score, 100);
 }
+
 
 // Helper to format floats to EIP-712 strings
 function formatPrice(price) {
