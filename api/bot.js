@@ -2464,8 +2464,13 @@ export default async function handler(req, res) {
     // 5c. Limit Order Entry Level Trailing: No longer needed as we use instant market (taker) entry.
 
 
-    // Pick top candidates (score >= minScore) across all Hyperliquid coins
-    let watchlist = config.watchlist || ["BTC", "HYPE", "LINK", "XRP", "INJ", "WLD"];
+    // Restrict scanner & candidates strictly to the 30 coins supported by Hyperscaled
+    const SUPPORTED_30_COINS = [
+      "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
+      "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
+      "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE", "PEPE"
+    ];
+    let watchlist = config.watchlist || SUPPORTED_30_COINS;
     if (req.query.coin) {
       watchlist = [req.query.coin.toUpperCase()];
       logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
