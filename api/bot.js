@@ -2865,30 +2865,24 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
-      // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.5%)
-      if (levels && levels.entry) {
-        // If price is near support level, direction MUST be LONG (rebound from support floor)
-        const isNearSupport = levels.reason && (levels.reason.includes('support') || levels.reason.includes('sr_channel'));
-        if (rawDirection === 'LONG' || isNearSupport) {
-          if (cand.price <= levels.entry * 1.005) {
-            bypassTrendFilter = true;
-            targetDirection = 'LONG'; // ALWAYS LONG at Support Zone!
-            logger.info(`[Support Zone Gate] Candidate ${cand.symbol} touched 0.5% Support Zone ($${levels.entry}). Executing Direct LONG Market Entry!`, "events");
-          } else {
-            logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
-            continue;
-          }
-        } else if (rawDirection === 'SHORT') {
-          if (cand.price >= levels.entry * 0.995) {
-            bypassTrendFilter = true;
-            targetDirection = 'SHORT'; // ALWAYS SHORT at Resistance Zone!
-            logger.info(`[Resistance Zone Gate] Candidate ${cand.symbol} touched 0.5% Resistance Zone ($${levels.entry}). Executing Direct SHORT Market Entry!`, "events");
-          } else {
-            logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
-            continue;
-          }
-        }
+      // Entry Gate: Zone Touch executes immediately; 100% aligned candidates execute Instant Market Entry at current price!
+      const isZoneTouch = (rawDirection === 'LONG' && cand.price <= levels.entry * 1.005) || 
+                          (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.995);
+
+      if (isZoneTouch) {
+        bypassTrendFilter = true;
+        targetDirection = rawDirection;
+        logger.info(`[Zone Touch Gate] Candidate ${cand.symbol} touched Support/Resistance Zone ($${levels.entry}). Direct Market Entry!`, "events");
+      } else {
+        // Instant Market Entry: Enter immediately at current market price for 100% aligned top candidates!
+        const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
+        levels.entry = cand.price;
+        levels.sl = rawDirection === 'LONG' ? parseFloat((cand.price * 0.985).toFixed(dec)) : parseFloat((cand.price * 1.015).toFixed(dec));
+        levels.tp = rawDirection === 'LONG' ? parseFloat((cand.price * 1.015).toFixed(dec)) : parseFloat((cand.price * 0.985).toFixed(dec));
+
+        logger.info(`[Instant Execution Gate] Candidate ${cand.symbol} signals 100% aligned. Executing INSTANT Market Entry at $${cand.price}!`, "events");
       }
+
 
       // Evaluate final direction
       const direction = bypassTrendFilter ? targetDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
