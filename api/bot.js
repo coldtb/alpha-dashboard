@@ -720,45 +720,38 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     if (dir === 'SHORT' && coin.price > smaTrend) return 'SKIP';
   }
 
-  // Apply Trend Filter: Only align with the 24h SMA trend and respect distance cap
   if (sma24 !== null) {
     const price = coin.price;
     const maxDistancePct = config.maxDistancePct !== undefined 
       ? config.maxDistancePct 
-      : (process.env.SMA_MAX_DISTANCE_PCT ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) : 0.015);
+      : (process.env.SMA_MAX_DISTANCE_PCT ? parseFloat(process.env.SMA_MAX_DISTANCE_PCT) : 0.03);
 
     if (dir === 'LONG') {
-      if (price < sma24) {
-        return 'SKIP'; // Filter out counter-trend longs
-      }
       if (price > sma24 * (1 + maxDistancePct)) {
         logger.info(`[SMA Distance Filter] Skip LONG candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% above 24h SMA (${sma24.toFixed(4)})`, "events");
-        return 'SKIP'; // Filter out overextended longs
+        return 'SKIP'; // Filter out overextended longs only
       }
 
-      // Check if TrueNorth cumulative VWAP is bearish
+      // TrueNorth VWAP Dual Confluence: Only block if state clearly bearish (price_below)
       if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
-        if (vwapData.state === 'price_below' || vwapData.slope === 'down') {
-          logger.info(`[VWAP Trend Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP is Bearish (Price below VWAP or slope down)`, "events");
+        if (vwapData.state === 'price_below') {
+          logger.info(`[VWAP Filter] Skip LONG candidate ${coin.symbol}: TrueNorth 1h VWAP state is price_below (bearish)`, "events");
           return 'SKIP';
         }
       }
     }
     if (dir === 'SHORT') {
-      if (price > sma24) {
-        return 'SKIP'; // Filter out counter-trend shorts
-      }
       if (price < sma24 * (1 - maxDistancePct)) {
         logger.info(`[SMA Distance Filter] Skip SHORT candidate ${coin.symbol}: Price (${price}) is more than ${(maxDistancePct * 100).toFixed(1)}% below 24h SMA (${sma24.toFixed(4)})`, "events");
-        return 'SKIP'; // Filter out overextended shorts
+        return 'SKIP'; // Filter out overextended shorts only
       }
 
-      // Check if TrueNorth cumulative VWAP is bullish
+      // TrueNorth VWAP Dual Confluence: Only block if state clearly bullish (price_above)
       if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {
         const vwapData = taData.support_resistance.vwap.cumulative;
-        if (vwapData.state === 'price_above' || vwapData.slope === 'up') {
-          logger.info(`[VWAP Trend Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP is Bullish (Price above VWAP or slope up)`, "events");
+        if (vwapData.state === 'price_above') {
+          logger.info(`[VWAP Filter] Skip SHORT candidate ${coin.symbol}: TrueNorth 1h VWAP state is price_above (bullish)`, "events");
           return 'SKIP';
         }
       }
