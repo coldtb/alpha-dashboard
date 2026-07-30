@@ -1348,29 +1348,28 @@ export default async function handler(req, res) {
   logger.setTraceId(traceId);
   logger.info("Bot execution cycle started", "events");
 
-  // Prevent Vercel 10s Serverless timeout by returning clean 200 OK at 8.5 seconds
-  let isHandled = false;
-  const originalJson = res.json.bind(res);
-  res.json = function(body) {
-    if (isHandled) return;
-    isHandled = true;
-    return originalJson(body);
+  // Prevent Vercel 10s Serverless timeout — hard deadline at 8.5s
+  let responseSent = false;
+  const sendResponse = (statusCode, body) => {
+    if (responseSent) return;
+    responseSent = true;
+    clearTimeout(timeoutHandle);
+    res.status(statusCode).json(body);
   };
-
-  const timeoutTimer = setTimeout(() => {
-    if (!isHandled) {
-      isHandled = true;
-      logger.info("[Execution Guard] Completed scan within Vercel execution window", "events");
-      res.status(200).json({ status: "success", message: "Bot scan cycle completed safely." });
+  const timeoutHandle = setTimeout(() => {
+    if (!responseSent) {
+      logger.info("[Execution Guard] 8.5s deadline reached — returning safe 200 OK", "events");
+      sendResponse(200, { status: "success", message: "Bot scan cycle completed within execution window." });
     }
   }, 8500);
+
 
   // Validate environment secrets
   try {
     validateEnvSecrets();
   } catch (err) {
     logger.critical(`Startup secrets validation failed: ${err.message}`, "events");
-    return res.status(200).json({ status: "error", error: `Secrets Validation Failed: ${err.message}` });
+    return sendResponse(200, { status: "error", error: `Secrets Validation Failed: ${err.message}` });
   }
 
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
@@ -1386,7 +1385,7 @@ export default async function handler(req, res) {
     
     if (!isCronQuery && tokenFromHeader !== cronSecret && tokenFromQuery !== cronSecret) {
       logger.warn(`Unauthorized bot execution attempt. Query secret: '${tokenFromQuery}', Header: '${tokenFromHeader}'`, "audit");
-      return res.status(401).json({ error: "Unauthorized" });
+      return sendResponse(401, { error: "Unauthorized" });
     }
   }
 
@@ -1395,7 +1394,7 @@ export default async function handler(req, res) {
   const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
   if (!privateKey || !walletAddress) {
     logger.error("Missing credentials in environment variables", "audit");
-    return res.status(400).json({ error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS in environment variables." });
+    return sendResponse(400, { error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS in environment variables." });
   }
 
   try {
@@ -1826,7 +1825,7 @@ export default async function handler(req, res) {
       const msg = `🛑 Daily loss limit hit: $${dailyPnl.toFixed(2)} (limit: ${dailyLossLimitPct}%). Bot paused for today.`;
       logger.warn(`[Risk] ${msg}`, "audit");
       await sendDiscordAlert(msg, 'error');
-      return res.status(200).json({ status: 'paused', message: msg });
+      return sendResponse(200, { status: 'paused', message: msg });
     }
     */
 
@@ -2580,13 +2579,13 @@ export default async function handler(req, res) {
       return c.score >= coinMinScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol);
     });
     if (candidates.length === 0) {
-      return res.status(200).json({ status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
+      return sendResponse(200, { status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
 
     // FIX #8: Max concurrent positions guard — stop new entries if at limit
     if (activePositionCount >= maxConcurrentPositions) {
       logger.info(`[Risk] Max concurrent positions reached (${activePositionCount}/${maxConcurrentPositions}). Skipping new entry.`, "events");
-      return res.status(200).json({ status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
+      return sendResponse(200, { status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
     }
 
     // Filter candidates that are not currently in active positions/orders
@@ -2601,7 +2600,7 @@ export default async function handler(req, res) {
     }
 
     if (tradeableCandidates.length === 0) {
-      return res.status(200).json({ status: "success", message: "Candidates found but all already have open positions or orders." });
+      return sendResponse(200, { status: "success", message: "Candidates found but all already have open positions or orders." });
     }
 
     // Fetch BTC technical analysis and Nansen flows in parallel
@@ -3005,7 +3004,7 @@ export default async function handler(req, res) {
 
     if (!target) {
       logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
-      return res.status(200).json({ status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
+      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
     }
 
     logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
@@ -3018,7 +3017,7 @@ export default async function handler(req, res) {
       : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
     if (!levels) {
       logger.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`, "events");
-      return res.status(200).json({ status: 'success', message: 'Level computation returned null. Skipped.' });
+      return sendResponse(200, { status: 'success', message: 'Level computation returned null. Skipped.' });
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
@@ -3065,13 +3064,13 @@ export default async function handler(req, res) {
 
     if (accountSize <= 5) {
       logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
-      return res.status(200).json({ status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize.toFixed(2)}` });
+      return sendResponse(200, { status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize.toFixed(2)}` });
     }
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
       logger.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`, "events");
-      return res.status(200).json({ status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
+      return sendResponse(200, { status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
     }
 
     // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
@@ -3132,7 +3131,7 @@ export default async function handler(req, res) {
         `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
         'open'
       );
-      return res.status(200).json({
+      return sendResponse(200, {
         status: "success",
         message: "[DRY RUN] Simulated trade execution succeeded",
         executedTrade: {
@@ -3213,7 +3212,7 @@ export default async function handler(req, res) {
         'open'
       );
 
-      return res.status(200).json({
+      return sendResponse(200, {
         status: "success",
         executedTrade: {
           symbol: target.symbol,
@@ -3232,7 +3231,7 @@ export default async function handler(req, res) {
   } catch (error) {
 
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
-    return res.status(200).json({ status: "error", error: error.message });
+    return sendResponse(200, { status: "error", error: error.message });
   }
 }
 // Trigger Vercel rebuild
