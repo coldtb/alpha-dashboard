@@ -2705,8 +2705,6 @@ export default async function handler(req, res) {
 
       const geckoId = geckoIdMap[cand.symbol] || cand.symbol.toLowerCase();
       let parsedTa = null;
-      let parsedDeriv = null;
-      let parsedOpt = null;
 
       if (geckoId) {
         try {
@@ -2716,15 +2714,11 @@ export default async function handler(req, res) {
             new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 1.2s")), 1200))
           ]).catch(() => null);
 
-          const results = await Promise.allSettled([
-            mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' })),
-            mcpTimeout(callTrueNorthMcp('derivatives_analysis', { token_address: geckoId })),
-            mcpTimeout(callTrueNorthMcp('options_report', { token_address: geckoId }))
-          ]);
+          const taRes = await mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' }));
           
-          if (results[0].status === 'fulfilled' && results[0].value?.result?.content?.[0]?.text) {
+          if (taRes?.result?.content?.[0]?.text) {
             try { 
-              parsedTa = JSON.parse(results[0].value.result.content[0].text); 
+              parsedTa = JSON.parse(taRes.result.content[0].text); 
               let tnVwapVal = 0;
               if (parsedTa?.support_resistance?.vwap?.cumulative) {
                 const vwapData = parsedTa.support_resistance.vwap.cumulative;
@@ -2738,12 +2732,6 @@ export default async function handler(req, res) {
             } catch (e) { 
               logger.error("Failed to parse taData: " + e.message, "events"); 
             }
-          }
-          if (results[1].status === 'fulfilled' && results[1].value?.result?.content?.[0]?.text) {
-            try { parsedDeriv = JSON.parse(results[1].value.result.content[0].text); } catch (e) { logger.error("Failed to parse derivData: " + e.message, "events"); }
-          }
-          if (results[2].status === 'fulfilled') {
-            parsedOpt = results[2].value;
           }
 
           // ── combo_token_analysis: Зөвхөн мэдээлэл (advisory) — арилжааг хаахгүй ──
