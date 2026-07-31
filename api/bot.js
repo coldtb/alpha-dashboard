@@ -837,7 +837,7 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   // Calculate Entry Price: Check for Support/Resistance Rebound first, else fall back to VWAP
   let strongSupport = null;
   let strongResistance = null;
-  const buffer = config.entryBufferPct !== undefined ? config.entryBufferPct : 0.005;
+  const buffer = config.entryBufferPct !== undefined ? config.entryBufferPct : 0.001;
 
   if (entryOverride === null) {
     if (dir === 'LONG' && config.enableSupportRebound !== false && channels.length > 0) {
@@ -2522,7 +2522,7 @@ export default async function handler(req, res) {
         // 2. Candidates Monitoring Table (Using REAL Dynamic TrueNorth Support & Eterna Data)
         reportMsg += `\`\`\`text\n`;
         reportMsg += `LIVE CANDIDATES MONITORING FOR SLOTS 1, 2 & 3\n\n`;
-        reportMsg += `Coin   | Direction   | Price        | TN Support   | Distance %   | 0.5% Gate Status\n`;
+        reportMsg += `Coin   | Direction   | Price        | TN Support   | Distance %   | 0.1% Gate Status\n`;
         reportMsg += `-------+-------------+--------------+--------------+--------------+-------------------------\n`;
 
         // Filter tradeable candidates dynamically for Discord report (strictly restricted to 30 Hyperscaled coins)
@@ -2557,10 +2557,10 @@ export default async function handler(req, res) {
             statusStr = "Position Open 🟢";
           } else if (hasOpenOrder) {
             statusStr = "Open Order Pending ⏳";
-          } else if (distPct <= 0.50) {
-            statusStr = "🟢 ENTRY READY NOW! (Inside 0.5%)";
+          } else if (distPct <= 0.10) {
+            statusStr = "🟢 ENTRY READY NOW! (Inside 0.1%)";
           } else {
-            const needPct = Math.max(0.01, distPct - 0.50).toFixed(2);
+            const needPct = Math.max(0.01, distPct - 0.10).toFixed(2);
             statusStr = `⏳ Waiting for ${needPct}% touch`;
           }
 
@@ -2849,8 +2849,8 @@ export default async function handler(req, res) {
       let targetDirection = rawDirection;
 
       // Entry Gate: Zone Touch executes immediately; 100% aligned candidates execute Instant Market Entry at current price!
-      const isZoneTouch = (rawDirection === 'LONG' && cand.price <= levels.entry * 1.005) || 
-                          (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.995);
+      const isZoneTouch = (rawDirection === 'LONG' && cand.price <= levels.entry * 1.001) || 
+                          (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.999);
 
       if (isZoneTouch) {
         bypassTrendFilter = true;
@@ -2958,13 +2958,13 @@ export default async function handler(req, res) {
         }
       }
 
-      // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.5%)
+      // Support/Resistance Zone Touch Check: Execute Direct Market Order if market price is inside Support/Resistance Zone (within 0.1%)
       if (levels && levels.entry) {
-        if (direction === 'LONG' && cand.price > levels.entry * 1.005) {
-          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.5% Support Zone $${levels.entry} (waiting for support touch)`, "events");
+        if (direction === 'LONG' && cand.price > levels.entry * 1.001) {
+          logger.warn(`[Support Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is above 0.1% Support Zone $${levels.entry} (waiting for support touch)`, "events");
           continue;
-        } else if (direction === 'SHORT' && cand.price < levels.entry * 0.995) {
-          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.5% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
+        } else if (direction === 'SHORT' && cand.price < levels.entry * 0.999) {
+          logger.warn(`[Resistance Zone Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is below 0.1% Resistance Zone $${levels.entry} (waiting for resistance touch)`, "events");
           continue;
         }
       }

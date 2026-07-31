@@ -16,10 +16,10 @@ interface EternaSignal {
 }
 
 const INITIAL_SIGNALS: EternaSignal[] = [
-  { symbol: 'BTC', name: 'Bitcoin', price: 64500.00, change24h: 0.50, direction: 'LONG', supportZone: 63532.50, resistanceZone: 65467.50, distToSupportPct: 0.50, status: '⏳ Waiting for 0.15% touch', macroTrend: 'Bullish (1h VWAP)', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 25 },
-  { symbol: 'ETH', name: 'Ethereum', price: 3450.00, change24h: 0.80, direction: 'LONG', supportZone: 3398.25, resistanceZone: 3501.75, distToSupportPct: 0.50, status: '⏳ Waiting for 0.20% touch', macroTrend: 'Bullish Structure', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 20 },
-  { symbol: 'SOL', name: 'Solana', price: 74.50, change24h: 1.20, direction: 'LONG', supportZone: 73.38, resistanceZone: 75.62, distToSupportPct: 0.50, status: '🟢 ENTRY READY NOW! (Inside 0.5%)', macroTrend: 'Bullish Momentum', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 25 },
-  { symbol: 'BNB', name: 'BNB Chain', price: 580.00, change24h: 0.30, direction: 'LONG', supportZone: 571.30, resistanceZone: 588.70, distToSupportPct: 0.50, status: '⏳ Waiting for 0.25% touch', macroTrend: 'Neutral-Bullish', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 15 },
+  { symbol: 'BTC', name: 'Bitcoin', price: 64500.00, change24h: 0.50, direction: 'LONG', supportZone: 63532.50, resistanceZone: 65467.50, distToSupportPct: 0.10, status: '⏳ Waiting for 0.15% touch', macroTrend: 'Bullish (1h VWAP)', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 25 },
+  { symbol: 'ETH', name: 'Ethereum', price: 3450.00, change24h: 0.80, direction: 'LONG', supportZone: 3398.25, resistanceZone: 3501.75, distToSupportPct: 0.10, status: '⏳ Waiting for 0.20% touch', macroTrend: 'Bullish Structure', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 20 },
+  { symbol: 'SOL', name: 'Solana', price: 74.50, change24h: 1.20, direction: 'LONG', supportZone: 73.38, resistanceZone: 75.62, distToSupportPct: 0.10, status: '🟢 ENTRY READY NOW! (Inside 0.1%)', macroTrend: 'Bullish Momentum', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 25 },
+  { symbol: 'BNB', name: 'BNB Chain', price: 580.00, change24h: 0.30, direction: 'LONG', supportZone: 571.30, resistanceZone: 588.70, distToSupportPct: 0.10, status: '⏳ Waiting for 0.25% touch', macroTrend: 'Neutral-Bullish', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 15 },
   { symbol: 'XRP', name: 'XRP Perps', price: 1.0737, change24h: -0.50, direction: 'SHORT', supportZone: 1.0700, resistanceZone: 1.0898, distToSupportPct: 0.50, status: '⏳ Waiting for 0.15% touch', macroTrend: 'Bearish Alignment', vwapAlignment: 'Below 15m VWAP', volatilityBoost: 15 },
   { symbol: 'DOGE', name: 'Dogecoin', price: 0.06978, change24h: -0.50, direction: 'SHORT', supportZone: 0.06940, resistanceZone: 0.07082, distToSupportPct: 0.50, status: '⏳ Waiting for 0.22% touch', macroTrend: 'Bearish Structure', vwapAlignment: 'Below 15m VWAP', volatilityBoost: 15 },
   { symbol: 'ADA', name: 'Cardano', price: 0.385, change24h: 0.40, direction: 'LONG', supportZone: 0.379, resistanceZone: 0.390, distToSupportPct: 0.50, status: '⏳ Waiting for 0.30% touch', macroTrend: 'Bullish Alignment', vwapAlignment: 'Above 15m VWAP', volatilityBoost: 15 },
@@ -86,14 +86,14 @@ export const EternaSignalStream: React.FC = () => {
               
               let distToGatePct = 0;
               if (direction === 'LONG') {
-                distToGatePct = Math.max(0, ((price - supportZone) / price * 100) - 0.5);
+                distToGatePct = Math.max(0, ((price - supportZone) / price * 100) - 0.1);
               } else {
-                distToGatePct = Math.max(0, ((resistanceZone - price) / price * 100) - 0.5);
+                distToGatePct = Math.max(0, ((resistanceZone - price) / price * 100) - 0.1);
               }
 
-              const isInsideGate = distToGatePct <= 0.05;
+              const isInsideGate = distToGatePct <= 0.01;
               const status = isInsideGate 
-                ? '🟢 ENTRY READY NOW! (Inside 0.5%)' 
+                ? '🟢 ENTRY READY NOW! (Inside 0.1%)' 
                 : `⏳ ${distToGatePct.toFixed(2)}% хүлээж байна`;
 
               return {
@@ -246,7 +246,7 @@ export const EternaSignalStream: React.FC = () => {
                   <span style={{ fontWeight: 600, color: '#e2e8f0' }}>${sig.supportZone < 1 ? sig.supportZone.toFixed(4) : sig.supportZone.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--color-text-muted)' }}>0.5% Gate Status:</span>
+                  <span style={{ color: 'var(--color-text-muted)' }}>0.1% Gate Status:</span>
                   <span style={{ fontWeight: 700, color: isReady ? '#10b981' : '#fbbf24' }}>
                     {sig.status}
                   </span>
