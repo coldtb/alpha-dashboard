@@ -2525,8 +2525,12 @@ export default async function handler(req, res) {
         reportMsg += `Coin   | Direction   | Price        | TN Support   | Distance %   | 0.5% Gate Status\n`;
         reportMsg += `-------+-------------+--------------+--------------+--------------+-------------------------\n`;
 
-        // Filter tradeable candidates dynamically for Discord report
-        const displayCandidates = scoredCoins.filter(c => !(config.blacklist || []).includes(c.symbol)).slice(0, 7);
+        // Filter tradeable candidates dynamically for Discord report (strictly restricted to 30 Hyperscaled coins)
+        const displayCandidates = scoredCoins.filter(c => 
+          watchlist.includes(c.symbol) && 
+          SUPPORTED_30_COINS.includes(c.symbol) && 
+          !(config.blacklist || []).includes(c.symbol)
+        ).slice(0, 7);
 
         for (const cand of displayCandidates) {
           const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.szi) !== 0);
