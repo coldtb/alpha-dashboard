@@ -94,7 +94,7 @@ export const EternaSignalStream: React.FC = () => {
               const isInsideGate = distToGatePct <= 0.01;
               const status = isInsideGate 
                 ? '🟢 ENTRY READY NOW! (Inside 0.1%)' 
-                : `⏳ ${distToGatePct.toFixed(2)}% хүлээж байна`;
+                : `⏳ Waiting for ${distToGatePct.toFixed(2)}% touch`;
 
               return {
                 ...sig,
