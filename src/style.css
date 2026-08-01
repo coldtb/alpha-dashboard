@@ -1252,7 +1252,6 @@ tbody tr:hover {
   pointer-events: none;
   z-index: -10 !important;
   overflow: hidden;
-  perspective: 1000px;
 }
 
 .app-layout {
@@ -1267,32 +1266,31 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
 
 .falling-real-dollar-bill {
   position: absolute;
-  top: -65px;
-  width: 110px;
-  height: 48px;
+  top: -70px;
+  width: 140px;
+  height: 59px;
   background-image: url('/usd-100-bill.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
-  border-radius: 2px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25)) brightness(0.95);
+  border-radius: 3px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) brightness(1.12) contrast(1.05);
   pointer-events: none;
   user-select: none;
-  transform-style: preserve-3d;
-  animation: realBillFall3D linear forwards;
+  animation: realBillFall linear forwards;
 }
 
-@keyframes realBillFall3D {
+@keyframes realBillFall {
   0% {
-    top: -70px;
-    transform: translateX(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(var(--bill-scale, 1));
+    top: -75px;
+    transform: translateX(0) rotate(0deg) scale(var(--bill-scale, 1));
   }
   50% {
-    transform: translateX(var(--sway-x, 45px)) rotateX(calc(var(--rot-x, 360deg) * 0.5)) rotateY(calc(var(--rot-y, 360deg) * 0.5)) rotateZ(var(--rot-z, 90deg)) scale(var(--bill-scale, 1));
+    transform: translateX(var(--sway-x, 40px)) rotate(var(--rot-z, 15deg)) scale(var(--bill-scale, 1));
   }
   100% {
     top: 105vh;
-    transform: translateX(calc(var(--sway-x, 45px) * -1)) rotateX(var(--rot-x, 720deg)) rotateY(var(--rot-y, 720deg)) rotateZ(calc(var(--rot-z, 90deg) * 2)) scale(var(--bill-scale, 1));
+    transform: translateX(calc(var(--sway-x, 40px) * -1)) rotate(calc(var(--rot-z, 15deg) * -1.5)) scale(var(--bill-scale, 1));
   }
 }
 
