@@ -5,33 +5,19 @@ export const FallingDollarsRain: React.FC = () => {
     const container = document.getElementById('falling-dollars-container');
     if (!container) return;
 
-    const spawnDollarBill = () => {
+    const spawnRealDollarBill = () => {
       if (!container) return;
       // Cap maximum active bill elements on screen
       if (container.childElementCount > 30) return;
 
       const bill = document.createElement('div');
-      bill.className = 'falling-paper-dollar-bill';
-
-      // Inner banknote content: $100 Cash Bill Design
-      bill.innerHTML = `
-        <div class="bill-border">
-          <span class="bill-corner top-left">$100</span>
-          <span class="bill-corner top-right">$100</span>
-          <div class="bill-seal">
-            <span class="bill-text">100</span>
-            <span class="bill-label">UNITED STATES OF AMERICA</span>
-          </div>
-          <span class="bill-corner bottom-left">$100</span>
-          <span class="bill-corner bottom-right">$100</span>
-        </div>
-      `;
+      bill.className = 'falling-real-dollar-bill';
 
       // Random position, 3D speed, sway, rotation
       const startLeft = Math.random() * 95; // 0vw to 95vw
       const duration = 7 + Math.random() * 9; // 7s to 16s fall duration
-      const scale = 0.65 + Math.random() * 0.45; // 0.65 to 1.10 scale
-      const opacity = 0.25 + Math.random() * 0.35; // 0.25 to 0.60 opacity
+      const scale = 0.70 + Math.random() * 0.45; // 0.70 to 1.15 scale
+      const opacity = 0.35 + Math.random() * 0.40; // 0.35 to 0.75 opacity
       const sway = -80 + Math.random() * 160; // -80px to +80px sway
       const rotX = Math.random() * 720;
       const rotY = Math.random() * 720;
@@ -57,12 +43,12 @@ export const FallingDollarsRain: React.FC = () => {
     };
 
     // Initial batch
-    for (let i = 0; i < 12; i++) {
-      setTimeout(spawnDollarBill, i * 400);
+    for (let i = 0; i < 15; i++) {
+      setTimeout(spawnRealDollarBill, i * 350);
     }
 
     // Interval spawner
-    const interval = setInterval(spawnDollarBill, 500);
+    const interval = setInterval(spawnRealDollarBill, 450);
 
     return () => {
       clearInterval(interval);
