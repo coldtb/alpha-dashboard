@@ -1269,7 +1269,8 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
   top: -85px;
   pointer-events: none;
   user-select: none;
-  animation: realBillFall linear forwards;
+  transform-style: preserve-3d;
+  animation: realBillFlutterFall ease-in-out forwards;
 }
 
 .dollar-bill-img {
@@ -1277,23 +1278,42 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
   height: auto;
   display: block;
   border-radius: 3px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.4);
-  filter: brightness(1.2) contrast(1.1);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.45), 0 0 12px rgba(16, 185, 129, 0.3);
+  filter: brightness(1.18) contrast(1.08);
   pointer-events: none;
   user-select: none;
+  animation: billPaperWave var(--flutter-speed, 3s) infinite ease-in-out alternate;
 }
 
-@keyframes realBillFall {
+@keyframes realBillFlutterFall {
   0% {
-    top: -90px;
-    transform: translateX(0) rotate(0deg) scale(var(--bill-scale, 1));
+    top: -95px;
+    transform: translateX(0) rotateZ(0deg) scale(var(--bill-scale, 1));
+  }
+  25% {
+    transform: translateX(var(--sway-x, 60px)) rotateZ(var(--rot-z, 22deg)) scale(calc(var(--bill-scale, 1) * 1.04));
   }
   50% {
-    transform: translateX(var(--sway-x, 45px)) rotate(var(--rot-z, 15deg)) scale(var(--bill-scale, 1));
+    transform: translateX(calc(var(--sway-x, 60px) * -0.6)) rotateZ(calc(var(--rot-z, 22deg) * -0.8)) scale(calc(var(--bill-scale, 1) * 0.96));
+  }
+  75% {
+    transform: translateX(calc(var(--sway-x, 60px) * 0.8)) rotateZ(calc(var(--rot-z, 22deg) * 1.2)) scale(calc(var(--bill-scale, 1) * 1.03));
   }
   100% {
     top: 105vh;
-    transform: translateX(calc(var(--sway-x, 45px) * -1)) rotate(calc(var(--rot-z, 15deg) * -1.5)) scale(var(--bill-scale, 1));
+    transform: translateX(calc(var(--sway-x, 60px) * -0.5)) rotateZ(calc(var(--rot-z, 22deg) * -1.5)) scale(var(--bill-scale, 1));
+  }
+}
+
+@keyframes billPaperWave {
+  0% {
+    transform: rotateX(0deg) rotateY(-8deg) translateY(0px);
+  }
+  50% {
+    transform: rotateX(12deg) rotateY(10deg) translateY(-6px);
+  }
+  100% {
+    transform: rotateX(-10deg) rotateY(-12deg) translateY(4px);
   }
 }
 

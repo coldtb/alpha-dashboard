@@ -18,15 +18,19 @@ export const FallingDollarsRain: React.FC = () => {
       img.alt = "$100 Bill";
       img.className = 'dollar-bill-img';
 
+      // Random flutter wave speed for paper wind movement
+      const flutterSpeed = 2.2 + Math.random() * 2.0; // 2.2s to 4.2s paper wave
+      img.style.setProperty('--flutter-speed', `${flutterSpeed}s`);
+
       wrapper.appendChild(img);
 
-      // Random position, speed, sway, rotation — 50% Dim Ambient Opacity
+      // Random position, speed, sway, rotation — Realistic Wind Flutter
       const startLeft = Math.random() * 90; // 0vw to 90vw
-      const duration = 7 + Math.random() * 8; // 7s to 15s fall duration
-      const scale = 0.85 + Math.random() * 0.40; // 0.85 to 1.25 scale
-      const opacity = 0.45 + Math.random() * 0.10; // 0.45 to 0.55 (Exact 50% Dim Opacity)
-      const sway = -60 + Math.random() * 120; // -60px to +60px sway
-      const rotZ = -20 + Math.random() * 40; // -20deg to +20deg gentle tilt
+      const duration = 8 + Math.random() * 9; // 8s to 17s graceful drifting fall
+      const scale = 0.82 + Math.random() * 0.38; // 0.82 to 1.20 scale
+      const opacity = 0.45 + Math.random() * 0.10; // 50% Dim Opacity
+      const sway = -80 + Math.random() * 160; // -80px to +80px wind sway
+      const rotZ = -22 + Math.random() * 44; // -22deg to +22deg wind tilt
 
       wrapper.style.left = `${startLeft}vw`;
       wrapper.style.opacity = `${opacity}`;
@@ -47,11 +51,11 @@ export const FallingDollarsRain: React.FC = () => {
 
     // Initial batch
     for (let i = 0; i < 15; i++) {
-      setTimeout(spawnRealDollarBill, i * 300);
+      setTimeout(spawnRealDollarBill, i * 320);
     }
 
     // Interval spawner
-    const interval = setInterval(spawnRealDollarBill, 400);
+    const interval = setInterval(spawnRealDollarBill, 450);
 
     return () => {
       clearInterval(interval);
