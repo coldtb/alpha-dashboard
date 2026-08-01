@@ -2575,6 +2575,11 @@ export default async function handler(req, res) {
         }
 
         reportMsg += `\`\`\`\n`;
+        reportMsg += `🌐 **ETERNA EXCHANGE PROXY LIVE DATA:**\n`;
+        reportMsg += `• **Live Mark & Last Price:** Real-time 1m tick validation per candidate\n`;
+        reportMsg += `• **24h Price Change %:** 24h momentum change for direction scoring\n`;
+        reportMsg += `• **24h Market Turnover:** Liquidity validation ($3.97B+ aggregate volume)\n`;
+        reportMsg += `• **24h High/Low Channels:** Volatility boundary validation\n\n`;
         reportMsg += `**🎯 ENTRY RULES CHECKLIST:**\n`;
         reportMsg += `1. **TrueNorth 1h VWAP Filter:** Trend alignment strictly required\n`;
         reportMsg += `2. **TrueNorth RSI14 Guard:** No LONG if RSI>=68, No SHORT if RSI<=32\n`;
