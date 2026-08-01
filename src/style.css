@@ -1251,42 +1251,33 @@ tbody tr:hover {
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
   overflow: hidden;
-  perspective: 800px; /* Enables 3D flipping effects */
 }
 
-.falling-dollar {
+.falling-dollar-particle {
   position: absolute;
-  width: 90px;
-  height: 38px;
-  background-image: url('/usd-100-bill.jpg');
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-radius: 1px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+  top: -40px;
+  color: #10b981;
+  font-family: 'Outfit', 'Inter', monospace, sans-serif;
+  font-weight: 800;
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.4), 0 0 20px rgba(16, 185, 129, 0.2);
   pointer-events: none;
-  transform-style: preserve-3d;
-  animation: fall linear forwards;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22)) brightness(0.98);
+  user-select: none;
+  animation: particleFall linear forwards;
 }
 
-@keyframes fall {
+@keyframes particleFall {
   0% {
-    top: -60px;
-    transform: translateX(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(var(--dollar-scale, 1));
-    opacity: 0;
+    top: -50px;
+    transform: translateX(0) rotate(0deg);
   }
-  10% {
-    opacity: var(--dollar-opacity, 0.15);
-  }
-  90% {
-    opacity: var(--dollar-opacity, 0.15);
+  50% {
+    transform: translateX(var(--sway-x, 30px)) rotate(var(--rot-z, 180deg));
   }
   100% {
     top: 105vh;
-    transform: translateX(var(--sway-distance, 50px)) rotateX(var(--rotate-x, 720deg)) rotateY(var(--rotate-y, 360deg)) rotateZ(var(--rotate-z, 180deg)) scale(var(--dollar-scale, 1));
-    opacity: 0;
+    transform: translateX(calc(var(--sway-x, 30px) * -1)) rotate(calc(var(--rot-z, 180deg) * 2));
   }
 }
 

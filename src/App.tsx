@@ -9,6 +9,7 @@ import { FuturesScanner } from './features/dashboard/components/FuturesScanner';
 import { PromptsHub } from './features/analytics/components/PromptsHub';
 import { DeepInsightsDrawer } from './features/analytics/components/DeepInsightsDrawer';
 import { EternaSignalStream } from './features/analytics/components/EternaSignalStream';
+import { FallingDollarsRain } from './components/ui/FallingDollarsRain';
 
 const DashboardContent: React.FC = () => {
   const {
@@ -44,8 +45,8 @@ const DashboardContent: React.FC = () => {
 
   return (
     <Layout>
-      {/* Falling Dollars Particle Layer - CSS only fallback or custom effect could go here */}
-      <div id="falling-dollars-container" />
+      {/* Falling Dollars Particle Rain Background Effect */}
+      <FallingDollarsRain />
 
       {/* Trade Planner & Signals Row */}
       <div className="dashboard-top-row">
