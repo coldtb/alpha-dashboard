@@ -32,7 +32,7 @@ export const ClosedTrades: React.FC = () => {
                   const pnlClass = pnlNum >= 0 ? 'change-up' : 'change-down';
                   const pnlPrefix = pnlNum >= 0 ? '+' : '';
                   
-                  const direction = trade.direction || trade.dir || (trade.side === 'B' ? 'LONG' : 'SHORT');
+                  const direction = trade.direction || trade.dir || (trade.side === 'A' || trade.side === 'S' ? 'LONG' : (trade.side === 'B' ? 'SHORT' : 'LONG'));
                   const dirClass = direction === 'LONG' ? 'change-up' : 'change-down';
                   
                   const size = trade.size || trade.sz || '0';

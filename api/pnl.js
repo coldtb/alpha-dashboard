@@ -190,7 +190,7 @@ export default async function handler(req, res) {
       const isBot = f.cloid && f.cloid.startsWith("0x626f745f");
       return {
         coin: f.coin,
-        direction: f.side === "S" ? "LONG" : "SHORT", // selling closes LONG, buying closes SHORT
+        direction: (f.side === "A" || f.side === "S") ? "LONG" : "SHORT", // selling (Ask 'A') closes LONG, buying (Bid 'B') closes SHORT
         price: parseFloat(f.px),
         size: parseFloat(f.sz),
         pnl,
