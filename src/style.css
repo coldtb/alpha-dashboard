@@ -1302,3 +1302,99 @@ select option {
   background-color: #1a1b20 !important;
   color: #ffffff !important;
 }
+
+/* ==========================================================================
+   📱 MOBILE & TABLET WEB BROWSER RESPONSIVE DESIGN (iOS & Android Optimized)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.8rem;
+    padding: 1.2rem 1rem;
+  }
+
+  .logo-container {
+    gap: 0.6rem;
+  }
+
+  .logo-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  h1 {
+    font-size: 1.35rem;
+  }
+
+  .status-badge {
+    align-self: flex-start;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  main {
+    padding: 1rem 0.75rem !important;
+  }
+
+  /* Grid Layouts - Convert to 1 column on Mobile */
+  .signals-grid,
+  .podium-grid,
+  .perf-stats-grid,
+  .planner-grid,
+  .scanner-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.85rem !important;
+  }
+
+  /* Cards Padding & Touch Targets */
+  .signal-card,
+  .podium-card,
+  .perf-stat-card,
+  .planner-card,
+  .panel-card {
+    padding: 1rem !important;
+    border-radius: 0.85rem !important;
+  }
+
+  /* Table Touch Scroll Support */
+  .scanner-table-wrapper,
+  .table-responsive {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  table {
+    min-width: 600px;
+    font-size: 0.82rem;
+  }
+
+  /* Form & Planner Inputs Touch Optimization */
+  input, select, button {
+    min-height: 44px !important;
+    font-size: 0.95rem !important;
+  }
+
+  /* Scale down falling $100 dollar bills for mobile screens */
+  .dollar-bill-img {
+    width: 115px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 1.2rem;
+  }
+
+  .logo-icon {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .dollar-bill-img {
+    width: 95px !important;
+  }
+}
