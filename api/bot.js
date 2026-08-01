@@ -1293,13 +1293,13 @@ function calculateScore(coin, isHyperliquidScale = false) {
 }
 
 
-// Helper to format floats to EIP-712 strings
-function formatPrice(price) {
+// Helper to format floats to EIP-712 strings with Hyperliquid tick precision rule max(0, 6 - szDecimals)
+function formatPrice(price, szDecimals = 0) {
   if (typeof price !== 'number' || isNaN(price)) return "0";
+  const maxDecimals = Math.max(0, 6 - (szDecimals || 0));
   let str = Number(price.toPrecision(5)).toString();
-  if (str.includes('e') || str.includes('E')) {
-    const dec = price < 0.001 ? 8 : (price < 1 ? 6 : 4);
-    str = parseFloat(price.toFixed(dec)).toString();
+  if (str.includes('e') || str.includes('E') || (str.includes('.') && str.split('.')[1].length > maxDecimals)) {
+    str = parseFloat(price.toFixed(maxDecimals)).toString();
   }
   return str;
 }
@@ -3089,15 +3089,16 @@ export default async function handler(req, res) {
 
     // 7. Execute Leverage and Order
     const isBuy = direction === "LONG";
-    const entrySz = formatSize(positionSizeTokens, target.assetInfo.szDecimals);
-    const entryPx = formatPrice(levels.entry);
-    const entryMarketWorstPx = formatPrice(isBuy ? levels.entry * 1.02 : levels.entry * 0.98);
+    const szDec = target.assetInfo?.szDecimals || 0;
+    const entrySz = formatSize(positionSizeTokens, szDec);
+    const entryPx = formatPrice(levels.entry, szDec);
+    const entryMarketWorstPx = formatPrice(isBuy ? levels.entry * 1.02 : levels.entry * 0.98, szDec);
 
-    const tpPx = formatPrice(levels.tp);
-    const tpWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp));
+    const tpPx = formatPrice(levels.tp, szDec);
+    const tpWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp), szDec);
 
-    const slPx = formatPrice(levels.sl);
-    const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl));
+    const slPx = formatPrice(levels.sl, szDec);
+    const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl), szDec);
 
     const entryCloid = generateEncodedCloid({
       score: target.score,
