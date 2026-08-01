@@ -1295,7 +1295,13 @@ function calculateScore(coin, isHyperliquidScale = false) {
 
 // Helper to format floats to EIP-712 strings
 function formatPrice(price) {
-  return Number(price.toPrecision(5)).toString();
+  if (typeof price !== 'number' || isNaN(price)) return "0";
+  let str = Number(price.toPrecision(5)).toString();
+  if (str.includes('e') || str.includes('E')) {
+    const dec = price < 0.001 ? 8 : (price < 1 ? 6 : 4);
+    str = parseFloat(price.toFixed(dec)).toString();
+  }
+  return str;
 }
 
 function formatSize(sz, decimals) {
