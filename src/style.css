@@ -1266,31 +1266,34 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
 
 .falling-real-dollar-bill {
   position: absolute;
-  top: -75px;
-  width: 155px;
-  height: 66px;
-  background-image: url('/usd-100-bill.png');
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-radius: 3px;
-  box-shadow: 0 6px 20px rgba(0, 230, 118, 0.25), 0 4px 15px rgba(0, 0, 0, 0.4);
-  filter: brightness(1.35) contrast(1.15) drop-shadow(0 4px 12px rgba(16, 185, 129, 0.45));
+  top: -85px;
   pointer-events: none;
   user-select: none;
   animation: realBillFall linear forwards;
 }
 
+.dollar-bill-img {
+  width: 165px;
+  height: auto;
+  display: block;
+  border-radius: 3px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.4);
+  filter: brightness(1.2) contrast(1.1);
+  pointer-events: none;
+  user-select: none;
+}
+
 @keyframes realBillFall {
   0% {
-    top: -80px;
+    top: -90px;
     transform: translateX(0) rotate(0deg) scale(var(--bill-scale, 1));
   }
   50% {
-    transform: translateX(var(--sway-x, 40px)) rotate(var(--rot-z, 15deg)) scale(var(--bill-scale, 1));
+    transform: translateX(var(--sway-x, 45px)) rotate(var(--rot-z, 15deg)) scale(var(--bill-scale, 1));
   }
   100% {
     top: 105vh;
-    transform: translateX(calc(var(--sway-x, 40px) * -1)) rotate(calc(var(--rot-z, 15deg) * -1.5)) scale(var(--bill-scale, 1));
+    transform: translateX(calc(var(--sway-x, 45px) * -1)) rotate(calc(var(--rot-z, 15deg) * -1.5)) scale(var(--bill-scale, 1));
   }
 }
 

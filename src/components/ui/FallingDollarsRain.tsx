@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { USD_100_BASE64 } from './usd100Base64';
 
 export const FallingDollarsRain: React.FC = () => {
   useEffect(() => {
@@ -9,30 +10,37 @@ export const FallingDollarsRain: React.FC = () => {
       if (!container) return;
       if (container.childElementCount > 25) return;
 
-      const bill = document.createElement('div');
-      bill.className = 'falling-real-dollar-bill';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'falling-real-dollar-bill';
 
-      // Random position, speed, sway, rotation - FULL BRIGHT VISIBILITY
+      const img = document.createElement('img');
+      img.src = USD_100_BASE64;
+      img.alt = "$100 Bill";
+      img.className = 'dollar-bill-img';
+
+      wrapper.appendChild(img);
+
+      // Random position, speed, sway, rotation
       const startLeft = Math.random() * 90; // 0vw to 90vw
-      const duration = 6 + Math.random() * 7; // 6s to 13s fall duration
-      const scale = 0.85 + Math.random() * 0.35; // 0.85 to 1.20 scale
-      const opacity = 0.88 + Math.random() * 0.12; // 0.88 to 1.00 FULL BRIGHT OPACITY
-      const sway = -70 + Math.random() * 140; // -70px to +70px gentle sway
+      const duration = 7 + Math.random() * 8; // 7s to 15s fall duration
+      const scale = 0.85 + Math.random() * 0.40; // 0.85 to 1.25 scale
+      const opacity = 0.85 + Math.random() * 0.15; // 0.85 to 1.00 full opacity
+      const sway = -60 + Math.random() * 120; // -60px to +60px sway
       const rotZ = -20 + Math.random() * 40; // -20deg to +20deg gentle tilt
 
-      bill.style.left = `${startLeft}vw`;
-      bill.style.opacity = `${opacity}`;
-      bill.style.animationDuration = `${duration}s`;
-      bill.style.setProperty('--bill-scale', `${scale}`);
-      bill.style.setProperty('--sway-x', `${sway}px`);
-      bill.style.setProperty('--rot-z', `${rotZ}deg`);
+      wrapper.style.left = `${startLeft}vw`;
+      wrapper.style.opacity = `${opacity}`;
+      wrapper.style.animationDuration = `${duration}s`;
+      wrapper.style.setProperty('--bill-scale', `${scale}`);
+      wrapper.style.setProperty('--sway-x', `${sway}px`);
+      wrapper.style.setProperty('--rot-z', `${rotZ}deg`);
 
-      container.appendChild(bill);
+      container.appendChild(wrapper);
 
       // Auto-remove element after fall animation completes
       setTimeout(() => {
-        if (bill.parentNode === container) {
-          container.removeChild(bill);
+        if (wrapper.parentNode === container) {
+          container.removeChild(wrapper);
         }
       }, duration * 1000);
     };
