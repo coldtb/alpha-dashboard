@@ -1266,15 +1266,15 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
 
 .falling-real-dollar-bill {
   position: absolute;
-  top: -70px;
-  width: 140px;
-  height: 59px;
+  top: -75px;
+  width: 155px;
+  height: 66px;
   background-image: url('/usd-100-bill.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
   border-radius: 3px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) brightness(1.12) contrast(1.05);
+  box-shadow: 0 6px 20px rgba(0, 230, 118, 0.25), 0 4px 15px rgba(0, 0, 0, 0.4);
+  filter: brightness(1.35) contrast(1.15) drop-shadow(0 4px 12px rgba(16, 185, 129, 0.45));
   pointer-events: none;
   user-select: none;
   animation: realBillFall linear forwards;
@@ -1282,7 +1282,7 @@ header, main, section, .perf-panel, .signals-section, .planner-section, .podium-
 
 @keyframes realBillFall {
   0% {
-    top: -75px;
+    top: -80px;
     transform: translateX(0) rotate(0deg) scale(var(--bill-scale, 1));
   }
   50% {

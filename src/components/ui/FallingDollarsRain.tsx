@@ -12,13 +12,13 @@ export const FallingDollarsRain: React.FC = () => {
       const bill = document.createElement('div');
       bill.className = 'falling-real-dollar-bill';
 
-      // Random position, 2.5D speed, sway, rotation
-      const startLeft = Math.random() * 92; // 0vw to 92vw
-      const duration = 7 + Math.random() * 8; // 7s to 15s fall duration
-      const scale = 0.70 + Math.random() * 0.40; // 0.70 to 1.10 scale
-      const opacity = 0.28 + Math.random() * 0.25; // 0.28 to 0.53 crisp opacity
-      const sway = -60 + Math.random() * 120; // -60px to +60px gentle sway
-      const rotZ = -25 + Math.random() * 50; // -25deg to +25deg gentle tilt
+      // Random position, speed, sway, rotation - FULL BRIGHT VISIBILITY
+      const startLeft = Math.random() * 90; // 0vw to 90vw
+      const duration = 6 + Math.random() * 7; // 6s to 13s fall duration
+      const scale = 0.85 + Math.random() * 0.35; // 0.85 to 1.20 scale
+      const opacity = 0.88 + Math.random() * 0.12; // 0.88 to 1.00 FULL BRIGHT OPACITY
+      const sway = -70 + Math.random() * 140; // -70px to +70px gentle sway
+      const rotZ = -20 + Math.random() * 40; // -20deg to +20deg gentle tilt
 
       bill.style.left = `${startLeft}vw`;
       bill.style.opacity = `${opacity}`;
@@ -38,12 +38,12 @@ export const FallingDollarsRain: React.FC = () => {
     };
 
     // Initial batch
-    for (let i = 0; i < 14; i++) {
-      setTimeout(spawnRealDollarBill, i * 350);
+    for (let i = 0; i < 15; i++) {
+      setTimeout(spawnRealDollarBill, i * 300);
     }
 
     // Interval spawner
-    const interval = setInterval(spawnRealDollarBill, 450);
+    const interval = setInterval(spawnRealDollarBill, 400);
 
     return () => {
       clearInterval(interval);
