@@ -2493,6 +2493,7 @@ export default async function handler(req, res) {
             displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
           }
         const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
+        const activeCount = activePositionsList.length;
         let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring 30 Hyperscaled Coins\n`;
         reportMsg += `⚡ **Current Action:** ${activeCount > 0 ? `🟢 Managing ${activeCount} Active Position(s)` : '⏳ Monitoring Candidates for 0.1% Gate Touch'} | **0.1% Gate Rule:** Active 🛡️\n`;
         reportMsg += `**💰 Account Balance:** $${displayBalance.toFixed(2)} | **Active Positions:** ${activeCount}/${maxConcurrentPositions}\n\n`;
