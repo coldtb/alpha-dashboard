@@ -2481,8 +2481,9 @@ export default async function handler(req, res) {
 
     // 5-Minute Frequency Discord Status Report Generator (Formatted exactly like the image table with REAL TrueNorth data)
     const currentMin = new Date().getMinutes();
-    if (currentMin % 5 === 0) {
-      if (!global.lastDiscordReportMin || global.lastDiscordReportMin !== currentMin) {
+    const isExplicitReportReq = req?.query?.cron === 'true' || req?.query?.report === 'true';
+    if (currentMin % 5 === 0 || isExplicitReportReq) {
+      if (!global.lastDiscordReportMin || global.lastDiscordReportMin !== currentMin || isExplicitReportReq) {
         global.lastDiscordReportMin = currentMin;
 
         let displayBalance = parseFloat(userState.withdrawable || "0");
