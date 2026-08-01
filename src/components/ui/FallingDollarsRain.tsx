@@ -8,17 +8,17 @@ export const FallingDollarsRain: React.FC = () => {
     const spawnRealDollarBill = () => {
       if (!container) return;
       // Cap maximum active bill elements on screen
-      if (container.childElementCount > 30) return;
+      if (container.childElementCount > 25) return;
 
       const bill = document.createElement('div');
       bill.className = 'falling-real-dollar-bill';
 
       // Random position, 3D speed, sway, rotation
       const startLeft = Math.random() * 95; // 0vw to 95vw
-      const duration = 7 + Math.random() * 9; // 7s to 16s fall duration
-      const scale = 0.70 + Math.random() * 0.45; // 0.70 to 1.15 scale
-      const opacity = 0.35 + Math.random() * 0.40; // 0.35 to 0.75 opacity
-      const sway = -80 + Math.random() * 160; // -80px to +80px sway
+      const duration = 8 + Math.random() * 10; // 8s to 18s smooth slow fall
+      const scale = 0.65 + Math.random() * 0.40; // 0.65 to 1.05 scale
+      const opacity = 0.15 + Math.random() * 0.22; // 0.15 to 0.37 subtle ambient opacity
+      const sway = -70 + Math.random() * 140; // -70px to +70px sway
       const rotX = Math.random() * 720;
       const rotY = Math.random() * 720;
       const rotZ = -180 + Math.random() * 360;
@@ -43,12 +43,12 @@ export const FallingDollarsRain: React.FC = () => {
     };
 
     // Initial batch
-    for (let i = 0; i < 15; i++) {
-      setTimeout(spawnRealDollarBill, i * 350);
+    for (let i = 0; i < 12; i++) {
+      setTimeout(spawnRealDollarBill, i * 400);
     }
 
     // Interval spawner
-    const interval = setInterval(spawnRealDollarBill, 450);
+    const interval = setInterval(spawnRealDollarBill, 500);
 
     return () => {
       clearInterval(interval);
