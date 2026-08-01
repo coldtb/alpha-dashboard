@@ -2492,6 +2492,8 @@ export default async function handler(req, res) {
           if (usdcBal) {
             displayBalance = parseFloat(usdcBal.total || "0") - parseFloat(usdcBal.hold || "0");
           }
+        }
+
         const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
         const activeCount = activePositionsList.length;
         let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring 30 Hyperscaled Coins\n`;
