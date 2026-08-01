@@ -674,14 +674,15 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
   const funding = coin.funding || 0;
   let score = 0;
 
-  if (funding < -0.0001) {
+  // 1. Primary Momentum Driver: 24h Price Change
+  if (change24h > 0) score += 2;
+  else if (change24h < 0) score -= 2;
+
+  // 2. Extreme Funding Rate Squeeze Driver (Only for extreme funding rates > 0.05% or < -0.05%)
+  if (funding < -0.0005) {
     score += 2;
-  } else if (funding < 0) {
-    score += 1;
-  } else if (funding > 0.0001) {
+  } else if (funding > 0.0005) {
     score -= 2;
-  } else if (funding > 0) {
-    score -= 1;
   }
 
   if (config.enableVwapFilter !== false && taData?.support_resistance?.vwap?.cumulative) {

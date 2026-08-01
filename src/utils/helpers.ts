@@ -253,14 +253,15 @@ export function detectAutoDirection(
   const change24h = coin.change || 0;
   let score = 0;
 
-  if (funding < -0.0001) {
+  // 1. Primary Momentum Driver: 24h Price Change
+  if (change24h > 0) score += 2;
+  else if (change24h < 0) score -= 2;
+
+  // 2. Extreme Funding Rate Squeeze Driver (Only for extreme funding rates > 0.05% or < -0.05%)
+  if (funding < -0.0005) {
     score += 2;
-  } else if (funding < 0) {
-    score += 1;
-  } else if (funding > 0.0001) {
+  } else if (funding > 0.0005) {
     score -= 2;
-  } else if (funding > 0) {
-    score -= 1;
   }
 
   if (taData?.support_resistance?.vwap?.cumulative) {
@@ -284,9 +285,6 @@ export function detectAutoDirection(
     if (strongSupport && !strongResistance) score += 1;
     else if (strongResistance && !strongSupport) score -= 1;
   }
-
-  if (change24h > 3) score += 1;
-  else if (change24h < -3) score -= 1;
 
   let dir: 'LONG' | 'SHORT' = 'LONG';
   if (score > 0) dir = 'LONG';
