@@ -20,11 +20,11 @@ export const FallingDollarsRain: React.FC = () => {
 
       wrapper.appendChild(img);
 
-      // Random position, speed, sway, rotation
+      // Random position, speed, sway, rotation — 50% Dim Ambient Opacity
       const startLeft = Math.random() * 90; // 0vw to 90vw
       const duration = 7 + Math.random() * 8; // 7s to 15s fall duration
       const scale = 0.85 + Math.random() * 0.40; // 0.85 to 1.25 scale
-      const opacity = 0.85 + Math.random() * 0.15; // 0.85 to 1.00 full opacity
+      const opacity = 0.45 + Math.random() * 0.10; // 0.45 to 0.55 (Exact 50% Dim Opacity)
       const sway = -60 + Math.random() * 120; // -60px to +60px sway
       const rotZ = -20 + Math.random() * 40; // -20deg to +20deg gentle tilt
 
