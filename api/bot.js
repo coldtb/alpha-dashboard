@@ -3216,7 +3216,6 @@ export default async function handler(req, res) {
         }
       });
     }
-  }
   } catch (error) {
 
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
