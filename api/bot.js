@@ -1905,8 +1905,21 @@ export default async function handler(req, res) {
             const slCapPct = COIN_SL_CAP[coin] || 0.015; // Strict 1.5% SL cap
             const tpCapPct = COIN_TP_CAP[coin] || 0.02;
 
-            const slPxNum = isLong ? entryPx * (1 - slCapPct) : entryPx * (1 + slCapPct);
-            const tpPxNum = isLong ? entryPx * (1 + tpCapPct) : entryPx * (1 - tpCapPct);
+            // Dynamic Market-Adaptive SL & TP Calculation
+            // Ensures trigger prices are strictly beyond current live market price by at least 0.5% buffer to prevent instant market closing
+            let slPxNum = isLong ? entryPx * (1 - slCapPct) : entryPx * (1 + slCapPct);
+            if (isLong && slPxNum >= currentPrice) {
+              slPxNum = currentPrice * 0.995; // 0.5% below current mark price for LONG
+            } else if (!isLong && slPxNum <= currentPrice) {
+              slPxNum = currentPrice * 1.005; // 0.5% above current mark price for SHORT
+            }
+
+            let tpPxNum = isLong ? entryPx * (1 + tpCapPct) : entryPx * (1 - tpCapPct);
+            if (isLong && tpPxNum <= currentPrice) {
+              tpPxNum = currentPrice * 1.005;
+            } else if (!isLong && tpPxNum >= currentPrice) {
+              tpPxNum = currentPrice * 0.995;
+            }
 
             const slPxStr = formatPrice(slPxNum, szDec);
             const slWorstPxStr = formatPrice(isLong ? slPxNum * 0.90 : slPxNum * 1.10, szDec);
