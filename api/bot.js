@@ -1893,6 +1893,61 @@ export default async function handler(req, res) {
       const isLong = size > 0;
       const returnPct = isLong ? (currentPrice - entryPx) / entryPx : (entryPx - currentPrice) / entryPx;
 
+      // Missing SL/TP Automatic Recovery Guard: Automatically attach missing 1.5% SL & TP trigger orders if missing
+      const activeCoinOrders = openOrders.filter(o => o.coin === coin);
+      const hasSlOrder = activeCoinOrders.some(o => o.orderType === 'Stop Market' || (o.triggerCondition && o.triggerCondition.includes('below') && isLong) || (o.triggerCondition && o.triggerCondition.includes('above') && !isLong) || o.isTrigger || o.oid);
+
+      if (!hasSlOrder) {
+        logger.warn(`[Missing SL Guard] Active position ${coin} (${isLong ? 'LONG' : 'SHORT'}) has no active Stop Loss! Attaching missing SL/TP bracket...`, "events");
+        try {
+          if (!isDryRun) {
+            const szDec = currentCoin.assetInfo.szDecimals;
+            const slCapPct = COIN_SL_CAP[coin] || 0.015; // Strict 1.5% SL cap
+            const tpCapPct = COIN_TP_CAP[coin] || 0.02;
+
+            const slPxNum = isLong ? entryPx * (1 - slCapPct) : entryPx * (1 + slCapPct);
+            const tpPxNum = isLong ? entryPx * (1 + tpCapPct) : entryPx * (1 - tpCapPct);
+
+            const slPxStr = formatPrice(slPxNum, szDec);
+            const slWorstPxStr = formatPrice(isLong ? slPxNum * 0.90 : slPxNum * 1.10, szDec);
+
+            const tpPxStr = formatPrice(tpPxNum, szDec);
+            const tpWorstPxStr = formatPrice(isLong ? tpPxNum * 1.10 : tpPxNum * 0.90, szDec);
+
+            const positionSzStr = formatSize(Math.abs(size), szDec);
+
+            const attachRes = await exchange.order({
+              orders: attachBuilderFee([
+                {
+                  a: assetIdx,
+                  b: !isLong,
+                  p: tpWorstPxStr,
+                  s: positionSzStr,
+                  r: true,
+                  t: { trigger: { triggerPx: tpPxStr, isMarket: true, tpsl: "tp" } },
+                  c: generateBotCloid()
+                },
+                {
+                  a: assetIdx,
+                  b: !isLong,
+                  p: slWorstPxStr,
+                  s: positionSzStr,
+                  r: true,
+                  t: { trigger: { triggerPx: slPxStr, isMarket: true, tpsl: "sl" } },
+                  c: generateBotCloid()
+                }
+              ]),
+              grouping: "na"
+            });
+            logger.info(`[Missing SL Guard] Successfully attached missing SL/TP bracket for ${coin}: ` + JSON.stringify(attachRes), "audit");
+            await sendDiscordAlert(`🛡️ **Missing SL/TP Restored!**\n**Coin:** ${coin}\n**SL:** $${slPxStr} (1.5% Strict Cap)\n**TP:** $${tpPxStr}`, 'open').catch(() => {});
+            needsOrdersRefresh = true;
+          }
+        } catch (mErr) {
+          logger.error(`[Missing SL Guard] Failed to attach missing SL/TP for ${coin}: ${mErr.message}`, "events");
+        }
+      }
+
       // Check A: Max Hold Duration Timeout (24h force close)
       const openTime = getPositionOpenTime(coin, userFills);
       if (openTime) {
