@@ -2167,9 +2167,19 @@ export default async function handler(req, res) {
               const assetIdx = hlMeta ? hlMeta.universe.findIndex(a => a.name === coin) : meta[0].universe.findIndex(a => a.name === coin);
               const szDec = hlMeta ? hlMeta.universe[assetIdx].szDecimals : meta[0].universe[assetIdx].szDecimals;
 
-              // Cancel old SL order safely with explicit Number casting
-              if (slOrder && slOrder.oid) {
-                await exchange.cancel({ cancels: [{ a: assetIdx, o: Number(slOrder.oid) }] }).catch(err => {
+              // Cancel ALL existing SL orders for this position before placing new ratchet SL
+              const cancelsList = [];
+              if (Array.isArray(openOrders)) {
+                openOrders.forEach(o => {
+                  if (o.coin === coin && o.oid) {
+                    const parsedPx = parseFloat(o.triggerPx || o.limitPx || "0");
+                    const isSlOrder = isLong ? (parsedPx < currentPrice) : (parsedPx > currentPrice);
+                    if (isSlOrder) cancelsList.push({ a: assetIdx, o: Number(o.oid) });
+                  }
+                });
+              }
+              if (cancelsList.length > 0) {
+                await exchange.cancel({ cancels: cancelsList }).catch(err => {
                   logger.warn(`[Ratchet Lock Cancel Warning] ${err.message}`, "events");
                 });
               }
