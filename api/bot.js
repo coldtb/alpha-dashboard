@@ -1199,46 +1199,16 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   const defaultMaxTp = COIN_TP_CAP[symbol] ?? 0.0075;
   const maxTpPct = maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp;
 
-  // Direct Coin-Specific TP/SL Enforcer for Pure Strict Rule Strategy
-  if (!useSmartSlTp && COIN_TP_CAP[symbol] !== undefined && COIN_SL_CAP[symbol] !== undefined) {
-    const targetTpPct = maxTpPctOverride !== null ? maxTpPctOverride : COIN_TP_CAP[symbol];
-    const targetSlPct = COIN_SL_CAP[symbol];
-    
-    if (dir === 'LONG') {
-      tp = entry * (1 + targetTpPct);
-      sl = entry * (1 - targetSlPct);
-    } else {
-      tp = entry * (1 - targetTpPct);
-      sl = entry * (1 + targetSlPct);
-    }
+  // Direct Coin-Specific TP/SL Enforcer: Strict 1.5% SL and 1.5% TP
+  const targetTpPct = maxTpPctOverride !== null ? maxTpPctOverride : (COIN_TP_CAP[symbol] ?? 0.015);
+  const targetSlPct = COIN_SL_CAP[symbol] ?? 0.015;
+  
+  if (dir === 'LONG') {
+    tp = entry * (1 + targetTpPct);
+    sl = entry * (1 - targetSlPct);
   } else {
-    const effectiveMinSlBuffer = Math.min(config.minSlBuffer || 0.005, slCap);
-
-    if (dir === 'LONG') {
-      // Stop Loss must be at least effectiveMinSlBuffer below entry
-      const maxSlAllowed = entry * (1 - effectiveMinSlBuffer);
-      if (sl > maxSlAllowed) sl = maxSlAllowed;
-      const minSlAllowed = entry * (1 - slCap);
-      if (sl < minSlAllowed) sl = minSlAllowed;
-
-      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio and cap max TP to 2.5x R:R / maxTpPct
-      const slDistPct = (entry - sl) / entry;
-      const minTpPct = Math.max(slDistPct * 1.8, 0.015);
-      const maxTpCapPct = Math.min(slDistPct * 2.5, config.maxTpPct || 0.033);
-      tp = entry * (1 + maxTpCapPct);
-    } else {
-      // Stop Loss must be at least effectiveMinSlBuffer above entry
-      const minSlAllowed = entry * (1 + effectiveMinSlBuffer);
-      if (sl < minSlAllowed) sl = minSlAllowed;
-      const maxSlAllowed = entry * (1 + slCap);
-      if (sl > maxSlAllowed) sl = maxSlAllowed;
-
-      // Calculate SL distance and set TP to guarantee a minimum 1.8x R:R ratio and cap max TP to 2.5x R:R / maxTpPct
-      const slDistPct = (sl - entry) / entry;
-      const minTpPct = Math.max(slDistPct * 1.8, 0.015);
-      const maxTpCapPct = Math.min(slDistPct * 2.5, config.maxTpPct || 0.033);
-      tp = entry * (1 - maxTpCapPct);
-    }
+    tp = entry * (1 - targetTpPct);
+    sl = entry * (1 + targetSlPct);
   }
 
   // Enforce Minimum Reward-to-Risk Ratio (R:R >= minRewardRiskRatio)
