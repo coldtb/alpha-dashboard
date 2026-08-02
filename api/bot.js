@@ -2140,7 +2140,7 @@ export default async function handler(req, res) {
       if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage;
       else if (roePct >= 0.035) ratchetLockedPricePct = 0.025 / finalLeverage; // +0.5% price gain lock for +3.5% ROE
       else if (roePct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // +0.3% price gain lock for +2.5% ROE
-      else if (roePct >= 0.015) ratchetLockedPricePct = 0.005 / finalLeverage; // +0.1% price gain lock for +1.5% ROE
+      else if (roePct >= 0.015) ratchetLockedPricePct = 0.010 / finalLeverage; // +0.20% price gain lock (+1.0% ROE profit) per user instruction
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
