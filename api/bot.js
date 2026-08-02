@@ -2968,10 +2968,6 @@ export default async function handler(req, res) {
           logger.info(`[Dual Confluence Gate] Skip LONG candidate ${cand.symbol}: 1h Macro Trend is Bearish (${btcTrend}) and 15m setup is not a Rebound Trade`, "events");
           continue;
         }
-        if (btcTrend === 'NEUTRAL' && !isReboundTrade) {
-          logger.info(`[Dual Confluence Gate] Skip ${direction} candidate ${cand.symbol}: 1h Macro Trend is Neutral and setup is not a Rebound Trade`, "events");
-          continue;
-        }
 
         if (isReboundTrade && (btcTrend === 'NEUTRAL' || (btcTrend === 'BULLISH' && direction === 'SHORT') || (btcTrend === 'BEARISH' && direction === 'LONG'))) {
           logger.info(`[Dual Confluence Gate] Rebound Trade Bypass active for ${cand.symbol} (${direction}) via ${levels.reason}. Bypassing macro mismatch!`, "events");
