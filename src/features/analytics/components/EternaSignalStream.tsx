@@ -50,10 +50,28 @@ const INITIAL_SIGNALS: EternaSignal[] = [
 
 
 export const EternaSignalStream: React.FC = () => {
-
   const [signals, setSignals] = useState<EternaSignal[]>(INITIAL_SIGNALS);
   const [lastUpdated, setLastUpdated] = useState<string>(new Date().toLocaleTimeString());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Pagination state: 6 cards per page
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 6;
+
+  const totalSignals = signals.length;
+  const totalPages = Math.max(1, Math.ceil(totalSignals / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
+
+  const startIndex = (activePage - 1) * pageSize;
+  const currentSignals = signals.slice(startIndex, startIndex + pageSize);
+
+  const handlePrev = () => {
+    if (activePage > 1) setCurrentPage(activePage - 1);
+  };
+
+  const handleNext = () => {
+    if (activePage < totalPages) setCurrentPage(activePage + 1);
+  };
 
   const fetchLiveSignals = useCallback(async () => {
     setIsRefreshing(true);
@@ -78,9 +96,6 @@ export const EternaSignalStream: React.FC = () => {
               
               const direction: 'LONG' | 'SHORT' = change24h >= 0 ? 'LONG' : 'SHORT';
               
-              // Real Technical Entry Gate Calculation:
-              // LONG Entry Gate: Price must pull back down within 0.5% of Support Floor (price * 0.985)
-              // SHORT Entry Gate: Price must rally up within 0.5% of Resistance Ceiling (price * 1.015)
               const supportZone = price * 0.985;
               const resistanceZone = price * 1.015;
               
@@ -128,7 +143,7 @@ export const EternaSignalStream: React.FC = () => {
 
   return (
     <section className="eterna-signals-section" style={{ marginBottom: '1.5rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h2 className="grid-section-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '1.2rem' }}>✨</span>
           <span>Eterna AI & TrueNorth Real-Time Signals Feed</span>
@@ -145,10 +160,52 @@ export const EternaSignalStream: React.FC = () => {
             LIVE ETERNA STREAM 🟢
           </span>
         </h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+        {/* Controls Header: Refresh & Pagination */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
             Updated: {lastUpdated}
           </span>
+
+          {/* Pagination Controls Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              onClick={handlePrev}
+              disabled={activePage === 1}
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: activePage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
+                color: activePage === 1 ? '#4b5563' : '#e5e7eb',
+                cursor: activePage === 1 ? 'not-allowed' : 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 600
+              }}
+            >
+              ◀ Prev
+            </button>
+            <span style={{ padding: '0 6px', fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af' }}>
+              {activePage} / {totalPages}
+            </span>
+            <button
+              onClick={handleNext}
+              disabled={activePage === totalPages}
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: activePage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
+                color: activePage === totalPages ? '#4b5563' : '#e5e7eb',
+                cursor: activePage === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 600
+              }}
+            >
+              Next ▶
+            </button>
+          </div>
+
           <button
             onClick={fetchLiveSignals}
             disabled={isRefreshing}
@@ -175,7 +232,7 @@ export const EternaSignalStream: React.FC = () => {
         gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
         gap: '0.8rem'
       }}>
-        {signals.map(sig => {
+        {currentSignals.map(sig => {
           const isLong = sig.direction === 'LONG';
           const isReady = sig.status.includes('READY') || sig.status.includes('Position Open');
 
@@ -263,6 +320,47 @@ export const EternaSignalStream: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Footer Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <button
+            onClick={handlePrev}
+            disabled={activePage === 1}
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '6px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: activePage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(59,130,246,0.15)',
+              color: activePage === 1 ? '#4b5563' : '#60a5fa',
+              cursor: activePage === 1 ? 'not-allowed' : 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: 600
+            }}
+          >
+            ◀ Previous 6
+          </button>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)', margin: '0 0.5rem' }}>
+            Page {activePage} of {totalPages}
+          </span>
+          <button
+            onClick={handleNext}
+            disabled={activePage === totalPages}
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '6px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: activePage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(59,130,246,0.15)',
+              color: activePage === totalPages ? '#4b5563' : '#60a5fa',
+              cursor: activePage === totalPages ? 'not-allowed' : 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: 600
+            }}
+          >
+            Next 6 ▶
+          </button>
+        </div>
+      )}
     </section>
   );
 };
