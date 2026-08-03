@@ -2895,25 +2895,36 @@ export default async function handler(req, res) {
         logger.info(`[Candidate Loop] Skip candidate ${cand.symbol}: computeStrategyLevels returned null (Filtered by R:R or invalid parameters).`, "events");
         continue;
       }
-      
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
-      // Entry Gate: Zone Touch executes immediately; 100% aligned candidates execute Instant Market Entry at current price!
-      const isZoneTouch = (rawDirection === 'LONG' && cand.price <= levels.entry * 1.001) || 
-                          (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.999);
+      // Support & Resistance Dual Zone Touch Gate (User Mandate):
+      // 1. Support Touch (Price <= Support * 1.001) -> Execute LONG Rebound Market Order!
+      // 2. Resistance Touch (Price >= Resistance * 0.999) -> Execute SHORT Rejection Market Order!
+      const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
 
-      if (isZoneTouch) {
+      const isSupportTouch = cand.price <= levels.entry * 1.001 || (rawDirection === 'LONG' && cand.price <= levels.entry * 1.005);
+      const isResistanceTouch = cand.price >= levels.entry * 0.999 || (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.995);
+
+      if (isSupportTouch || isResistanceTouch) {
         bypassTrendFilter = true;
-        targetDirection = rawDirection;
-        logger.info(`[Zone Touch Gate] Candidate ${cand.symbol} touched Support/Resistance Zone ($${levels.entry}). Direct Market Entry!`, "events");
+        if (isSupportTouch) {
+          targetDirection = 'LONG';
+          levels.entry = cand.price;
+          levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
+          levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
+          logger.info(`[Support Zone Touch Gate] Candidate ${cand.symbol} touched Support Zone ($${cand.price}). Executing LONG Rebound Market Order!`, "events");
+        } else {
+          targetDirection = 'SHORT';
+          levels.entry = cand.price;
+          levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
+          levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
+          logger.info(`[Resistance Zone Touch Gate] Candidate ${cand.symbol} touched Resistance Zone ($${cand.price}). Executing SHORT Rejection Market Order!`, "events");
+        }
       } else {
-        // Instant Market Entry: Enter immediately at current market price for 100% aligned top candidates!
-        const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
         levels.entry = cand.price;
         levels.sl = rawDirection === 'LONG' ? parseFloat((cand.price * 0.985).toFixed(dec)) : parseFloat((cand.price * 1.015).toFixed(dec));
         levels.tp = rawDirection === 'LONG' ? parseFloat((cand.price * 1.015).toFixed(dec)) : parseFloat((cand.price * 0.985).toFixed(dec));
-
         logger.info(`[Instant Execution Gate] Candidate ${cand.symbol} signals 100% aligned. Executing INSTANT Market Entry at $${cand.price}!`, "events");
       }
 
