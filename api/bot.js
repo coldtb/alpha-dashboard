@@ -2650,18 +2650,17 @@ export default async function handler(req, res) {
       return sendResponse(200, { status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
     }
 
-    // Filter candidates that are not currently in active positions/orders
-    const tradeableCandidates = [];
-    for (const cand of candidates) {
-      const hasOpenOrder = openOrders.some(order => order.coin === cand.symbol);
-      const hasPosition = userState.assetPositions.some(p => p.position.coin === cand.symbol && parseFloat(p.position.szi) !== 0);
+    // Filter candidates that are not currently in active positions/orders (Strict Single Position per Coin Guard)
+    const activePosCoins = (userState.assetPositions || [])
+      .filter(p => parseFloat(p.position?.szi || "0") !== 0)
+      .map(p => p.position.coin);
+    const activeOrdCoins = (openOrders || []).map(o => o.coin);
+    const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins]);
 
-      if (!hasOpenOrder && !hasPosition) {
-        tradeableCandidates.push(cand);
-      }
-    }
+    const tradeableCandidates = candidates.filter(cand => !blockedCoins.has(cand.symbol));
 
     if (tradeableCandidates.length === 0) {
+      logger.info(`[Bot Execution] All candidate coins are blocked (already have active positions or open orders: ${[...blockedCoins].join(', ')}).`, "events");
       return sendResponse(200, { status: "success", message: "Candidates found but all already have open positions or orders." });
     }
 
