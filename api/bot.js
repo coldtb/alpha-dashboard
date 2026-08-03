@@ -3058,12 +3058,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Determine whether to use Spot DEX Order Execution or Perp Futures Execution
-    const isSpotTrading = withdrawableUsd < 1.0 && spotUsdcBal >= 10.0;
-    if (isSpotTrading) {
-      logger.info(`[Spot Trading Mode] Perp margin is $${withdrawableUsd.toFixed(2)}. Routing order directly to Hyperliquid Spot DEX using Spot USDC ($${spotUsdcBal.toFixed(2)})...`, "events");
-    }
-
     // Calculate Total Account Size (Perp Margin + Spot USDC, with minimum $18.53 fallback)
     const totalCapitalUsd = Math.max(withdrawableUsd + spotUsdcBal, 18.53);
     let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
@@ -3157,71 +3151,6 @@ export default async function handler(req, res) {
         }
       });
     } else {
-      if (isSpotTrading) {
-        let spotAssetIndex = null;
-        try {
-          const spotMeta = await info.spotMetaAndAssetCtxs();
-          if (spotMeta && spotMeta[0] && spotMeta[0].universe) {
-            const universe = spotMeta[0].universe;
-            const tokens = spotMeta[0].tokens;
-            const idx = universe.findIndex(u => {
-              const baseToken = tokens[u.tokens[0]];
-              return u.name === `${target.symbol}/USDC` || u.name === target.symbol || baseToken?.name === target.symbol;
-            });
-            if (idx !== -1) spotAssetIndex = 10000 + idx;
-          }
-        } catch (e) {
-          logger.warn(`Failed to resolve spot asset index for ${target.symbol}: ${e.message}`, "events");
-        }
-
-        if (spotAssetIndex === null) {
-          spotAssetIndex = 10000; // Default to Spot PURR/USDC (asset 10000)
-          logger.info(`[Spot Execution] Fallback Spot pair PURR/USDC (asset 10000) selected.`, "events");
-        }
-
-        const spotOrderPayload = {
-          orders: [
-            {
-              a: spotAssetIndex,
-              b: isBuy,
-              p: entryMarketWorstPx,
-              s: entrySz,
-              r: false,
-              t: { limit: { tif: "Gtc" } },
-              c: entryCloid
-            }
-          ],
-          grouping: "na"
-        };
-        if (vaultAddress) spotOrderPayload.vaultAddress = vaultAddress;
-        logger.info(`[Spot Execution] Executing Spot Order on Hyperliquid Spot DEX: ${JSON.stringify(spotOrderPayload)}`, "events");
-        const spotResult = await exchange.order(spotOrderPayload);
-        logger.info(`[Spot Execution] Spot Order Result: ${JSON.stringify(spotResult)}`, "events");
-
-        await sendDiscordAlert(
-          `🛒 **Spot Market Trade Executed (Spot Wallet Balance)**\n` +
-          `**Coin:** ${target.symbol} (Asset Index: ${spotAssetIndex})\n` +
-          `**Direction:** ${direction} (Spot DEX)\n` +
-          `**Entry Price:** $${entryPx}\n` +
-          `**Position Size:** $${positionSizeUsd.toFixed(2)} USDC`,
-          'open'
-        );
-
-        return sendResponse(200, {
-          status: "success",
-          message: "Spot market trade executed successfully on Hyperliquid Spot DEX",
-          executedTrade: {
-            symbol: target.symbol,
-            direction,
-            mode: "SPOT",
-            spotAssetIndex,
-            positionSizeUsd: positionSizeUsd.toFixed(2),
-            entryPrice: entryPx,
-            orderResult: spotResult
-          }
-        });
-      }
-
       // A. Update Leverage
       const levPayload = {
         asset: target.assetIndex,
