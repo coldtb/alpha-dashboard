@@ -3058,23 +3058,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Auto Spot-to-Perp Transfer: If Perp withdrawable balance is < $5.0 but Spot has USDC, transfer automatically!
-    if (withdrawableUsd < 5.0 && spotUsdcBal >= 5.0) {
-      logger.info(`[Auto Spot-to-Perp] Perp withdrawable balance ($${withdrawableUsd.toFixed(2)}) is < $5.0. Auto-transferring $${spotUsdcBal.toFixed(2)} Spot USDC to Perp Margin...`, "events");
-      try {
-        if (!isDryRun) {
-          const transferAmt = (Math.floor(spotUsdcBal * 100) / 100).toFixed(2);
-          const transferRes = await exchange.usdClassTransfer({ amount: transferAmt, toPerp: true });
-          logger.info(`[Auto Spot-to-Perp] Transferred $${transferAmt} USDC from Spot to Perp: ${JSON.stringify(transferRes)}`, "events");
-          await sendDiscordAlert(`💵 **Auto Spot-to-Perp Margin Transfer**\nSuccessfully moved **$${transferAmt} USDC** from Spot to Perp Margin!`, 'info').catch(() => {});
-          userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
-          withdrawableUsd = parseFloat(userState.withdrawable || "0");
-        } else {
-          withdrawableUsd = spotUsdcBal;
-        }
-      } catch (tErr) {
-        logger.error(`[Auto Spot-to-Perp] Spot to Perp transfer failed: ${tErr.message}`, "events");
-      }
+    // Determine whether to use Spot DEX Order Execution or Perp Futures Execution
+    const isSpotTrading = withdrawableUsd < 1.0 && spotUsdcBal >= 10.0;
+    if (isSpotTrading) {
+      logger.info(`[Spot Trading Mode] Perp margin is $${withdrawableUsd.toFixed(2)}. Routing order directly to Hyperliquid Spot DEX using Spot USDC ($${spotUsdcBal.toFixed(2)})...`, "events");
     }
 
     // Calculate Total Account Size (Perp Margin + Spot USDC, with minimum $18.53 fallback)
@@ -3170,6 +3157,71 @@ export default async function handler(req, res) {
         }
       });
     } else {
+      if (isSpotTrading) {
+        let spotAssetIndex = null;
+        try {
+          const spotMeta = await info.spotMetaAndAssetCtxs();
+          if (spotMeta && spotMeta[0] && spotMeta[0].universe) {
+            const universe = spotMeta[0].universe;
+            const tokens = spotMeta[0].tokens;
+            const idx = universe.findIndex(u => {
+              const baseToken = tokens[u.tokens[0]];
+              return u.name === `${target.symbol}/USDC` || u.name === target.symbol || baseToken?.name === target.symbol;
+            });
+            if (idx !== -1) spotAssetIndex = 10000 + idx;
+          }
+        } catch (e) {
+          logger.warn(`Failed to resolve spot asset index for ${target.symbol}: ${e.message}`, "events");
+        }
+
+        if (spotAssetIndex === null) {
+          spotAssetIndex = 10000; // Default to Spot PURR/USDC (asset 10000)
+          logger.info(`[Spot Execution] Fallback Spot pair PURR/USDC (asset 10000) selected.`, "events");
+        }
+
+        const spotOrderPayload = {
+          orders: [
+            {
+              a: spotAssetIndex,
+              b: isBuy,
+              p: entryMarketWorstPx,
+              s: entrySz,
+              r: false,
+              t: { limit: { tif: "Gtc" } },
+              c: entryCloid
+            }
+          ],
+          grouping: "na"
+        };
+        if (vaultAddress) spotOrderPayload.vaultAddress = vaultAddress;
+        logger.info(`[Spot Execution] Executing Spot Order on Hyperliquid Spot DEX: ${JSON.stringify(spotOrderPayload)}`, "events");
+        const spotResult = await exchange.order(spotOrderPayload);
+        logger.info(`[Spot Execution] Spot Order Result: ${JSON.stringify(spotResult)}`, "events");
+
+        await sendDiscordAlert(
+          `🛒 **Spot Market Trade Executed (Spot Wallet Balance)**\n` +
+          `**Coin:** ${target.symbol} (Asset Index: ${spotAssetIndex})\n` +
+          `**Direction:** ${direction} (Spot DEX)\n` +
+          `**Entry Price:** $${entryPx}\n` +
+          `**Position Size:** $${positionSizeUsd.toFixed(2)} USDC`,
+          'open'
+        );
+
+        return sendResponse(200, {
+          status: "success",
+          message: "Spot market trade executed successfully on Hyperliquid Spot DEX",
+          executedTrade: {
+            symbol: target.symbol,
+            direction,
+            mode: "SPOT",
+            spotAssetIndex,
+            positionSizeUsd: positionSizeUsd.toFixed(2),
+            entryPrice: entryPx,
+            orderResult: spotResult
+          }
+        });
+      }
+
       // A. Update Leverage
       const levPayload = {
         asset: target.assetIndex,
