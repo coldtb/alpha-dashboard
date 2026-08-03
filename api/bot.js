@@ -2887,10 +2887,14 @@ export default async function handler(req, res) {
       // Evaluate raw direction (without SMA/VWAP trend filters)
       const rawDirection = detectAutoDirection(cand, parsedTa, null, null);
 
-      // Pre-calculate candidate levels using raw direction
+      // Pre-calculate explicit Support Floor and Resistance Ceiling levels
       const useSmartSlTpForCand = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
       const candMaxTpPct = COIN_TP_CAP[cand.symbol] ?? 0.0075;
-      const levels = computeStrategyLevels(cand, rawDirection, parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
+      
+      const suppLevelObj = computeStrategyLevels(cand, 'LONG', parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
+      const resistLevelObj = computeStrategyLevels(cand, 'SHORT', parsedTa, parsedDeriv, parsedOpt, useSmartSlTpForCand, null, candMaxTpPct);
+      
+      let levels = suppLevelObj || resistLevelObj;
       if (!levels) {
         logger.info(`[Candidate Loop] Skip candidate ${cand.symbol}: computeStrategyLevels returned null (Filtered by R:R or invalid parameters).`, "events");
         continue;
@@ -2898,30 +2902,34 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
-      // Support & Resistance Dual Zone Touch Gate (User Mandate):
-      // 1. Support Touch (Price <= Support * 1.001) -> Execute LONG Rebound Market Order!
-      // 2. Resistance Touch (Price >= Resistance * 0.999) -> Execute SHORT Rejection Market Order!
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
+      const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
+      const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
 
-      const isSupportTouch = cand.price <= levels.entry * 1.001 || (rawDirection === 'LONG' && cand.price <= levels.entry * 1.005);
-      const isResistanceTouch = cand.price >= levels.entry * 0.999 || (rawDirection === 'SHORT' && cand.price >= levels.entry * 0.995);
+      // Dual Touch Gate Check: Support Floor -> LONG Rebound, Resistance Ceiling -> SHORT Rejection
+      const isSupportTouch = cand.price <= suppEntryPx * 1.005; // Within 0.5% of Support Floor -> LONG!
+      const isResistanceTouch = cand.price >= resistEntryPx * 0.995; // Within 0.5% of Resistance Ceiling -> SHORT!
 
       if (isSupportTouch || isResistanceTouch) {
         bypassTrendFilter = true;
         if (isSupportTouch) {
           targetDirection = 'LONG';
+          levels = suppLevelObj || levels;
           levels.entry = cand.price;
           levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
           levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
-          logger.info(`[Support Zone Touch Gate] Candidate ${cand.symbol} touched Support Zone ($${cand.price}). Executing LONG Rebound Market Order!`, "events");
+          logger.info(`[Support Floor Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched Support Floor $${suppEntryPx.toFixed(4)}. Executing LONG Rebound Market Order!`, "events");
         } else {
           targetDirection = 'SHORT';
+          levels = resistLevelObj || levels;
           levels.entry = cand.price;
           levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
           levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
-          logger.info(`[Resistance Zone Touch Gate] Candidate ${cand.symbol} touched Resistance Zone ($${cand.price}). Executing SHORT Rejection Market Order!`, "events");
+          logger.info(`[Resistance Ceiling Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched Resistance Ceiling $${resistEntryPx.toFixed(4)}. Executing SHORT Rejection Market Order!`, "events");
         }
       } else {
+        bypassTrendFilter = true; // Execute INSTANT Market Entry for top candidates!
+        targetDirection = rawDirection;
         levels.entry = cand.price;
         levels.sl = rawDirection === 'LONG' ? parseFloat((cand.price * 0.985).toFixed(dec)) : parseFloat((cand.price * 1.015).toFixed(dec));
         levels.tp = rawDirection === 'LONG' ? parseFloat((cand.price * 1.015).toFixed(dec)) : parseFloat((cand.price * 0.985).toFixed(dec));
