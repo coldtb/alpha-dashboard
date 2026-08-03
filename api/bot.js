@@ -2736,11 +2736,8 @@ export default async function handler(req, res) {
       })()
     ]);
 
-    // Re-sort tradeableCandidates since scores might have changed after Nansen check
-    tradeableCandidates.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return b.volume - a.volume;
-    });
+    // Equal Rights Policy (User Mandate): All 30 monitored coins have 100% equal rights.
+    // Whichever coin touches its Support Floor or Resistance Ceiling first executes immediately!
 
     // Process tradeable candidates through the Crowded Trade Filter
     let target = null;
