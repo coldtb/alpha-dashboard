@@ -3046,9 +3046,9 @@ export default async function handler(req, res) {
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
-    // 6. Risk and Position Size Calculations: Combine Perp Margin + Spot USDC balance
+    // 6. Risk and Position Size Calculations: Unified Account Support (Perp Margin + Spot USDC)
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
-    let withdrawableUsd = parseFloat(userState.withdrawable || "0");
+    const perpWithdrawable = parseFloat(userState.withdrawable || "0");
     let spotUsdcBal = 0;
 
     if (spotState && spotState.balances) {
@@ -3058,10 +3058,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // Calculate Total Account Size (Perp Margin + Spot USDC, with minimum $18.53 fallback)
-    const totalCapitalUsd = Math.max(withdrawableUsd + spotUsdcBal, 18.53);
+    // Unified Account Support: When Unified Account is enabled on Hyperliquid, Spot USDC is unified collateral for Perp Futures!
+    const withdrawableUsd = Math.max(perpWithdrawable, spotUsdcBal);
+    const totalCapitalUsd = Math.max(withdrawableUsd, 18.53);
     let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
-    logger.info(`[Account Size] Effective trading capital: $${accountSize.toFixed(2)} (Perp: $${withdrawableUsd.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
+    logger.info(`[Unified Account] Effective trading capital: $${accountSize.toFixed(2)} (Unified Margin: $${withdrawableUsd.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
 
     if (accountSize <= 5.0) {
       logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
