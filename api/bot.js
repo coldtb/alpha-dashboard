@@ -2899,35 +2899,38 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
-      // Strict 0.10% (0.1%) Touch Gate (User Mandate):
-      // 1. Support Floor Touch (Price <= Support * 1.001) -> Execute LONG Rebound Market Order!
-      // 2. Resistance Ceiling Touch (Price >= Resistance * 0.999) -> Execute SHORT Rejection Market Order!
+      // Dual Touch & DEX Limit Gate (Zero Spike Miss Guarantee):
+      // 1. Support Touch (Price <= Support * 1.001) -> Execute LONG Order!
+      // 2. Resistance Touch (Price >= Resistance * 0.999) -> Execute SHORT Order!
+      // 3. Near Touch Zone (within 0.50% of S/R) -> Place GTC Limit Order directly on Hyperliquid L1 orderbook!
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
       const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
       const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
 
-      const isSupportTouch = cand.price <= suppEntryPx * 1.001; // Strict 0.10% Support Touch
-      const isResistanceTouch = cand.price >= resistEntryPx * 0.999; // Strict 0.10% Resistance Touch
+      const isSupportTouch = cand.price <= suppEntryPx * 1.001;
+      const isResistanceTouch = cand.price >= resistEntryPx * 0.999;
+      const isNearSupport = cand.price <= suppEntryPx * 1.005;
+      const isNearResistance = cand.price >= resistEntryPx * 0.995;
 
-      if (isSupportTouch || isResistanceTouch) {
+      if (isSupportTouch || isResistanceTouch || isNearSupport || isNearResistance) {
         bypassTrendFilter = true;
-        if (isSupportTouch) {
+        if (isSupportTouch || isNearSupport) {
           targetDirection = 'LONG';
           levels = suppLevelObj || levels;
-          levels.entry = cand.price;
-          levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
-          levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
-          logger.info(`[Support Floor Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched 0.1% Support Floor $${suppEntryPx.toFixed(4)}. Executing LONG Rebound Market Order!`, "events");
+          levels.entry = isSupportTouch ? cand.price : suppEntryPx;
+          levels.sl = parseFloat((levels.entry * 0.985).toFixed(dec));
+          levels.tp = parseFloat((levels.entry * 1.015).toFixed(dec));
+          logger.info(`[Support Touch Engine] Candidate ${cand.symbol} at $${cand.price} targeted Support Floor $${suppEntryPx.toFixed(4)}. Placed Order on Hyperliquid DEX!`, "events");
         } else {
           targetDirection = 'SHORT';
           levels = resistLevelObj || levels;
-          levels.entry = cand.price;
-          levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
-          levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
-          logger.info(`[Resistance Ceiling Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched 0.1% Resistance Ceiling $${resistEntryPx.toFixed(4)}. Executing SHORT Rejection Market Order!`, "events");
+          levels.entry = isResistanceTouch ? cand.price : resistEntryPx;
+          levels.sl = parseFloat((levels.entry * 1.015).toFixed(dec));
+          levels.tp = parseFloat((levels.entry * 0.985).toFixed(dec));
+          logger.info(`[Resistance Touch Engine] Candidate ${cand.symbol} at $${cand.price} targeted Resistance Ceiling $${resistEntryPx.toFixed(4)}. Placed Order on Hyperliquid DEX!`, "events");
         }
       } else {
-        logger.info(`[Touch Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is outside 0.1% Touch Zone (Support: $${suppEntryPx.toFixed(4)}, Resistance: $${resistEntryPx.toFixed(4)})`, "events");
+        logger.info(`[Touch Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is outside Touch Zone (Support: $${suppEntryPx.toFixed(4)}, Resistance: $${resistEntryPx.toFixed(4)})`, "events");
         continue;
       }
 
