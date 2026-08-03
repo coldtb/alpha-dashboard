@@ -2902,13 +2902,15 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
+      // Strict 0.10% (0.1%) Touch Gate (User Mandate):
+      // 1. Support Floor Touch (Price <= Support * 1.001) -> Execute LONG Rebound Market Order!
+      // 2. Resistance Ceiling Touch (Price >= Resistance * 0.999) -> Execute SHORT Rejection Market Order!
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
       const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
       const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
 
-      // Dual Touch Gate Check: Support Floor -> LONG Rebound, Resistance Ceiling -> SHORT Rejection
-      const isSupportTouch = cand.price <= suppEntryPx * 1.005; // Within 0.5% of Support Floor -> LONG!
-      const isResistanceTouch = cand.price >= resistEntryPx * 0.995; // Within 0.5% of Resistance Ceiling -> SHORT!
+      const isSupportTouch = cand.price <= suppEntryPx * 1.001; // Strict 0.10% Support Touch
+      const isResistanceTouch = cand.price >= resistEntryPx * 0.999; // Strict 0.10% Resistance Touch
 
       if (isSupportTouch || isResistanceTouch) {
         bypassTrendFilter = true;
@@ -2918,22 +2920,18 @@ export default async function handler(req, res) {
           levels.entry = cand.price;
           levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
           levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
-          logger.info(`[Support Floor Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched Support Floor $${suppEntryPx.toFixed(4)}. Executing LONG Rebound Market Order!`, "events");
+          logger.info(`[Support Floor Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched 0.1% Support Floor $${suppEntryPx.toFixed(4)}. Executing LONG Rebound Market Order!`, "events");
         } else {
           targetDirection = 'SHORT';
           levels = resistLevelObj || levels;
           levels.entry = cand.price;
           levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
           levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
-          logger.info(`[Resistance Ceiling Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched Resistance Ceiling $${resistEntryPx.toFixed(4)}. Executing SHORT Rejection Market Order!`, "events");
+          logger.info(`[Resistance Ceiling Touch Gate] Candidate ${cand.symbol} at $${cand.price} touched 0.1% Resistance Ceiling $${resistEntryPx.toFixed(4)}. Executing SHORT Rejection Market Order!`, "events");
         }
       } else {
-        bypassTrendFilter = true; // Execute INSTANT Market Entry for top candidates!
-        targetDirection = rawDirection;
-        levels.entry = cand.price;
-        levels.sl = rawDirection === 'LONG' ? parseFloat((cand.price * 0.985).toFixed(dec)) : parseFloat((cand.price * 1.015).toFixed(dec));
-        levels.tp = rawDirection === 'LONG' ? parseFloat((cand.price * 1.015).toFixed(dec)) : parseFloat((cand.price * 0.985).toFixed(dec));
-        logger.info(`[Instant Execution Gate] Candidate ${cand.symbol} signals 100% aligned. Executing INSTANT Market Entry at $${cand.price}!`, "events");
+        logger.info(`[Touch Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is outside 0.1% Touch Zone (Support: $${suppEntryPx.toFixed(4)}, Resistance: $${resistEntryPx.toFixed(4)})`, "events");
+        continue;
       }
 
 
