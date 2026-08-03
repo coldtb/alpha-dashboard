@@ -2898,39 +2898,31 @@ export default async function handler(req, res) {
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
 
-      // Dual Touch & DEX Limit Gate (Zero Spike Miss Guarantee):
-      // 1. Support Touch (Price <= Support * 1.001) -> Execute LONG Order!
-      // 2. Resistance Touch (Price >= Resistance * 0.999) -> Execute SHORT Order!
-      // 3. Near Touch Zone (within 0.50% of S/R) -> Place GTC Limit Order directly on Hyperliquid L1 orderbook!
+      // August 2nd Winning Execution Engine (User Mandate):
+      // Instant Market Entry when candidate signals momentum alignment!
+      // Support Rebound -> LONG 🟢, Resistance Rejection -> SHORT 🔴
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
       const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
       const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
 
-      const isSupportTouch = cand.price <= suppEntryPx * 1.001;
-      const isResistanceTouch = cand.price >= resistEntryPx * 0.999;
-      const isNearSupport = cand.price <= suppEntryPx * 1.005;
-      const isNearResistance = cand.price >= resistEntryPx * 0.995;
+      const isSupportRebound = cand.price <= suppEntryPx * 1.015;
+      const isResistanceRejection = cand.price >= resistEntryPx * 0.985;
 
-      if (isSupportTouch || isResistanceTouch || isNearSupport || isNearResistance) {
-        bypassTrendFilter = true;
-        if (isSupportTouch || isNearSupport) {
-          targetDirection = 'LONG';
-          levels = suppLevelObj || levels;
-          levels.entry = isSupportTouch ? cand.price : suppEntryPx;
-          levels.sl = parseFloat((levels.entry * 0.985).toFixed(dec));
-          levels.tp = parseFloat((levels.entry * 1.015).toFixed(dec));
-          logger.info(`[Support Touch Engine] Candidate ${cand.symbol} at $${cand.price} targeted Support Floor $${suppEntryPx.toFixed(4)}. Placed Order on Hyperliquid DEX!`, "events");
-        } else {
-          targetDirection = 'SHORT';
-          levels = resistLevelObj || levels;
-          levels.entry = isResistanceTouch ? cand.price : resistEntryPx;
-          levels.sl = parseFloat((levels.entry * 1.015).toFixed(dec));
-          levels.tp = parseFloat((levels.entry * 0.985).toFixed(dec));
-          logger.info(`[Resistance Touch Engine] Candidate ${cand.symbol} at $${cand.price} targeted Resistance Ceiling $${resistEntryPx.toFixed(4)}. Placed Order on Hyperliquid DEX!`, "events");
-        }
+      bypassTrendFilter = true;
+      if (isSupportRebound || rawDirection === 'LONG') {
+        targetDirection = 'LONG';
+        levels = suppLevelObj || levels;
+        levels.entry = cand.price;
+        levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
+        levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
+        logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals LONG Support Rebound. Executing Instant Market Entry!`, "events");
       } else {
-        logger.info(`[Touch Gate] Skip candidate ${cand.symbol}: Market price $${cand.price} is outside Touch Zone (Support: $${suppEntryPx.toFixed(4)}, Resistance: $${resistEntryPx.toFixed(4)})`, "events");
-        continue;
+        targetDirection = 'SHORT';
+        levels = resistLevelObj || levels;
+        levels.entry = cand.price;
+        levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
+        levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
+        logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals SHORT Resistance Rejection. Executing Instant Market Entry!`, "events");
       }
 
 
