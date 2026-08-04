@@ -2922,53 +2922,41 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Hard Macro Trend Protection Guard (NEVER trade against a strong macro trend!)
-      // NOTE: bypassTrendFilter=true means price is AT Support/Resistance Zone — zone touch overrides macro trend filter.
-      const macroTrend = parsedTa?.trend || 'UNKNOWN';
-      if (!bypassTrendFilter) {
-        if (direction === 'SHORT' && (macroTrend === 'Bullish' || (sma24 && cand.price > sma24 * 1.005))) {
-          logger.warn(`[Macro Trend Guard] Blocked SHORT candidate ${cand.symbol}: Cannot open SHORT during strong Bullish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+      // ===== BTC-AWARE TWO-MODE MACRO TREND GUARD =====
+      // Mode A (BTC NEUTRAL/sideways OR UNKNOWN): full freedom — coin's own signal decides direction (any LONG/SHORT).
+      // Mode B (BTC strong trend BULLISH/BEARISH): only BTC-aligned entries allowed (follow the trend).
+      const isReboundTrade = levels.reason && (
+        levels.reason.includes('support_rebound') ||
+        levels.reason.includes('resistance_rebound') ||
+        levels.reason.includes('sr_channel')
+      );
+      if (btcTrend === 'NEUTRAL' || btcTrend === 'UNKNOWN') {
+        // Sideways/unknown: don't restrict by macro trend — allow the coin's own directional signal.
+        logger.info(`[Macro Trend Guard] BTC sideways/unknown — ${cand.symbol} ${direction} allowed on own signal`, "events");
+      } else if (btcTrend === 'BULLISH') {
+        if (direction === 'SHORT') {
+          logger.warn(`[Macro Trend Guard] Blocked SHORT ${cand.symbol}: BTC strong BULLISH — follow trend, only LONG allowed`, "events");
           continue;
         }
-        if (direction === 'LONG' && (macroTrend === 'Bearish' || (sma24 && cand.price < sma24 * 0.995))) {
-          logger.warn(`[Macro Trend Guard] Blocked LONG candidate ${cand.symbol}: Cannot open LONG during strong Bearish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
+      } else if (btcTrend === 'BEARISH') {
+        if (direction === 'LONG') {
+          logger.warn(`[Macro Trend Guard] Blocked LONG ${cand.symbol}: BTC strong BEARISH — follow trend, only SHORT allowed`, "events");
           continue;
         }
-      } else {
-        logger.info(`[Macro Trend Guard] Skipped macro guard for ${cand.symbol}: Support/Resistance Zone touch bypasses macro trend filter (bypassTrendFilter=true, direction=${direction})`, "events");
       }
 
-      // Dual Timeframe Confluence Gate (1h Macro Trend + 15m Micro Entry Alignment)
-      if (!bypassTrendFilter) {
-        const isReboundTrade = levels.reason && (
-          levels.reason.includes('support_rebound') || 
-          levels.reason.includes('resistance_rebound') || 
-          levels.reason.includes('sr_channel')
-        );
-
-        // BTC-specific strict v9.0 CHOP/ADX check
-        if (cand.symbol === 'BTC') {
-          const chopVal = parsedTa?.indicators?.choppiness_index || 50;
-          const adxVal = parsedTa?.indicators?.adx || 20;
-          if (chopVal >= 50 || adxVal <= 25) {
-            logger.info(`[BTC v9.0 Filter] Skip BTC candidate: 15m CHOP (${chopVal}) >= 50 or ADX (${adxVal}) <= 25 (Requires strong trend)`, "events");
-            continue;
-          }
-        }
-
-        // Dual 1h Macro + 15m Micro Confluence Check
-        if (btcTrend === 'BULLISH' && direction === 'SHORT' && !isReboundTrade) {
-          logger.info(`[Dual Confluence Gate] Skip SHORT candidate ${cand.symbol}: 1h Macro Trend is Bullish (${btcTrend}) and 15m setup is not a Rebound Trade`, "events");
+      // Dual Timeframe Confluence Gate (BTC-aware two-mode, consistent with Macro Guard above)
+      // BTC-specific strict v9.0 CHOP/ADX volatility filter (kept)
+      if (cand.symbol === 'BTC') {
+        const chopVal = parsedTa?.indicators?.choppiness_index || 50;
+        const adxVal = parsedTa?.indicators?.adx || 20;
+        if (chopVal >= 50 || adxVal <= 25) {
+          logger.info(`[BTC v9.0 Filter] Skip BTC candidate: 15m CHOP (${chopVal}) >= 50 or ADX (${adxVal}) <= 25 (Requires strong trend)`, "events");
           continue;
         }
-        if (btcTrend === 'BEARISH' && direction === 'LONG' && !isReboundTrade) {
-          logger.info(`[Dual Confluence Gate] Skip LONG candidate ${cand.symbol}: 1h Macro Trend is Bearish (${btcTrend}) and 15m setup is not a Rebound Trade`, "events");
-          continue;
-        }
-
-        if (isReboundTrade && (btcTrend === 'NEUTRAL' || (btcTrend === 'BULLISH' && direction === 'SHORT') || (btcTrend === 'BEARISH' && direction === 'LONG'))) {
-          logger.info(`[Dual Confluence Gate] Rebound Trade Bypass active for ${cand.symbol} (${direction}) via ${levels.reason}. Bypassing macro mismatch!`, "events");
-        }
+      }
+      if (isReboundTrade) {
+        logger.info(`[Dual Confluence Gate] Rebound trade ${cand.symbol} ${direction} — BTC ${btcTrend} (two-mode guard applied)`, "events");
       }
 
       // Crowded Trade Filter
