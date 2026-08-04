@@ -2892,11 +2892,11 @@ export default async function handler(req, res) {
       // Instant Market Entry when candidate signals momentum alignment!
       // Support Rebound -> LONG 🟢, Resistance Rejection -> SHORT 🔴
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
-      const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
-      const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
+      const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.997);
+      const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.003);
 
-      const isSupportRebound = cand.price <= suppEntryPx * 1.015;
-      const isResistanceRejection = cand.price >= resistEntryPx * 0.985;
+      const isSupportRebound = cand.price <= suppEntryPx * 1.003;
+      const isResistanceRejection = cand.price >= resistEntryPx * 0.997;
 
       bypassTrendFilter = true;
       if (isSupportRebound || rawDirection === 'LONG') {
