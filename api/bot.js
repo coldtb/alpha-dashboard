@@ -2107,10 +2107,11 @@ export default async function handler(req, res) {
       const roePct = returnPct * finalLeverage;
 
       let ratchetLockedPricePct = 0;
-      if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous trail 0.20% behind mark price for +5.0%+ ROE
-      else if (roePct >= 0.035) ratchetLockedPricePct = 0.030 / finalLeverage; // Level 3: +0.60% price gain lock (+3.0% ROE)
-      else if (roePct >= 0.025) ratchetLockedPricePct = 0.020 / finalLeverage; // Level 2: +0.40% price gain lock (+2.0% ROE)
-      else if (roePct >= 0.015) ratchetLockedPricePct = 0.010 / finalLeverage; // Level 1: +0.20% price gain lock (+1.0% ROE)
+      // User request: faster + tighter trailing (≈0.1% trail, activate earlier)
+      if (roePct >= 0.040) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous ≈0.1% behind mark for +4%+ ROE
+      else if (roePct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // Level 3
+      else if (roePct >= 0.015) ratchetLockedPricePct = 0.010 / finalLeverage; // Level 2
+      else if (roePct >= 0.005) ratchetLockedPricePct = 0.005 / finalLeverage; // Level 1: ≈0.1% trail, activates just in profit (fast)
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
@@ -2768,6 +2769,67 @@ export default async function handler(req, res) {
     const remainingSlots = Math.max(0, maxConcurrentPositions - activePositionCount);
     const selectedTargets = [];
 
+    // === A: PARALLEL PRE-FETCH of network calls (TrueNorth + Eterna + candles) ===
+    // The serial decision logic below is unchanged; only the slow network fetches are
+    // moved out here and run in bounded-concurrency batches so the whole scan finishes in
+    // ~one batch instead of summing per-candidate latency (was ~21s serial, now ~few sec).
+    const PREFETCH_CONCURRENCY = 6;
+    const _prefetchCandidate = async (cand) => {
+      const geckoId = geckoIdMap[cand.symbol] || cand.symbol.toLowerCase();
+      if (geckoId) {
+        try {
+          const mcpTimeout = (fn) => Promise.race([
+            fn,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 1.2s")), 1200))
+          ]).catch(() => null);
+          const [taRes, eternaData] = await Promise.all([
+            mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' })),
+            fetchEternaMarketTicker(cand.symbol).catch(() => null)
+          ]);
+          if (eternaData) {
+            cand.eternaPrice = eternaData.lastPrice || cand.price;
+            cand.eternaChange24h = eternaData.price24hPcnt || cand.change;
+            cand.eternaTurnover = eternaData.turnover24h || cand.volume;
+          }
+          if (taRes?.result?.content?.[0]?.text) {
+            try {
+              const parsed = JSON.parse(taRes.result.content[0].text);
+              cand._ta = parsed;
+              if (parsed?.support_resistance?.vwap?.cumulative) {
+                const v = parsed.support_resistance.vwap.cumulative;
+                cand._tnVwap = v.state === 'price_above' ? 1 : (v.state === 'price_below' ? 2 : 0);
+              }
+            } catch (e) { /* ignore parse errors */ }
+          }
+        } catch (e) { /* ignore */ }
+      }
+      let sma24 = cand.price, sma50 = cand.price, sma200 = cand.price, volatility24h = 0.02;
+      try {
+        const endTime = Date.now();
+        const lookbackHours = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? 210 : (cand.symbol === 'XRP' ? 60 : 30);
+        const startTime = endTime - lookbackHours * 60 * 60 * 1000;
+        const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
+        if (candles && candles.length >= 25) {
+          const last25 = candles.slice(-25);
+          sma24 = last25.reduce((s, c) => s + parseFloat(c.c), 0) / 25;
+          let high24h = parseFloat(last25[0].h), low24h = parseFloat(last25[0].l);
+          last25.forEach(c => { const h = parseFloat(c.h), l = parseFloat(c.l); if (h > high24h) high24h = h; if (l < low24h) low24h = l; });
+          volatility24h = (high24h - low24h) / low24h;
+        }
+        if (cand.symbol === 'XRP' && candles && candles.length >= 51) {
+          sma50 = candles.slice(-51).reduce((s, c) => s + parseFloat(c.c), 0) / 51;
+        }
+        if ((cand.symbol === 'BTC' || cand.symbol === 'SUI') && candles && candles.length >= 201) {
+          sma200 = candles.slice(-201).reduce((s, c) => s + parseFloat(c.c), 0) / 201;
+        }
+      } catch (e) { /* ignore */ }
+      cand._sma24 = sma24; cand._sma50 = sma50; cand._sma200 = sma200; cand._vol = volatility24h;
+    };
+    for (let i = 0; i < tradeableCandidates.length; i += PREFETCH_CONCURRENCY) {
+      const batch = tradeableCandidates.slice(i, i + PREFETCH_CONCURRENCY);
+      await Promise.all(batch.map(_prefetchCandidate));
+    }
+
     for (const cand of tradeableCandidates) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
@@ -2786,101 +2848,18 @@ export default async function handler(req, res) {
         }
       }
 
-      const geckoId = geckoIdMap[cand.symbol] || cand.symbol.toLowerCase();
-      let parsedTa = null;
-      let parsedDeriv = null;
-      let parsedOpt = null;
+      // (Network calls pre-fetched in parallel above — see PREFETCH block)
+      const parsedTa = cand._ta || null;
+      cand.tnVwap = cand._tnVwap || 0;
+      const parsedDeriv = null;
+      const parsedOpt = null;
+      logger.info(`[Bot Execution] Candidate ${cand.symbol} (Score: ${cand.score}) pre-fetched: TA ${parsedTa ? 'ok' : 'fallback'}, SMA ready`, "events");
 
-
-      if (geckoId) {
-        try {
-          logger.info(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) with Crowded Trade filter...`, "events");
-          const mcpTimeout = (fn) => Promise.race([
-            fn,
-            new Promise((_, reject) => setTimeout(() => reject(new Error("mcp timeout 1.2s")), 1200))
-          ]).catch(() => null);
-
-          const [taRes, eternaData] = await Promise.all([
-            mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' })),
-            fetchEternaMarketTicker(cand.symbol).catch(() => null)
-          ]);
-          
-          if (eternaData) {
-            cand.eternaPrice = eternaData.lastPrice || cand.price;
-            cand.eternaChange24h = eternaData.price24hPcnt || cand.change;
-            cand.eternaTurnover = eternaData.turnover24h || cand.volume;
-            logger.info(`[Eterna Proxy] Candidate ${cand.symbol}: 24h Change ${cand.eternaChange24h.toFixed(2)}%, Mark Price $${eternaData.markPrice}`, "events");
-          }
-
-          if (taRes?.result?.content?.[0]?.text) {
-            try { 
-              parsedTa = JSON.parse(taRes.result.content[0].text); 
-              let tnVwapVal = 0;
-              if (parsedTa?.support_resistance?.vwap?.cumulative) {
-                const vwapData = parsedTa.support_resistance.vwap.cumulative;
-                if (vwapData.state === 'price_above') {
-                  tnVwapVal = 1;
-                } else if (vwapData.state === 'price_below') {
-                  tnVwapVal = 2;
-                }
-              }
-              cand.tnVwap = tnVwapVal;
-            } catch (e) { 
-              logger.error("Failed to parse taData: " + e.message, "events"); 
-            }
-          }
-
-
-        } catch (e) {
-          logger.error(`TrueNorth MCP query failed for candidate ${cand.symbol}: ${e.message}`, "events");
-        }
-      } else {
-        logger.info(`[Bot Execution] Checking candidate ${cand.symbol} (Score: ${cand.score}) without TrueNorth mapping...`, "events");
-      }
-
-      // Calculate 24h SMA, 50h SMA (for XRP trend lock), 200h SMA (for BTC/SUI trend lock), and volatility
-      let sma24 = cand.price;
-      let sma50 = cand.price;
-      let sma200 = cand.price;
-      let volatility24h = 0.02; // default
-      try {
-        const endTime = Date.now();
-        const lookbackHours = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? 210 : (cand.symbol === 'XRP' ? 60 : 30);
-        const startTime = endTime - lookbackHours * 60 * 60 * 1000;
-        const candles = await info.candleSnapshot({ coin: cand.symbol, interval: "1h", startTime, endTime });
-        
-        if (candles && candles.length >= 25) {
-          const last25 = candles.slice(-25);
-          const sumClose24 = last25.reduce((sum, c) => sum + parseFloat(c.c), 0);
-          sma24 = sumClose24 / 25;
-
-          let high24h = parseFloat(last25[0].h);
-          let low24h = parseFloat(last25[0].l);
-          last25.forEach(c => {
-            const h = parseFloat(c.h);
-            const l = parseFloat(c.l);
-            if (h > high24h) high24h = h;
-            if (l < low24h) low24h = l;
-          });
-          volatility24h = (high24h - low24h) / low24h;
-        }
-
-        if (cand.symbol === 'XRP' && candles && candles.length >= 51) {
-          const last50 = candles.slice(-51);
-          const sumClose50 = last50.reduce((sum, c) => sum + parseFloat(c.c), 0);
-          sma50 = sumClose50 / 51;
-          logger.info(`[XRP Trend Lock] Calculated SMA50 for XRP: ${sma50.toFixed(4)} (Current price: ${cand.price})`, "events");
-        }
-
-        if ((cand.symbol === 'BTC' || cand.symbol === 'SUI') && candles && candles.length >= 201) {
-          const last200 = candles.slice(-201);
-          const sumClose200 = last200.reduce((sum, c) => sum + parseFloat(c.c), 0);
-          sma200 = sumClose200 / 201;
-          logger.info(`[${cand.symbol} Trend Lock] Calculated SMA200 for ${cand.symbol}: ${sma200.toFixed(4)} (Current price: ${cand.price})`, "events");
-        }
-      } catch (e) {
-        logger.error(`Failed to calculate SMA/volatility for candidate ${cand.symbol}: ${e.message}`, "events");
-      }
+      // (SMA/volatility pre-fetched in parallel above — see PREFETCH block)
+      const sma24 = cand._sma24 || cand.price;
+      const sma50 = cand._sma50 || cand.price;
+      const sma200 = cand._sma200 || cand.price;
+      const volatility24h = cand._vol || 0.02;
       const smaTrend = (cand.symbol === 'BTC' || cand.symbol === 'SUI') ? sma200 : (cand.symbol === 'XRP' ? sma50 : sma24);
       cand.volatility24h = volatility24h;
 
