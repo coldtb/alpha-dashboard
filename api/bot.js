@@ -3029,7 +3029,7 @@ export default async function handler(req, res) {
 
     if (selectedTargets.length === 0) {
       logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
-      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
+      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", candidatesScanned: tradeableCandidates.length, qualified: 0 });
     }
 
     logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
@@ -3241,12 +3241,14 @@ export default async function handler(req, res) {
     } // end for
 
     if (executedTrades.length === 0) {
-      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates monitored but no valid entries executed." });
+      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates monitored but no valid entries executed.", candidatesScanned: tradeableCandidates.length, qualified: selectedTargets.length });
     }
     return sendResponse(200, {
       status: "success",
       executedTrades,
       executedTrade: executedTrades[0],
+      candidatesScanned: tradeableCandidates.length,
+      qualified: selectedTargets.length,
       message: isDryRun ? `[DRY RUN] Simulated ${executedTrades.length} trade(s) executed` : `Executed ${executedTrades.length} trade(s)`
     });
   } catch (error) {
