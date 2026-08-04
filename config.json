@@ -16,7 +16,7 @@
   "minResistanceRisePct": 0.001,
   "resistanceMinStrength": 50,
   "entryBufferPct": 0.001,
-  "maxReboundDistancePct": 0.010,
+  "maxReboundDistancePct": 0.005,
   "maxDistancePct": 0.05,
   "enableNansenScoring": false,
   "cooldownHours": 1,
