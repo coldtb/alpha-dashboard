@@ -2922,6 +2922,35 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // ===== ETERNA CONFLUENCE + LIQUIDITY GATE =====
+      // Eterna market ticker (price / 24h change / 24h turnover) layered on top of
+      // TrueNorth S/R as an extra confirmation. Degrades gracefully: if Eterna data is
+      // missing we do NOT block the trade (TrueNorth still drives the entry).
+      if (cand.eternaTurnover !== undefined && cand.eternaTurnover !== null) {
+        const t = parseFloat(cand.eternaTurnover) || 0;
+        const MIN_TURNOVER_24H = 25000; // USDT — skip illiquid coins (S/R levels noisy)
+        if (t < MIN_TURNOVER_24H) {
+          logger.warn(`[Eterna Gate] Skip ${cand.symbol}: 24h turnover ${t.toFixed(0)} < ${MIN_TURNOVER_24H} (illiquid)`, "events");
+          continue;
+        }
+      }
+      if (cand.eternaChange24h !== undefined && cand.eternaChange24h !== null) {
+        const chgRaw = parseFloat(cand.eternaChange24h);
+        // Normalize: Bybit-style tickers can report % as "5.23" (points) or 0.0523 (fraction)
+        const chg = Math.abs(chgRaw) > 1 ? chgRaw / 100 : chgRaw;
+        const LONG_OK = chg >= -0.005;   // allow mild counter-trend (<=0.5% down over 24h)
+        const SHORT_OK = chg <= 0.005;   // allow mild counter-trend (<=0.5% up over 24h)
+        if (direction === 'LONG' && !LONG_OK) {
+          logger.warn(`[Eterna Gate] Skip LONG ${cand.symbol}: Eterna 24h change ${(chg*100).toFixed(2)}% is strongly bearish (conflicts)`, "events");
+          continue;
+        }
+        if (direction === 'SHORT' && !SHORT_OK) {
+          logger.warn(`[Eterna Gate] Skip SHORT ${cand.symbol}: Eterna 24h change ${(chg*100).toFixed(2)}% is strongly bullish (conflicts)`, "events");
+          continue;
+        }
+        logger.info(`[Eterna Gate] ${cand.symbol} ${direction} confirmed by Eterna 24h change ${(chg*100).toFixed(2)}%`, "events");
+      }
+
       // ===== BTC-AWARE TWO-MODE MACRO TREND GUARD =====
       // Mode A (BTC NEUTRAL/sideways OR UNKNOWN): full freedom — coin's own signal decides direction (any LONG/SHORT).
       // Mode B (BTC strong trend BULLISH/BEARISH): only BTC-aligned entries allowed (follow the trend).
