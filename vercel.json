@@ -1,0 +1,14 @@
+{
+  "regions": ["fra1"],
+  "functions": {
+    "api/bot.js": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/bot?cron=true",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

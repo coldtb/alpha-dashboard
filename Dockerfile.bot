@@ -1,0 +1,20 @@
+# Bot-only Dockerfile (separate from UI)
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps --omit=dev
+
+# Copy source
+COPY api/ ./api/
+COPY config.json ./
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Bot cron runner: calls bot handler every 5 minutes
+COPY docker-bot-runner.mjs ./docker-bot-runner.mjs
+
+CMD ["node", "docker-bot-runner.mjs"]
