@@ -2885,7 +2885,7 @@ export default async function handler(req, res) {
       cand.volatility24h = volatility24h;
 
       // Evaluate raw direction (without SMA/VWAP trend filters)
-      const rawDirection = detectAutoDirection(cand, parsedTa, null, null);
+      let rawDirection = detectAutoDirection(cand, parsedTa, null, null);
 
       // Pre-calculate explicit Support Floor and Resistance Ceiling levels
       const useSmartSlTpForCand = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
@@ -2896,8 +2896,16 @@ export default async function handler(req, res) {
       
       let levels = suppLevelObj || resistLevelObj;
       if (!levels) {
-        logger.info(`[Candidate Loop] Skip candidate ${cand.symbol}: computeStrategyLevels returned null (Filtered by R:R or invalid parameters).`, "events");
-        continue;
+        // TrueNorth unavailable/timeout -> fall back to SMA-based direction + fixed 1.5% levels (do NOT skip the candidate)
+        rawDirection = cand.price >= sma24 ? 'LONG' : 'SHORT';
+        const d = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
+        levels = {
+          entry: cand.price,
+          sl: parseFloat((cand.price * (rawDirection === 'LONG' ? 0.985 : 1.015)).toFixed(d)),
+          tp: parseFloat((cand.price * (rawDirection === 'LONG' ? 1.015 : 0.985)).toFixed(d)),
+          reason: 'fallback_sma_direction'
+        };
+        logger.info(`[Candidate Loop] ${cand.symbol}: TrueNorth unavailable -> SMA fallback ${rawDirection} entry at $${cand.price}`, "events");
       }
       let bypassTrendFilter = false;
       let targetDirection = rawDirection;
