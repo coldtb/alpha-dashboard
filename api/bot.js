@@ -2784,10 +2784,11 @@ export default async function handler(req, res) {
             mcpTimeout(callTrueNorthMcp('technical_analysis', { token_address: geckoId, timeframe: '1h' })),
             fetchEternaMarketTicker(cand.symbol).catch(() => null)
           ]);
-          if (eternaData) {
-            cand.eternaPrice = eternaData.lastPrice || cand.price;
-            cand.eternaChange24h = eternaData.price24hPcnt || cand.change;
-            cand.eternaTurnover = eternaData.turnover24h || cand.volume;
+          if (eternaData && eternaData.result && eternaData.result.list && eternaData.result.list[0]) {
+            const etr = eternaData.result.list[0];
+            cand.eternaPrice = etr.lastPrice || cand.price;
+            cand.eternaChange24h = etr.price24hPcnt || cand.change;
+            cand.eternaTurnover = etr.turnover24h || cand.volume;
           }
           if (taRes?.result?.content?.[0]?.text) {
             try {
