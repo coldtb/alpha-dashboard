@@ -2764,6 +2764,10 @@ export default async function handler(req, res) {
     const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
+    // MULTI-ENTRY: open up to (maxConcurrentPositions - activePositionCount) candidates per run
+    const remainingSlots = Math.max(0, maxConcurrentPositions - activePositionCount);
+    const selectedTargets = [];
+
     for (const cand of tradeableCandidates) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
@@ -3015,24 +3019,25 @@ export default async function handler(req, res) {
 
 
 
-      // Valid candidate found
-      target = cand;
-      taData = parsedTa;
-      derivData = parsedDeriv;
-      optionsData = parsedOpt;
-      target.precalculatedLevels = levels;
-      target.precalculatedDirection = rawDirection;
-      target.direction = direction;
-      break;
+      // Valid candidate found — collect it (MULTI-ENTRY: open several per run up to remainingSlots)
+      cand.precalculatedLevels = levels;
+      cand.precalculatedDirection = rawDirection;
+      cand.direction = direction;
+      selectedTargets.push(cand);
+      if (selectedTargets.length >= remainingSlots) break;
     }
 
-    if (!target) {
+    if (selectedTargets.length === 0) {
       logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
       return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
     }
 
     logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
+    logger.info(`[Bot Execution] MULTI-ENTRY: executing ${selectedTargets.length} candidate(s) this run (remainingSlots=${remainingSlots})`, "events");
 
+    const executedTrades = [];
+    for (const target of selectedTargets) {
+      try {
     const direction = target.direction;
     // FIX #2: always pass coin-specific maxTpPctOverride
     const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.0075;
@@ -3041,7 +3046,7 @@ export default async function handler(req, res) {
       : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
     if (!levels) {
       logger.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`, "events");
-      return sendResponse(200, { status: 'success', message: 'Level computation returned null. Skipped.' });
+      continue;
     }
     logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
 
@@ -3071,8 +3076,8 @@ export default async function handler(req, res) {
 
     const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
     if (slDistancePct === 0) {
-      logger.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`, "events");
-      return sendResponse(200, { status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
+      logger.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero for ${target.symbol}. Skipping.`, "events");
+      continue;
     }
 
     // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
@@ -3134,22 +3139,19 @@ export default async function handler(req, res) {
         `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
         'open'
       );
-      return sendResponse(200, {
-        status: "success",
-        message: "[DRY RUN] Simulated trade execution succeeded",
-        executedTrade: {
-          symbol: target.symbol,
-          score: target.score,
-          direction,
-          leverage: finalLeverage,
-          positionSizeUsd: positionSizeUsd.toFixed(2),
-          entryPrice: entryPx,
-          stopLoss: slPx,
-          takeProfit: tpPx,
-          cloid: entryCloid,
-          orderResult: { status: "simulated" }
-        }
+      executedTrades.push({
+        symbol: target.symbol,
+        score: target.score,
+        direction,
+        leverage: finalLeverage,
+        positionSizeUsd: positionSizeUsd.toFixed(2),
+        entryPrice: entryPx,
+        stopLoss: slPx,
+        takeProfit: tpPx,
+        cloid: entryCloid,
+        orderResult: { status: "simulated" }
       });
+      continue;
     } else {
       // A. Update Leverage
       const levPayload = {
@@ -3220,21 +3222,33 @@ export default async function handler(req, res) {
         'open'
       );
 
-      return sendResponse(200, {
-        status: "success",
-        executedTrade: {
-          symbol: target.symbol,
-          score: target.score,
-          direction,
-          leverage: finalLeverage,
-          positionSizeUsd: positionSizeUsd.toFixed(2),
-          entryPrice: entryPx,
-          stopLoss: slPx,
-          takeProfit: tpPx,
-          orderResult
-        }
+      executedTrades.push({
+        symbol: target.symbol,
+        score: target.score,
+        direction,
+        leverage: finalLeverage,
+        positionSizeUsd: positionSizeUsd.toFixed(2),
+        entryPrice: entryPx,
+        stopLoss: slPx,
+        takeProfit: tpPx,
+        orderResult
       });
+      continue;
     }
+      } catch (err) {
+        logger.error(`Bot execution error for ${target.symbol}: ` + err.message, "events", { stack: err.stack });
+      }
+    } // end for
+
+    if (executedTrades.length === 0) {
+      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates monitored but no valid entries executed." });
+    }
+    return sendResponse(200, {
+      status: "success",
+      executedTrades,
+      executedTrade: executedTrades[0],
+      message: isDryRun ? `[DRY RUN] Simulated ${executedTrades.length} trade(s) executed` : `Executed ${executedTrades.length} trade(s)`
+    });
   } catch (error) {
 
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
