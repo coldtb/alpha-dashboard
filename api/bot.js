@@ -599,14 +599,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       const price = coin.price;
       const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
       if (dir === 'SHORT') {
-        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
+        const nearSupport = channels.find(c => c.strength >= 95 && price >= c.lo && price <= c.hi * (1 + proximityPct));
         if (nearSupport) {
           logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
-        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
+        const nearResistance = channels.find(c => c.strength >= 95 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
         if (nearResistance) {
           logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
@@ -654,14 +654,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
       const price = coin.price;
       const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
       if (dir === 'SHORT') {
-        const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
+        const nearSupport = channels.find(c => c.strength >= 95 && price >= c.lo && price <= c.hi * (1 + proximityPct));
         if (nearSupport) {
           logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
           return 'SKIP';
         }
       }
       if (dir === 'LONG') {
-        const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
+        const nearResistance = channels.find(c => c.strength >= 95 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
         if (nearResistance) {
           logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
           return 'SKIP';
@@ -779,14 +779,14 @@ function detectAutoDirection(coin, taData = null, sma24 = null, smaTrend = null)
     const price = coin.price;
     const proximityPct = config.proximityFilterPct !== undefined ? config.proximityFilterPct : 0.01;
     if (dir === 'SHORT') {
-      const nearSupport = channels.find(c => c.strength >= 80 && price >= c.lo && price <= c.hi * (1 + proximityPct));
+      const nearSupport = channels.find(c => c.strength >= 95 && price >= c.lo && price <= c.hi * (1 + proximityPct));
       if (nearSupport) {
         logger.info(`[Proximity Filter] Skip SHORT candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong support [${nearSupport.lo} - ${nearSupport.hi}]`, "events");
         return 'SKIP';
       }
     }
     if (dir === 'LONG') {
-      const nearResistance = channels.find(c => c.strength >= 80 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
+      const nearResistance = channels.find(c => c.strength >= 95 && price >= c.lo * (1 - proximityPct) && price <= c.hi);
       if (nearResistance) {
         logger.info(`[Proximity Filter] Skip LONG candidate ${symbol}: Price is within ${(proximityPct * 100).toFixed(1)}% of strong resistance [${nearResistance.lo} - ${nearResistance.hi}]`, "events");
         return 'SKIP';
