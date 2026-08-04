@@ -2106,12 +2106,10 @@ export default async function handler(req, res) {
       const finalLeverage = Math.min(5, maxLeverage);
       const roePct = returnPct * finalLeverage;
 
-      let ratchetLockedPricePct = 0;
-      // User request: faster + tighter trailing (≈0.1% trail, activate earlier)
-      if (roePct >= 0.040) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous ≈0.1% behind mark for +4%+ ROE
-      else if (roePct >= 0.025) ratchetLockedPricePct = 0.015 / finalLeverage; // Level 3
-      else if (roePct >= 0.015) ratchetLockedPricePct = 0.010 / finalLeverage; // Level 2
-      else if (roePct >= 0.005) ratchetLockedPricePct = 0.005 / finalLeverage; // Level 1: ≈0.1% trail, activates just in profit (fast)
+      const ratchetLockedPricePct = roePct >= 0.04 ? (roePct - 0.01) / finalLeverage :
+                              roePct >= 0.025 ? 0.015 / finalLeverage :
+                              roePct >= 0.015 ? 0.010 / finalLeverage :
+                              roePct >= 0.005 ? 0.005 / finalLeverage : null;
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
