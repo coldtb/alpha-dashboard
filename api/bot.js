@@ -1318,7 +1318,7 @@ export default async function handler(req, res) {
   logger.setTraceId(traceId);
   logger.info("Bot execution cycle started", "events");
 
-  // Prevent Vercel 10s Serverless timeout — hard deadline at 8.5s
+  // Prevent Vercel serverless timeout — hard deadline at 55s (matches vercel.json maxDuration: 60, with a 5s safety margin)
   let responseSent = false;
   const sendResponse = (statusCode, body) => {
     if (responseSent) return;
@@ -1328,10 +1328,10 @@ export default async function handler(req, res) {
   };
   const timeoutHandle = setTimeout(() => {
     if (!responseSent) {
-      logger.info("[Execution Guard] 8.5s deadline reached — returning safe 200 OK", "events");
+      logger.info("[Execution Guard] 55s deadline reached — returning safe 200 OK", "events");
       sendResponse(200, { status: "success", message: "Bot scan cycle completed within execution window." });
     }
-  }, 8500);
+  }, 55000);
 
 
   // Validate environment secrets
