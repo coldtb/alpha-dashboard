@@ -2106,9 +2106,13 @@ export default async function handler(req, res) {
       const finalLeverage = Math.min(5, maxLeverage);
       const roePct = returnPct * finalLeverage;
 
+      // Trailing SL lock tiers (roePct = ROE as fraction, e.g. 0.01 = +1% ROE at current leverage).
+      // Once ROE >= 1% the SL is locked at a guaranteed +1% ROE floor (requested behaviour:
+      // positions that reach +1% ROE can never be stopped out at the -1.5% initial SL afterwards).
       const ratchetLockedPricePct = roePct >= 0.04 ? (roePct - 0.01) / finalLeverage :
                               roePct >= 0.025 ? 0.015 / finalLeverage :
                               roePct >= 0.015 ? 0.010 / finalLeverage :
+                              roePct >= 0.010 ? 0.010 / finalLeverage :
                               roePct >= 0.005 ? 0.005 / finalLeverage : null;
 
       if (ratchetLockedPricePct > 0) {
