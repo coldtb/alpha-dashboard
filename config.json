@@ -15,7 +15,7 @@
   "enableResistanceRebound": true,
   "minResistanceRisePct": 0.001,
   "resistanceMinStrength": 50,
-  "allowShort": false,
+  "allowShort": true,
   "entryBufferPct": 0.001,
   "maxReboundDistancePct": 0.005,
   "maxDistancePct": 0.05,
