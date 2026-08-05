@@ -2933,6 +2933,15 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // A trade that bounces off a strong S/R level (resistance_rebound / support_rebound / sr_channel).
+      // Used to exempt legitimate S/R-bounce entries from the Macro Guard and Eterna momentum gate,
+      // so e.g. a SHORT at strong resistance can open even in a BTC BULLISH regime.
+      const isReboundTrade = levels && levels.reason && (
+        levels.reason.includes('support_rebound') ||
+        levels.reason.includes('resistance_rebound') ||
+        levels.reason.includes('sr_channel')
+      );
+
       // ===== ETERNA CONFLUENCE + LIQUIDITY GATE =====
       // Eterna market ticker (price / 24h change / 24h turnover) layered on top of
       // TrueNorth S/R as an extra confirmation. Degrades gracefully: if Eterna data is
@@ -2951,13 +2960,16 @@ export default async function handler(req, res) {
         const chg = Math.abs(chgRaw) > 1 ? chgRaw / 100 : chgRaw;
         const LONG_OK = chg >= -0.005;   // allow mild counter-trend (<=0.5% down over 24h)
         const SHORT_OK = chg <= 0.005;   // allow mild counter-trend (<=0.5% up over 24h)
-        if (direction === 'LONG' && !LONG_OK) {
+        if (direction === 'LONG' && !LONG_OK && !isReboundTrade) {
           logger.warn(`[Eterna Gate] Skip LONG ${cand.symbol}: Eterna 24h change ${(chg*100).toFixed(2)}% is strongly bearish (conflicts)`, "events");
           continue;
         }
-        if (direction === 'SHORT' && !SHORT_OK) {
+        if (direction === 'SHORT' && !SHORT_OK && !isReboundTrade) {
           logger.warn(`[Eterna Gate] Skip SHORT ${cand.symbol}: Eterna 24h change ${(chg*100).toFixed(2)}% is strongly bullish (conflicts)`, "events");
           continue;
+        }
+        if (isReboundTrade) {
+          logger.info(`[Eterna Gate] ${cand.symbol} ${direction} allowed despite Eterna momentum: strong S/R rebound trade`, "events");
         }
         logger.info(`[Eterna Gate] ${cand.symbol} ${direction} confirmed by Eterna 24h change ${(chg*100).toFixed(2)}%`, "events");
       }
@@ -2965,23 +2977,24 @@ export default async function handler(req, res) {
       // ===== BTC-AWARE TWO-MODE MACRO TREND GUARD =====
       // Mode A (BTC NEUTRAL/sideways OR UNKNOWN): full freedom — coin's own signal decides direction (any LONG/SHORT).
       // Mode B (BTC strong trend BULLISH/BEARISH): only BTC-aligned entries allowed (follow the trend).
-      const isReboundTrade = levels.reason && (
-        levels.reason.includes('support_rebound') ||
-        levels.reason.includes('resistance_rebound') ||
-        levels.reason.includes('sr_channel')
-      );
       if (btcTrend === 'NEUTRAL' || btcTrend === 'UNKNOWN') {
         // Sideways/unknown: don't restrict by macro trend — allow the coin's own directional signal.
         logger.info(`[Macro Trend Guard] BTC sideways/unknown — ${cand.symbol} ${direction} allowed on own signal`, "events");
       } else if (btcTrend === 'BULLISH') {
-        if (direction === 'SHORT') {
-          logger.warn(`[Macro Trend Guard] Blocked SHORT ${cand.symbol}: BTC strong BULLISH — follow trend, only LONG allowed`, "events");
+        if (direction === 'SHORT' && !isReboundTrade) {
+          logger.warn(`[Macro Trend Guard] Blocked SHORT ${cand.symbol}: BTC strong BULLISH — follow trend, only non-rebound SHORT blocked`, "events");
           continue;
         }
+        if (direction === 'SHORT' && isReboundTrade) {
+          logger.info(`[Macro Trend Guard] Allowed resistance-rejection SHORT ${cand.symbol}: BTC BULLISH but strong-resistance bounce — exempt`, "events");
+        }
       } else if (btcTrend === 'BEARISH') {
-        if (direction === 'LONG') {
-          logger.warn(`[Macro Trend Guard] Blocked LONG ${cand.symbol}: BTC strong BEARISH — follow trend, only SHORT allowed`, "events");
+        if (direction === 'LONG' && !isReboundTrade) {
+          logger.warn(`[Macro Trend Guard] Blocked LONG ${cand.symbol}: BTC strong BEARISH — follow trend, only non-rebound LONG blocked`, "events");
           continue;
+        }
+        if (direction === 'LONG' && isReboundTrade) {
+          logger.info(`[Macro Trend Guard] Allowed support-rebound LONG ${cand.symbol}: BTC BEARISH but strong-support bounce — exempt`, "events");
         }
       }
 
