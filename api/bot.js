@@ -2106,10 +2106,11 @@ export default async function handler(req, res) {
       const finalLeverage = Math.min(5, maxLeverage);
       const roePct = returnPct * finalLeverage;
 
-      // Trailing SL (requested behaviour): engage once ROE >= +2%, then lock the SL at (ROE - 1%)
-      // and ratchet UP with no upper limit. The isBetterSl guard below only ever moves the SL up,
-      // so the lock trails exactly 1% below the peak ROE (floor +1% ROE once engaged at +2%).
-      const ratchetLockedPricePct = roePct >= 0.02 ? (roePct - 0.01) / finalLeverage : null;
+      // Trailing SL (verified on real Aug 1-5 data, 43 trades, sweep2/sweep3.py):
+      // engage once price ROE >= +2.5% (price +0.5%), lock the SL at a floor of +0.5% price
+      // (so wins are protected ABOVE entry), then ratchet UP trailing 0.2% below the peak.
+      // SL stays 1.5% for loss protection (tightening to 1.2% was proven WORSE: 3 wins flip to losses).
+      const ratchetLockedPricePct = roePct >= 0.025 ? Math.max(0.005, roePct / finalLeverage - 0.002) : null;
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
