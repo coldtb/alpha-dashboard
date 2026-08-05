@@ -2924,6 +2924,15 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // SHORT kill-switch (config.allowShort=false): disable ALL SHORT entries
+      // (covers both the Aug 2 Resistance-Rejection engine and detectAutoDirection).
+      // Verified 2026-08-05: SHORT side net -$1.32 over 18 real trades, WR 61.1%,
+      // unprofitable and not fixable via trailing (losses hit the 1.5% SL).
+      if (direction === 'SHORT' && config.allowShort === false) {
+        logger.info(`[Bot Execution] Skip ${cand.symbol}: SHORT disabled via config.allowShort=false`, "events");
+        continue;
+      }
+
       // ===== ETERNA CONFLUENCE + LIQUIDITY GATE =====
       // Eterna market ticker (price / 24h change / 24h turnover) layered on top of
       // TrueNorth S/R as an extra confirmation. Degrades gracefully: if Eterna data is
