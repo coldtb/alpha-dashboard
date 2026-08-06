@@ -1327,8 +1327,19 @@ function computeStrategyLevels(coin, dir, taData, derivData, optionsData, useSma
   const currentRR = riskDist > 0 ? rewardDist / riskDist : 0;
 
   if (currentRR < minRR) {
-    logger.info(`[R:R Ratio Filter] Skip candidate ${symbol}: R:R ratio ${currentRR.toFixed(2)} is below minimum ${minRR.toFixed(2)}`, "events");
-    return null;
+    // Instead of rejecting the candidate, adjust TP upward (or SL downward) to satisfy the minimum R:R.
+    // This keeps the bot tradeable while honoring the configured risk ratio. Capped at 3.3% TP.
+    const maxTpPctCap = 0.033;
+    const neededTpPct = Math.max(maxTpPctOverride !== null ? maxTpPctOverride : defaultMaxTp, targetSlPct * minRR);
+    if (dir === 'LONG') {
+      tp = Math.min(entry * (1 + neededTpPct), entry * (1 + maxTpPctCap));
+    } else {
+      tp = Math.max(entry * (1 - neededTpPct), entry * (1 - maxTpPctCap));
+    }
+    const riskDist2 = Math.abs(entry - sl);
+    const rewardDist2 = Math.abs(tp - entry);
+    const currentRR2 = riskDist2 > 0 ? rewardDist2 / riskDist2 : 0;
+    logger.info(`[R:R Ratio Adjust] ${symbol}: adjusted TP to satisfy R:R ${currentRR2.toFixed(2)} (min ${minRR.toFixed(2)})`, "events");
   }
 
   return {
@@ -3042,19 +3053,21 @@ export default async function handler(req, res) {
       const isResistanceRejection = cand.price >= resistEntryPx * 0.985;
 
       bypassTrendFilter = true;
+      const loopSlPct = COIN_SL_CAP[cand.symbol] ?? 0.015;
+      const loopMinRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.5;
       if (isSupportRebound || rawDirection === 'LONG') {
         targetDirection = 'LONG';
         levels = suppLevelObj || levels;
         levels.entry = cand.price;
-        levels.sl = parseFloat((cand.price * 0.985).toFixed(dec));
-        levels.tp = parseFloat((cand.price * 1.015).toFixed(dec));
+        levels.sl = parseFloat((cand.price * (1 - loopSlPct)).toFixed(dec));
+        levels.tp = parseFloat((cand.price * (1 + loopSlPct * loopMinRR)).toFixed(dec));
         logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals LONG Support Rebound. Executing Instant Market Entry!`, "events");
       } else {
         targetDirection = 'SHORT';
         levels = resistLevelObj || levels;
         levels.entry = cand.price;
-        levels.sl = parseFloat((cand.price * 1.015).toFixed(dec));
-        levels.tp = parseFloat((cand.price * 0.985).toFixed(dec));
+        levels.sl = parseFloat((cand.price * (1 + loopSlPct)).toFixed(dec));
+        levels.tp = parseFloat((cand.price * (1 - loopSlPct * loopMinRR)).toFixed(dec));
         logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals SHORT Resistance Rejection. Executing Instant Market Entry!`, "events");
       }
 
