@@ -21,7 +21,7 @@
   "maxDistancePct": 0.05,
   "enableNansenScoring": false,
   "cooldownHours": 1,
-  "positionSizeFactor": 0.25,
+  "positionSizeFactor": 0.3333,
   "minFillValueUsd": 5.0,
   "watchlist": [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
