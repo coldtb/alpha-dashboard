@@ -119,10 +119,10 @@ export default async function handler(req, res) {
 
     console.log("[api/pnl] Querying Hyperliquid state for walletAddress:", walletAddress);
     const [userState, fills, spotState, openOrders] = await Promise.all([
-      info.clearinghouseState({ user: walletAddress }),
-      info.userFills({ user: walletAddress }),
+      info.clearinghouseState({ user: walletAddress, dex: "xyz" }),
+      info.userFills({ user: walletAddress, dex: "xyz" }),
       info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-      info.frontendOpenOrders({ user: walletAddress }).catch(() => [])
+      info.frontendOpenOrders({ user: walletAddress, dex: "xyz" }).catch(() => [])
     ]);
     console.log("[api/pnl] userState:", JSON.stringify(userState));
     console.log("[api/pnl] spotState:", JSON.stringify(spotState));

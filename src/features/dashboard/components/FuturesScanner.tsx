@@ -24,7 +24,7 @@ export const FuturesScanner: React.FC = () => {
         <svg width="20" height="20" fill="var(--color-blue)" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '6px' }}>
           <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
         </svg>
-        Top 100 Futures Scanner
+        Tradfi Scanner (HIP-3 / xyz DEX)
       </h2>
 
       {/* Controls */}
@@ -36,7 +36,7 @@ export const FuturesScanner: React.FC = () => {
           <input
             type="text"
             className="search-input"
-            placeholder="Search by symbol (e.g. BTC, HYPE)..."
+            placeholder="Search by symbol (e.g. GOLD, NVDA, SP500)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

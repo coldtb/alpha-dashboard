@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Ticker, Position, ClosedTrade, TradePlan, BotConfig, DeepInsights } from '../types';
-import { fetchScannerData, fetchHyperliquidHypePrice, initWebSockets, fetchPerformance, fetchBotConfig, fetchDeepInsights as apiFetchDeepInsights } from '../services/api';
+import { fetchMarkets, DEFAULT_TRADFI_WATCHLIST, fetchPerformance, fetchBotConfig, fetchDeepInsights as apiFetchDeepInsights } from '../services/api';
 import { calculateScore, calculateCustomSetupScore } from '../utils/helpers';
 
 export interface AppState {
@@ -42,16 +42,9 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initial State
   const [top100Coins, setTop100Coins] = useState<Ticker[]>([]);
-  const [watchlistPrices, setWatchlistPrices] = useState<Record<string, { price: number; change: number; low: number; high: number }>>({
-    "BTC": { price: 0, change: 0, low: 0, high: 0 },
-    "ETH": { price: 0, change: 0, low: 0, high: 0 },
-    "SOL": { price: 0, change: 0, low: 0, high: 0 },
-    "HYPE": { price: 0, change: 0, low: 0, high: 0 },
-    "LINK": { price: 0, change: 0, low: 0, high: 0 },
-    "XRP": { price: 0, change: 0, low: 0, high: 0 },
-    "INJ": { price: 0, change: 0, low: 0, high: 0 },
-    "WLD": { price: 0, change: 0, low: 0, high: 0 }
-  });
+  const [watchlistPrices, setWatchlistPrices] = useState<Record<string, { price: number; change: number; low: number; high: number }>>(
+    Object.fromEntries(DEFAULT_TRADFI_WATCHLIST.map(s => [s.replace("xyz:", ""), { price: 0, change: 0, low: 0, high: 0 }]))
+  );
 
   const [customTrades, setCustomTrades] = useState<TradePlan[]>([]);
   const [activeTab, setActiveTabState] = useState<'market' | 'custom' | 'social' | 'backtest'>('market');
@@ -68,7 +61,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activePositions, setActivePositions] = useState<Position[]>([]);
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
 
-  const [wsStatus, setWsStatus] = useState('Disconnected');
+  const [wsStatus, setWsStatus] = useState('Live (xyz DEX)');
   const [selectedCoin, setSelectedCoinState] = useState<Ticker | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerInsights, setDrawerInsights] = useState<DeepInsights | null>(null);
@@ -122,7 +115,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDrawerInsights(null);
   };
 
-  // Fetch TrueNorth deep insights when drawer is opened
+  // Fetch TrueNorth deep insights when drawer is opened (crypto only; tradfi returns null)
   const openDrawer = useCallback(async (coin: Ticker) => {
     setSelectedCoinState(coin);
     setIsDrawerOpen(true);
@@ -170,13 +163,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  // 3. Fetch Top 100 Scanner Data
+  // 3. Fetch Tradfi Scanner Data (Hyperliquid builder DEX "xyz" — same universe the bot trades)
   const refreshScanner = useCallback(async (currentConfig?: BotConfig | null) => {
     try {
-      const rawTickers = await fetchScannerData();
-      const hypePrice = await fetchHyperliquidHypePrice();
-
       const configToUse = currentConfig !== undefined ? currentConfig : activeBotConfig;
+      const watchlist = (configToUse?.watchlist && configToUse.watchlist.length)
+        ? configToUse.watchlist
+        : DEFAULT_TRADFI_WATCHLIST;
+
+      const rawTickers = await fetchMarkets(watchlist);
 
       // Score and process tickers
       const scored = rawTickers.map((coin, index) => {
@@ -206,43 +201,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       });
 
-      // Integrate HYPE
-      if (hypePrice > 0) {
-        setWatchlistPrices(prev => ({
-          ...prev,
-          "HYPE": { ...prev["HYPE"], price: hypePrice }
-        }));
-
-        const existingIdx = scored.findIndex(c => c.symbol === "HYPE");
-        if (existingIdx !== -1) {
-          scored[existingIdx].price = hypePrice;
-          scored[existingIdx].high = hypePrice * 1.05;
-          scored[existingIdx].low = hypePrice * 0.95;
-        } else {
-          scored.push({
-            rank: 101,
-            symbol: "HYPE",
-            price: hypePrice,
-            change: -2.5, // Mock change for HYPE if missing
-            volume: 85000000,
-            funding: -0.00013,
-            high: hypePrice * 1.05,
-            low: hypePrice * 0.95,
-            score: 80,
-            setup: "Squeeze Setup",
-            assetIndex: -1
-          });
-        }
-      }
-
       scored.sort((a, b) => b.score - a.score || b.volume - a.volume);
       setTop100Coins(scored);
+
+      // Sync watchlist prices for the custom trade planner
+      const wp: Record<string, { price: number; change: number; low: number; high: number }> = {};
+      scored.forEach(c => {
+        wp[c.symbol] = { price: c.price, change: c.change, low: c.low, high: c.high };
+      });
+      setWatchlistPrices(wp);
     } catch (e) {
       console.error("Scanner refresh error:", e);
     }
-  }, []);
+  }, [activeBotConfig]);
 
-  // 4. Fetch Config & Start Websockets
+  // 4. Fetch Config & Start polling
   useEffect(() => {
     const initData = async () => {
       let configData: BotConfig | null = null;
@@ -260,37 +233,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initData();
   }, [refreshScanner, refreshPerformance]);
 
-  // WebSocket listeners to push real-time price updates into store state
+  // Live prices are polled every 30s via refreshScanner (xyz DEX); no separate WebSocket needed.
   useEffect(() => {
-    const unsub = initWebSockets((symbol, newPrice, change) => {
-      // 1. Update watchlist
-      setWatchlistPrices(prev => {
-        if (!prev[symbol]) return prev;
-        return {
-          ...prev,
-          [symbol]: { ...prev[symbol], price: newPrice, change }
-        };
-      });
-
-      // 2. Sync to scanner list
-      setTop100Coins(prevList => {
-        const idx = prevList.findIndex(c => c.symbol === symbol);
-        if (idx === -1) return prevList;
-        const updated = [...prevList];
-        updated[idx] = {
-          ...updated[idx],
-          price: newPrice,
-          change
-        };
-        return updated;
-      });
-    }, (state) => {
-      setWsStatus(state);
-    });
-
-    return () => {
-      unsub();
-    };
+    setWsStatus("Live (xyz DEX)");
   }, []);
 
   return (

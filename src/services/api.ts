@@ -36,122 +36,93 @@ export async function callMcpTool(toolName: string, args: Record<string, any>): 
   }
 }
 
-// Fetch Binance Futures top 100 volume data and funding rates
-export async function fetchScannerData(): Promise<Ticker[]> {
-  try {
-    // 1. Fetch 24h tickers
-    const resTicker = await fetch("https://fapi.binance.com/fapi/v1/ticker/24hr");
-    const tickers = await resTicker.json();
-    
-    // 2. Fetch funding rates
-    const resFunding = await fetch("https://fapi.binance.com/fapi/v1/premiumIndex");
-    const premiumData = await resFunding.json();
-    
-    // Create funding rate map
-    const fundingMap: Record<string, { fundingRate: number; markPrice: number }> = {};
-    premiumData.forEach((item: any) => {
-      fundingMap[item.symbol] = {
-        fundingRate: floatParse(item.lastFundingRate),
-        markPrice: floatParse(item.markPrice)
-      };
-    });
-    
-    // 3. Process and filter
-    const usdtPerps = tickers.filter((t: any) => t.symbol.endsWith("USDT"));
-    
-    // Sort by 24h volume (USDT)
-    usdtPerps.sort((a: any, b: any) => floatParse(b.quoteVolume) - floatParse(a.quoteVolume));
-    
-    // Take Top 100
-    const top100Raw = usdtPerps.slice(0, 100);
-    
-    // Integrate funding rates and calculate setups
-    const parsedTickers: Ticker[] = top100Raw.map((coin: any, index: number) => {
-      const symbolBase = coin.symbol.replace("USDT", "");
-      const fundingInfo = fundingMap[coin.symbol] || { fundingRate: 0.0001, markPrice: floatParse(coin.lastPrice) };
-      
-      const change = floatParse(coin.priceChangePercent);
-      
-      return {
-        rank: index + 1,
-        symbol: symbolBase,
-        price: fundingInfo.markPrice || floatParse(coin.lastPrice),
-        change: change,
-        volume: floatParse(coin.quoteVolume),
-        funding: fundingInfo.fundingRate,
-        high: floatParse(coin.highPrice),
-        low: floatParse(coin.lowPrice),
-        score: 50,
-        assetIndex: -1
-      };
-    });
-    
-    return parsedTickers;
-  } catch (err) {
-    console.error("Error fetching scanner data:", err);
-    return [];
-  }
-}
+// Default tradfi watchlist (matches bot config.json) used as a fallback until /api/config loads
+export const DEFAULT_TRADFI_WATCHLIST: string[] = [
+  "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:COPPER", "xyz:NATGAS", "xyz:PLATINUM",
+  "xyz:SP500", "xyz:XYZ100", "xyz:EWY",
+  "xyz:NVDA", "xyz:AAPL", "xyz:TSLA", "xyz:MSFT", "xyz:AMZN", "xyz:GOOGL", "xyz:META",
+  "xyz:COIN", "xyz:CRCL", "xyz:MSTR", "xyz:PLTR", "xyz:AMD", "xyz:TSM", "xyz:NFLX",
+  "xyz:SNDK", "xyz:INTC", "xyz:MU", "xyz:HOOD", "xyz:ORCL"
+];
 
-// Fetch HYPE price from Hyperliquid API
-export async function fetchHyperliquidHypePrice(): Promise<number> {
+// Module-level cache for 24h change / volume (fetched once per browser session via candleSnapshot)
+let _marketExtrasCache: Record<string, { change: number; volume: number; high: number; low: number }> = {};
+
+// Fetch tradfi market data from Hyperliquid builder DEX "xyz" (same universe the bot trades)
+export async function fetchMarkets(watchlist: string[] = DEFAULT_TRADFI_WATCHLIST): Promise<Ticker[]> {
   try {
-    const res = await fetch("https://api.hyperliquid.xyz/info", {
+    const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
+
+    // 1. Live mids on xyz DEX
+    const resMids = await fetch("https://api.hyperliquid.xyz/info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "allMids" })
+      body: JSON.stringify({ type: "allMids", dex: "xyz" })
     });
-    const mids = await res.json();
-    return parseFloat(mids["HYPE"] || 0);
-  } catch (e) {
-    console.error("HL price fetch error:", e);
-    return 0;
+    const mids = await resMids.json();
+
+    // 2. Asset context (funding, etc.) on xyz DEX
+    const resCtx = await fetch("https://api.hyperliquid.xyz/info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "metaAndAssetCtxs", dex: "xyz" })
+    });
+    const [meta, ctxs] = await resCtx.json();
+    const idxByName: Record<string, number> = {};
+    (meta?.universe || []).forEach((u: any, i: number) => { idxByName[u.name] = i; });
+
+    // 3. 24h change + volume via daily candles (fetched once per session, then cached)
+    if (Object.keys(_marketExtrasCache).length === 0) {
+      const now = Date.now();
+      const startTime = now - 24 * 60 * 60 * 1000;
+      const results = await Promise.all(symbols.map(async (coin) => {
+        try {
+          const res = await fetch("https://api.hyperliquid.xyz/info", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1d", startTime, endTime: now } })
+          });
+          const data = await res.json();
+          if (Array.isArray(data) && data.length) {
+            const first = data[0];
+            const last = data[data.length - 1];
+            const open = parseFloat(first.o);
+            const close = parseFloat(last.c);
+            const change = open ? ((close - open) / open) * 100 : 0;
+            const volume = data.reduce((s: number, c: any) => s + parseFloat(c.v || 0), 0);
+            return [coin, { change, volume, high: parseFloat(last.h), low: parseFloat(last.l) }];
+          }
+        } catch (e) { /* ignore individual failures */ }
+        return [coin, { change: 0, volume: 0, high: 0, low: 0 }];
+      }));
+      results.forEach(([coin, val]) => { _marketExtrasCache[coin as string] = val as any; });
+    }
+
+    const tickers: Ticker[] = symbols.map((coin, index) => {
+      const price = parseFloat(mids[coin] || "0");
+      const ctxIdx = idxByName[coin];
+      const ctx = ctxIdx !== undefined ? ctxs[ctxIdx] : null;
+      const funding = ctx && ctx.funding !== undefined ? parseFloat(ctx.funding) : 0;
+      const ext = _marketExtrasCache[coin] || { change: 0, volume: 0, high: price * 1.02, low: price * 0.98 };
+      return {
+        rank: index + 1,
+        symbol: coin.replace("xyz:", ""),
+        price,
+        change: ext.change,
+        volume: ext.volume,
+        funding,
+        high: ext.high || price * 1.02,
+        low: ext.low || price * 0.98,
+        score: 50,
+        assetIndex: ctxIdx !== undefined ? ctxIdx : -1
+      };
+    });
+
+    return tickers;
+  } catch (err) {
+    console.error("Error fetching tradfi markets:", err);
+    return [];
   }
-}
-
-// WebSocket connection to Binance Futures real-time ticks
-export function initWebSockets(
-  onPriceUpdate: (symbol: string, newPrice: number, change: number) => void,
-  onConnectionStateChange?: (state: string) => void
-): () => void {
-  const wsUrl = "wss://fstream.binance.com/stream?streams=btcusdt@ticker/ethusdt@ticker/solusdt@ticker/linkusdt@ticker/xrpusdt@ticker/injusdt@ticker/wldusdt@ticker";
-  
-  const ws = new WebSocket(wsUrl);
-  
-  ws.onopen = () => {
-    console.log("Binance WebSocket connection established.");
-    if (onConnectionStateChange) {
-      onConnectionStateChange("Connected");
-    }
-  };
-  
-  ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    const data = message.data;
-    
-    if (data) {
-      const symbolBase = data.s.replace("USDT", "");
-      const newPrice = parseFloat(data.c);
-      const change = parseFloat(data.P);
-      onPriceUpdate(symbolBase, newPrice, change);
-    }
-  };
-  
-  ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
-  };
-  
-  ws.onclose = () => {
-    console.log("WebSocket connection closed. Reconnecting...");
-    if (onConnectionStateChange) {
-      onConnectionStateChange("Reconnecting");
-    }
-  };
-
-  // Return unsubscribe/disconnect function
-  return () => {
-    ws.close();
-  };
 }
 
 export interface DeepInsights {
@@ -161,7 +132,7 @@ export interface DeepInsights {
   optionsData: any;
 }
 
-// Fetch deep insights from TrueNorth MCP
+// Fetch deep insights from TrueNorth MCP (crypto only; tradfi symbols return null)
 export async function fetchDeepInsights(
   symbol: string,
   geckoId: string,
@@ -173,7 +144,7 @@ export async function fetchDeepInsights(
     cache[`smart_${symbol}`] || callMcpTool('hyperliquid_smart_money', { token_address: geckoId }).catch(() => null),
     cache[`options_${symbol}`] || callMcpTool('options_report', { token_address: geckoId }).catch(() => null)
   ]);
-  
+
   return { taData, derivData, whaleData, optionsData };
 }
 
@@ -192,7 +163,7 @@ export async function fetchPerformance(): Promise<any> {
 
 // Backtester API client
 export async function runBacktest(coin: string, days: number, minScore: number, initialBalance?: number): Promise<any> {
-  const url = `/api/backtest?coin=${coin}&days=${days}&min_score=${minScore}` + 
+  const url = `/api/backtest?coin=${coin}&days=${days}&min_score=${minScore}` +
     (initialBalance !== undefined ? `&initial_balance=${initialBalance}` : '');
   const response = await fetch(url);
   if (!response.ok) {
@@ -211,13 +182,11 @@ export async function fetchBotConfig(): Promise<BotConfig> {
   return await res.json();
 }
 
-// Fetch historical candles from public Hyperliquid API
+// Fetch historical candles from Hyperliquid builder DEX "xyz"
 export async function fetchCandles(coin: string): Promise<any[]> {
   try {
     let hlCoin = coin;
-    if (hlCoin.startsWith("1000")) {
-      hlCoin = "k" + hlCoin.slice(4);
-    }
+    if (!hlCoin.startsWith("xyz:")) hlCoin = "xyz:" + hlCoin;
     const res = await fetch("https://api.hyperliquid.xyz/info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
