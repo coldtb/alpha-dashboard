@@ -166,6 +166,115 @@ function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
 }
 
+// ===== Hyperscaled challenge guard (tradfi / HIP-3 builder-dex mode) =====
+// Per-pair / asset-class / portfolio limits are SOFT: Hyperscaled caps the mirrored copy and
+// never blocks the real HL order. The 5% drawdown limit is HARD: breaching it terminates the
+// challenge, so the bot must never open a trade whose worst-case SL loss would push cumulative
+// real drawdown past the budget.
+const HYPERSCALED_ASSET_CLASS = {
+  WTIOIL: 'commodity', GOLD: 'commodity', SILVER: 'commodity', COPPER: 'commodity', NATGAS: 'commodity', PLATINUM: 'commodity',
+  SP500: 'index', XYZ100: 'index', EWY: 'index',
+  NVDA: 'stock', AAPL: 'stock', TSLA: 'stock', MSFT: 'stock', AMZN: 'stock', GOOGL: 'stock', META: 'stock',
+  COIN: 'stock', CRCL: 'stock', MSTR: 'stock', PLTR: 'stock', AMD: 'stock', TSM: 'stock', NFLX: 'stock',
+  SNDK: 'stock', INTC: 'stock', MU: 'stock', HOOD: 'stock', ORCL: 'stock'
+};
+const HYPERSCALED_TIER_LIMITS = {
+  A: { perPair: { crypto: 0.5, commodity: 0.5, stock: 0.5, index: 1.5 },
+       assetClass: { crypto: 2.0, commodity: 2.0, stock: 1.0, index: 3.0 },
+       portfolio: 4.0, drawdownPct: 0.05 },
+  B: { perPair: { crypto: 1.0, commodity: 1.0, stock: 1.0, index: 3.0 },
+       assetClass: { crypto: 2.0, commodity: 2.0, stock: 1.5, index: 6.0 },
+       portfolio: 7.0, drawdownPct: 0.05 },
+  C: { perPair: { crypto: 1.5, commodity: 1.5, stock: 1.5, index: 4.5 },
+       assetClass: { crypto: 3.0, commodity: 3.0, stock: 2.0, index: 8.0 },
+       portfolio: 10.0, drawdownPct: 0.05 }
+};
+const GOLD_PERPAIR_OVERRIDE = { A: 1.0, B: 2.0, C: 3.0 }; // GOLD per-pair limit is higher
+const HL_MIN_NOTIONAL = 10.5; // Hyperliquid minimum order notional
+
+// Strip builder-dex / perp prefixes to get the canonical symbol (e.g. "xyz:GOLD" -> "GOLD", "@107../XYZ100" -> "XYZ100")
+function canonicalSymbol(s) {
+  if (!s) return '';
+  let n = String(s);
+  if (n.startsWith('xyz:')) n = n.slice(4);
+  if (n.includes('/')) n = n.split('/')[1];
+  return n;
+}
+function classOfCoin(coin) {
+  return HYPERSCALED_ASSET_CLASS[canonicalSymbol(coin)] || 'crypto';
+}
+
+// True HL account equity = free collateral + sum(open position margin + unrealized PnL).
+// Using withdrawable alone understates equity once a position is open (margin is locked), which
+// would falsely inflate drawdown usage. This computes real equity for accurate guard math.
+function computeHlEquity(withdrawable, openPositions) {
+  let eq = parseFloat(withdrawable) || 0;
+  if (Array.isArray(openPositions)) {
+    for (const p of openPositions) {
+      const pos = (p && p.position) ? p.position : p;
+      const sz = parseFloat(pos.szi || '0');
+      if (sz === 0) continue;
+      const entry = parseFloat(pos.entryPx || '0');
+      const mark = parseFloat(pos.markPx || pos.oraclePx || entry);
+      const levRaw = pos.leverage && (pos.leverage.value !== undefined ? pos.leverage.value : pos.leverage);
+      const lev = parseFloat(levRaw) || 5;
+      const notional = entry ? Math.abs(sz) * entry : 0;
+      const margin = notional / lev;
+      const upl = (mark - entry) * sz;
+      eq += margin + upl;
+    }
+  }
+  return eq;
+}
+
+// Returns a guard object, or null if the Hyperscaled guard is disabled.
+// accountSize = real HL equity (used for limit %). opts.currentEquity = real equity for drawdown.
+function computeHyperscaledGuard(symbol, accountSize, openPositions, opts) {
+  const cfg = (opts && opts.config && opts.config.hyperscaled) || null;
+  if (!cfg || !cfg.enabled) return null;
+  const tier = (cfg.tier || 'A');
+  const L = HYPERSCALED_TIER_LIMITS[tier] || HYPERSCALED_TIER_LIMITS.A;
+  const sym = canonicalSymbol(symbol);
+  const cls = HYPERSCALED_ASSET_CLASS[sym] || 'crypto';
+
+  let perPairPct = L.perPair[cls];
+  if (cls === 'commodity' && sym === 'GOLD') perPairPct = (GOLD_PERPAIR_OVERRIDE[tier] || 1.0);
+  const perPairLimit = perPairPct * accountSize;
+
+  let usedClass = 0, usedPortfolio = 0;
+  if (Array.isArray(openPositions)) {
+    for (const p of openPositions) {
+      const pos = (p && p.position) ? p.position : p;
+      const sz = Math.abs(parseFloat(pos.szi || '0'));
+      if (sz === 0) continue;
+      const px = parseFloat(pos.entryPx || pos.oraclePx || pos.markPx || '0');
+      if (!px) continue;
+      const notional = sz * px;
+      usedPortfolio += notional;
+      if (classOfCoin(pos.coin) === cls) usedClass += notional;
+    }
+  }
+  const assetClassLimit = L.assetClass[cls] * accountSize;
+  const portfolioLimit = L.portfolio * accountSize;
+
+  const startingEq = parseFloat(cfg.startingHlEquity) || accountSize;
+  const currentEquity = (opts && opts.currentEquity) || accountSize;
+  const maxSL = (opts && opts.maxSLPct) || 0.015;
+  const ddBudget = L.drawdownPct * startingEq;
+  const currentDD = Math.max(0, startingEq - currentEquity);
+  const ddHeadroomReal = Math.max(0, ddBudget - currentDD);
+  const ddMaxNotional = maxSL ? ddHeadroomReal / maxSL : 0;
+
+  const softCap = Math.max(0, Math.min(perPairLimit, assetClassLimit - usedClass, portfolioLimit - usedPortfolio));
+
+  return {
+    enabled: true, tier, cls, sym,
+    perPairLimit, assetClassLimit, portfolioLimit,
+    usedClass, usedPortfolio, softCap,
+    ddBudget, currentDD, ddHeadroomReal, ddMaxNotional, accountSize
+  };
+}
+
 function isCoinInConsecutiveLossCooldown(coinSymbol, userFills) {
   if (!Array.isArray(userFills) || userFills.length === 0) return false;
 
@@ -1379,8 +1488,9 @@ export default async function handler(req, res) {
 
     // 4. Fetch Scanner Data - metaAndAssetCtxs is public (unlimited), user calls are rate-limited
     // Always fetch public market data first
+    const dex = config.perpDex || "xyz";
     const metaAndCtxs = await withRetryAndTimeout(
-      () => info.metaAndAssetCtxs(),
+      () => info.metaAndAssetCtxs({ dex }),
       "Hyperliquid Market Data",
       { retries: 1, delayMs: 200, timeoutMs: 3500 }
     );
@@ -1394,16 +1504,16 @@ export default async function handler(req, res) {
 
     // User-specific calls — query effectiveUserAddress (Vault or Main Wallet)
     const [initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
-      info.clearinghouseState({ user: effectiveUserAddress }).catch(err => {
+      info.clearinghouseState({ user: effectiveUserAddress, dex }).catch(err => {
         logger.warn(`[Rate Limit] clearinghouseState blocked: ${err.message}`, "events");
         return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } };
       }),
-      info.frontendOpenOrders({ user: effectiveUserAddress }).catch(err => {
+      info.frontendOpenOrders({ user: effectiveUserAddress, dex }).catch(err => {
         logger.warn(`[Rate Limit] frontendOpenOrders blocked: ${err.message}`, "events");
         return [];
       }),
       info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-      info.userFills({ user: effectiveUserAddress }).catch(() => [])
+      info.userFills({ user: effectiveUserAddress, dex }).catch(() => [])
     ]);
 
 
@@ -1448,20 +1558,24 @@ export default async function handler(req, res) {
     }
 
     let binanceData = null;
-    try {
-      const [resTicker, resFunding] = await withRetryAndTimeout(
-        () => Promise.all([
-          fetch("https://fapi.binance.com/fapi/v1/ticker/24hr").then(r => r.json()),
-          fetch("https://fapi.binance.com/fapi/v1/premiumIndex").then(r => r.json())
-        ]),
-        "Binance Scanner Data Fetching",
-        { retries: 2, delayMs: 400, timeoutMs: 6000 }
-      );
-      if (Array.isArray(resTicker) && Array.isArray(resFunding)) {
-        binanceData = { tickers: resTicker, premiumData: resFunding };
+    if (config.binanceScanner !== false) {
+      try {
+        const [resTicker, resFunding] = await withRetryAndTimeout(
+          () => Promise.all([
+            fetch("https://fapi.binance.com/fapi/v1/ticker/24hr").then(r => r.json()),
+            fetch("https://fapi.binance.com/fapi/v1/premiumIndex").then(r => r.json())
+          ]),
+          "Binance Scanner Data Fetching",
+          { retries: 2, delayMs: 400, timeoutMs: 6000 }
+        );
+        if (Array.isArray(resTicker) && Array.isArray(resFunding)) {
+          binanceData = { tickers: resTicker, premiumData: resFunding };
+        }
+      } catch (e) {
+        logger.warn("Failed to fetch from Binance, falling back to Hyperliquid data: " + e.message);
       }
-    } catch (e) {
-      logger.warn("Failed to fetch from Binance, falling back to Hyperliquid data: " + e.message);
+    } else {
+      logger.info("[Scanner] binanceScanner disabled via config — using Hyperliquid data directly (tradfi/HIP-3 mode)", "events");
     }
 
     let scoredCoins = [];
@@ -1754,8 +1868,8 @@ export default async function handler(req, res) {
           logger.info("Stale/orphaned orders cancelled successfully: " + JSON.stringify(cancelRes), "audit", { cancelRes });
         }
         // Refresh openOrders and userState to reflect freed margin
-        openOrders = await info.frontendOpenOrders({ user: walletAddress }).catch(() => []);
-        userState = await info.clearinghouseState({ user: walletAddress }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
+        openOrders = await info.frontendOpenOrders({ user: walletAddress, dex }).catch(() => []);
+        userState = await info.clearinghouseState({ user: walletAddress, dex }).catch(() => ({ assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } }));
 
         if (spotState) {
           spotState = await info.spotClearinghouseState({ user: walletAddress }).catch(() => null);
@@ -2193,6 +2307,22 @@ export default async function handler(req, res) {
           const finalLeverage = Math.min(5, maxLeverage);
           const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
           let targetSizeUsd = (activeAccountSize * positionSizeFactor) * finalLeverage;
+
+          // Hyperscaled guard on pyramid add (treat existing position as already-open for headroom math)
+          const hsGuardPy = computeHyperscaledGuard(coin, activeAccountSize,
+            [{ position: { coin, szi: size, entryPx: currentPrice } }],
+            { config, maxSLPct: 0.015, currentEquity: activeAccountSize });
+          if (hsGuardPy) {
+            let pySized = Math.min(targetSizeUsd, hsGuardPy.softCap);
+            if (pySized < HL_MIN_NOTIONAL) pySized = HL_MIN_NOTIONAL;
+            const pyWorst = pySized * 0.015;
+            if (hsGuardPy.currentDD + pyWorst > hsGuardPy.ddBudget) {
+              logger.warn(`[Hyperscaled Guard] Pyramid SKIP ${hsGuardPy.sym}: would breach drawdown. No pyramid add.`, "events");
+            } else {
+              targetSizeUsd = pySized;
+            }
+          }
+
           if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
           const targetSizeTokens = targetSizeUsd / currentPrice;
           const targetSize = parseFloat(formatSize(targetSizeTokens, currentCoin.assetInfo.szDecimals));
@@ -2499,7 +2629,7 @@ export default async function handler(req, res) {
 
     if (needsOrdersRefresh) {
       try {
-        openOrders = await info.frontendOpenOrders({ user: walletAddress });
+        openOrders = await info.frontendOpenOrders({ user: walletAddress, dex });
       } catch (e) {
         logger.error("Failed to refresh openOrders after trailing: " + e.message, "events");
       }
@@ -2537,7 +2667,7 @@ export default async function handler(req, res) {
 
         const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
         const activeCount = activePositionsList.length;
-        let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring 30 Hyperscaled Coins\n`;
+        let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring tradfi (HIP-3)\n`;
         reportMsg += `⚡ **Current Action:** ${activeCount > 0 ? `🟢 Managing ${activeCount} Active Position(s)` : '⏳ Monitoring Candidates for 0.1% Gate Touch'} | **0.1% Gate Rule:** Active 🛡️\n`;
         reportMsg += `**💰 Account Balance:** $${displayBalance.toFixed(2)} | **Active Positions:** ${activeCount}/${maxConcurrentPositions}\n\n`;
 
@@ -2574,7 +2704,6 @@ export default async function handler(req, res) {
         // Filter tradeable candidates dynamically for Discord report (strictly restricted to 30 Hyperscaled coins)
         const displayCandidates = scoredCoins.filter(c => 
           watchlist.includes(c.symbol) && 
-          SUPPORTED_30_COINS.includes(c.symbol) && 
           !(config.blacklist || []).includes(c.symbol)
         ).slice(0, 7);
 
@@ -3035,7 +3164,7 @@ export default async function handler(req, res) {
 
     const direction = target.direction;
     // FIX #2: always pass coin-specific maxTpPctOverride
-    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.0075;
+    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.03;
     const levels = (target.precalculatedLevels && direction === target.precalculatedDirection)
       ? target.precalculatedLevels
       : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
@@ -3090,7 +3219,27 @@ export default async function handler(req, res) {
       logger.info(`[Risk] Position size $${positionSizeUsd.toFixed(2)} capped to $${maxPositionSizeUsd} (maxPositionSizeUsd)`, "events");
       positionSizeUsd = maxPositionSizeUsd;
     }
-    
+
+    // ---- Hyperscaled challenge guard (soft per-pair/asset-class/portfolio caps + HARD drawdown gate) ----
+    const hsRealEquity = computeHlEquity(withdrawableUsd, userState.assetPositions);
+    const hsGuard = computeHyperscaledGuard(target.symbol, hsRealEquity, userState.assetPositions, {
+      config, maxSLPct: slDistancePct, currentEquity: hsRealEquity
+    });
+    if (hsGuard) {
+      let hsSized = Math.min(positionSizeUsd, hsGuard.softCap);
+      if (hsSized < HL_MIN_NOTIONAL) hsSized = HL_MIN_NOTIONAL; // honour HL min; Hyperscaled caps the mirror
+      const hsWorstLoss = hsSized * slDistancePct;
+      if (hsGuard.currentDD + hsWorstLoss > hsGuard.ddBudget) {
+        logger.warn(`[Hyperscaled Guard] SKIP ${hsGuard.sym}: would breach drawdown (used $${hsGuard.currentDD.toFixed(2)} + worst loss $${hsWorstLoss.toFixed(2)} > budget $${hsGuard.ddBudget.toFixed(2)}). No entry.`, "events");
+        await sendDiscordAlert(`🛡️ **Hyperscaled Guard:** Skipped ${hsGuard.sym} — would breach 5% drawdown limit.`, 'info').catch(() => {});
+        return sendResponse(200, { status: "success", message: `[Hyperscaled Guard] Skipped ${hsGuard.sym}: drawdown breach.` });
+      }
+      if (hsSized !== positionSizeUsd) {
+        logger.info(`[Hyperscaled Guard] ${hsGuard.sym} size $${positionSizeUsd.toFixed(2)} -> $${hsSized.toFixed(2)} (softCap $${hsGuard.softCap.toFixed(2)}, class ${hsGuard.cls}, ddHeadroom $${hsGuard.ddHeadroomReal.toFixed(2)})`, "events");
+      }
+      positionSizeUsd = hsSized;
+    }
+
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
     if (positionSizeUsd < 10.5) {

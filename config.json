@@ -8,6 +8,14 @@
   "nansenBuilderAddress": "",
   "nansenBuilderFeeRate": 80,
   "dryRun": false,
+  "binanceScanner": false,
+  "perpDex": "xyz",
+  "hyperscaled": {
+    "enabled": true,
+    "tier": "A",
+    "startingHlEquity": 1000,
+    "maxSLPct": 0.015
+  },
   "blacklist": ["PAXG", "FET"],
   "enableSupportRebound": true,
   "minSupportDropPct": 0.001,
@@ -23,9 +31,11 @@
   "positionSizeFactor": 0.25,
   "minFillValueUsd": 5.0,
   "watchlist": [
-    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
-    "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE", "PEPE"
+    "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:COPPER", "xyz:NATGAS", "xyz:PLATINUM",
+    "xyz:SP500", "xyz:XYZ100", "xyz:EWY",
+    "xyz:NVDA", "xyz:AAPL", "xyz:TSLA", "xyz:MSFT", "xyz:AMZN", "xyz:GOOGL", "xyz:META",
+    "xyz:COIN", "xyz:CRCL", "xyz:MSTR", "xyz:PLTR", "xyz:AMD", "xyz:TSM", "xyz:NFLX",
+    "xyz:SNDK", "xyz:INTC", "xyz:MU", "xyz:HOOD", "xyz:ORCL"
   ],
   "enableEternaSignals": true,
   "dynamicWatchlist": false,
