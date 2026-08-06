@@ -1,5 +1,4 @@
 import { Ticker, BotConfig } from '../types';
-import { floatParse } from '../utils/helpers';
 
 // Generic JSON-RPC tool caller helper
 export async function callMcpTool(toolName: string, args: Record<string, any>): Promise<any> {
