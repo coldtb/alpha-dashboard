@@ -3265,7 +3265,7 @@ export default async function handler(req, res) {
       if (hsGuard.currentDD + hsWorstLoss > hsGuard.ddBudget) {
         logger.warn(`[Hyperscaled Guard] SKIP ${hsGuard.sym}: would breach drawdown (used $${hsGuard.currentDD.toFixed(2)} + worst loss $${hsWorstLoss.toFixed(2)} > budget $${hsGuard.ddBudget.toFixed(2)}). No entry.`, "events");
         await sendDiscordAlert(`🛡️ **Hyperscaled Guard:** Skipped ${hsGuard.sym} — would breach 5% drawdown limit.`, 'info').catch(() => {});
-        return sendResponse(200, { status: "success", message: `[Hyperscaled Guard] Skipped ${hsGuard.sym}: drawdown breach.` });
+        return sendResponse(200, { status: "success", message: `[Hyperscaled Guard] Skipped ${hsGuard.sym}: drawdown breach.`, debug: { hsRealEquity: hsRealEquity.toFixed(2), currentDD: hsGuard.currentDD.toFixed(2), ddBudget: hsGuard.ddBudget.toFixed(2), worstLoss: hsWorstLoss.toFixed(2), effectiveUser: effectiveUserAddress } });
       }
       if (hsSized !== positionSizeUsd) {
         logger.info(`[Hyperscaled Guard] ${hsGuard.sym} size $${positionSizeUsd.toFixed(2)} -> $${hsSized.toFixed(2)} (softCap $${hsGuard.softCap.toFixed(2)}, class ${hsGuard.cls}, ddHeadroom $${hsGuard.ddHeadroomReal.toFixed(2)})`, "events");
