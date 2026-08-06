@@ -7,7 +7,7 @@
   "replacementScoreDiff": 10,
   "nansenBuilderAddress": "",
   "nansenBuilderFeeRate": 80,
-  "dryRun": false,
+  "dryRun": true,
   "blacklist": ["PAXG", "FET"],
   "enableSupportRebound": true,
   "minSupportDropPct": 0.001,
@@ -24,10 +24,13 @@
   "positionSizeFactor": 0.3333,
   "minFillValueUsd": 5.0,
   "watchlist": [
-    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
-    "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE", "PEPE"
+    "WTIOIL", "GOLD", "SILVER", "COPPER", "NATGAS", "PLATINUM",
+    "S&P500", "XYZ100", "EWY",
+    "NVDA", "AAPL", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "COIN", "CRCL",
+    "MSTR", "PLTR", "AMD", "TSM", "NFLX", "SNDK", "INTC", "MU", "HOOD", "ORCL"
   ],
+  "binanceScanner": false,
+  "perpDex": "xyz",
   "enableEternaSignals": true,
   "dynamicWatchlist": false,
   "watchlistBonus": 15,
@@ -68,6 +71,14 @@
   "dailyLossLimitPct": 5,
   "maxPositionSizeUsd": 10000,
   "staleOrderTimeoutHours": 4,
+
+  "_comment_hyperscaled": "=== Hyperscaled Challenge Guard (NEW) ===",
+  "hyperscaled": {
+    "enabled": true,
+    "tier": "A",
+    "startingHlEquity": 17.18,
+    "maxSLPct": 0.015
+  },
 
   "_comment_strategy": "=== Phase 3: Strategy (NEW) ===",
   "partialTpEnabled": false,
