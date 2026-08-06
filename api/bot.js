@@ -2893,12 +2893,14 @@ export default async function handler(req, res) {
     const cooldownHours = config.cooldownHours !== undefined ? config.cooldownHours : 2;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
+    const loopDiag = [];
     for (const cand of tradeableCandidates) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
         const timeSinceLastTrade = Date.now() - lastFillTime;
         if (timeSinceLastTrade < cooldownMs) {
           logger.info(`[Cooldown Filter] Skip candidate ${cand.symbol}: Last trade was ${(timeSinceLastTrade / 60000).toFixed(1)} mins ago (cooldown: ${cooldownHours * 60} mins)`, "events");
+          loopDiag.push(`${cand.symbol}:cooldown(${(timeSinceLastTrade/60000).toFixed(1)}m)`);
           continue;
         }
       }
@@ -2907,6 +2909,7 @@ export default async function handler(req, res) {
       if (cand.symbol !== 'SUI' && cand.symbol !== 'HYPE') {
         if (isCoinInConsecutiveLossCooldown(cand.symbol, userFills)) {
           logger.info(`[Cooldown Filter] Skip ${cand.symbol}: ${cand.symbol} is in 24h consecutive loss cooldown`, "events");
+          loopDiag.push(`${cand.symbol}:consecutiveLoss`);
           continue;
         }
       }
@@ -3022,6 +3025,7 @@ export default async function handler(req, res) {
       let levels = suppLevelObj || resistLevelObj;
       if (!levels) {
         logger.info(`[Candidate Loop] Skip candidate ${cand.symbol}: computeStrategyLevels returned null (Filtered by R:R or invalid parameters).`, "events");
+        loopDiag.push(`${cand.symbol}:levelsNull(px=${cand.price})`);
         continue;
       }
       let bypassTrendFilter = false;
@@ -3059,6 +3063,7 @@ export default async function handler(req, res) {
       const direction = bypassTrendFilter ? targetDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
       if (direction === 'SKIP') {
         logger.info(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`, "events");
+        loopDiag.push(`${cand.symbol}:dirSkip(rawDir=${rawDirection},bypass=${bypassTrendFilter})`);
         continue;
       }
 
@@ -3156,8 +3161,23 @@ export default async function handler(req, res) {
     }
 
     if (!target) {
+      const diagScored = scoredCoins.slice(0, 15).map(c => `${c.symbol}:s=${c.score},px=${c.price}`);
+      const diagCand = candidates.map(c => c.symbol);
+      const diagTrade = tradeableCandidates.map(c => c.symbol);
+      const loopDiagOut = (typeof loopDiag !== 'undefined') ? loopDiag : [];
       logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
-      return sendResponse(200, { status: "success", message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry." });
+      return sendResponse(200, {
+        status: "success",
+        message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.",
+        debug: {
+          scoredTop: diagScored,
+          candidates: diagCand,
+          tradeable: diagTrade,
+          activePositionCount,
+          maxConcurrentPositions,
+          loopDiag: loopDiagOut
+        }
+      });
     }
 
     logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
