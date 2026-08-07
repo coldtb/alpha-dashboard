@@ -106,7 +106,7 @@ export const TradePlanner: React.FC<TradePlannerProps> = ({ initialValues, clear
           let sma24: number | null = null;
           if (candles && candles.length >= 25) {
             const last25 = candles.slice(-25);
-            const sumClose = last25.reduce((sum, c: any) => sum + parseFloat(c.c || c[4] || 0), 0);
+            const sumClose = last25.reduce((sum: number, c: any) => sum + parseFloat(c.c || c[4] || 0), 0);
             sma24 = sumClose / 25;
           }
 

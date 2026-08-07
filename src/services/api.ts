@@ -1,4 +1,4 @@
-import { Ticker } from '../types';
+import { Ticker, BotConfig } from '../types';
 
 // Generic JSON-RPC tool caller helper
 export async function callMcpTool(toolName: string, args: Record<string, any>): Promise<any> {
@@ -189,4 +189,40 @@ export async function runBacktest(coin: string, days: number, minScore: number, 
     throw new Error(errData.error || `Backtest failed with status ${response.status}`);
   }
   return response.json();
+}
+
+// Fetch bot configuration from /api/config (config.json)
+export async function fetchBotConfig(): Promise<BotConfig | null> {
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) {
+      throw new Error(`Config API returned status: ${res.status}`);
+    }
+    const data = await res.json();
+    return data as BotConfig;
+  } catch (err) {
+    console.warn('Failed to load bot config:', err);
+    return null;
+  }
+}
+
+// Fetch 1h candles from Hyperliquid for SMA calculation (trade planner)
+export async function fetchCandles(symbol: string): Promise<any[] | null> {
+  try {
+    const interval = '1h';
+    const endTime = Date.now();
+    const startTime = endTime - 25 * 3600 * 1000;
+    const res = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'candleSnapshot', coin: symbol, interval, startTime, endTime })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    return data; // Hyperliquid returns array of [t,o,h,l,c,v]
+  } catch (err) {
+    console.warn('Failed to fetch candles:', err);
+    return null;
+  }
 }

@@ -197,13 +197,6 @@ export const EternaSignalStream: React.FC = () => {
   const fgColor = !fg ? '#6b7280' : fg.value >= 30 && fg.value <= 65 ? '#10b981' : fg.value < 30 ? '#ef4444' : '#f59e0b';
   const regimeColor = data?.regime === 'OPEN' ? '#10b981' : data?.regime === 'CAUTION' ? '#fbbf24' : '#ef4444';
 
-  // Next cron time (ULAT UTC+8)
-  const now = new Date();
-  const ulatHours = (now.getUTCHours() + 8) % 24;
-  const cronTimes = [9, 12, 15, 18, 21];
-  const nextCron = cronTimes.find(h => h > ulatHours) ?? cronTimes[0];
-  const minsToNext = ((nextCron - ulatHours) * 60) - now.getMinutes();
-
   return (
     <section className="eterna-signals-section" style={{ marginBottom: '1.5rem' }}>
 
@@ -316,14 +309,14 @@ export const EternaSignalStream: React.FC = () => {
               <br /><span style={{ fontSize: '0.75rem', color: '#4b5563' }}>Gate passed: {pipe?.gatePassed ?? 0} · Valid: 0</span>
             </div>
           )}
-          {data?.signals.map(sig => <SignalCard key={sig.symbol + sig.poolAddress} sig={sig} />)}
+          {data?.signals.map(sig => <SignalCard key={sig.symbol} sig={sig} />)}
         </div>
       )}
 
       {/* ── Watching Tab ── */}
       {tab === 'watching' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
-          {data?.watching.map(sig => <SignalCard key={sig.symbol + sig.poolAddress} sig={sig} />)}
+          {data?.watching.map(sig => <SignalCard key={sig.symbol} sig={sig} />)}
           {!data?.watching?.length && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '2rem', color: '#6b7280' }}>No watching tokens</div>}
         </div>
       )}

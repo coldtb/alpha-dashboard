@@ -235,7 +235,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Live prices are polled every 30s via refreshScanner (xyz DEX); no separate WebSocket needed.
   useEffect(() => {
-    setWsStatus("Live (xyz DEX)");
+    setWsStatus("Live (Hyperliquid)");
   }, []);
 
   return (
