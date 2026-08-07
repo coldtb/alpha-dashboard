@@ -30,11 +30,11 @@
   "enableProximityFilter": true,
   "proximityFilterPct": 0.001,
 
-  "_comment_watchlist": "=== TradFi / HIP-3 Builder DEX Watchlist ===",
+  "_comment_watchlist": "=== Crypto Perps Watchlist ===",
   "watchlist": [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
-    "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
+    "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
   ],
   "enableEternaSignals": true,
   "dynamicWatchlist": false,

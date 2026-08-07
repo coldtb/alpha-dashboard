@@ -36,22 +36,22 @@ export async function callMcpTool(toolName: string, args: Record<string, any>): 
 }
 
 // Hyperliquid Mainnet 30 Crypto Perps Watchlist
-export const DEFAULT_TRADFI_WATCHLIST: string[] = [
+export const DEFAULT_WATCHLIST: string[] = [
   "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-  "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+  "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI", "AAVE",
   "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
 ];
 
 // Fetch crypto perp market data from cached /api/scanner endpoint (prevents browser IP Rate Limits on Hyperliquid)
-export async function fetchMarkets(watchlist: string[] = DEFAULT_TRADFI_WATCHLIST): Promise<Ticker[]> {
+export async function fetchMarkets(watchlist: string[] = DEFAULT_WATCHLIST): Promise<Ticker[]> {
   try {
     const res = await fetch("/api/scanner");
     if (res.ok) {
       const data = await res.json();
       const items = data.signals && data.signals.length ? data.signals : (data.watching || []);
       if (Array.isArray(items) && items.length > 0) {
-        const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
-        const cleanWatchlist = symbols.map(s => s.replace("xyz:", ""));
+        const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_WATCHLIST;
+        const cleanWatchlist = symbols;
 
         const filtered = items.filter((item: any) => cleanWatchlist.length === 0 || cleanWatchlist.includes(item.symbol));
         const listToUse = filtered.length > 0 ? filtered : items;
@@ -90,8 +90,8 @@ export async function fetchMarkets(watchlist: string[] = DEFAULT_TRADFI_WATCHLIS
     const [meta, ctxs] = await res.json();
     if (!meta?.universe || !Array.isArray(ctxs)) return [];
 
-    const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
-    const cleanWatchlist = symbols.map(s => s.replace("xyz:", ""));
+    const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_WATCHLIST;
+    const cleanWatchlist = symbols;
 
     const tickers: Ticker[] = [];
     meta.universe.forEach((asset: any, index: number) => {

@@ -361,8 +361,8 @@ export const EternaSignalStream: React.FC = () => {
       {tab === 'pipeline' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.8rem' }}>
           {[
-            { stage: '🔭 Stage 1 — Scout', desc: 'GeckoTerminal: Solana + Base\nTrending + New pools', color: '#3b82f6', val: `${pipe?.scouted ?? '--'} pools found` },
-            { stage: '🛡 Stage 2 — Filter & Audit', desc: 'L/MC ≥ 10% · Pump < 12%\nMCap $1M–$100M · Vol/MC ≥ 5%\nGoPlus Security Audit', color: '#10b981', val: `${pipe?.gatePassed ?? '--'} / ${pipe?.scouted ?? '--'} passed gate` },
+            { stage: '🔭 Stage 1 — Scout', desc: 'Hyperliquid Mainnet\nAll perp markets scanned', color: '#3b82f6', val: `${pipe?.scouted ?? '--'} markets scanned` },
+            { stage: '🛡 Stage 2 — Filter & Audit', desc: 'Filtered to 30-coin\ncrypto-perps watchlist\nVolume & funding gates', color: '#10b981', val: `${pipe?.gatePassed ?? '--'} / ${pipe?.scouted ?? '--'} passed gate` },
             { stage: '📊 Stage 3 — Confluence', desc: '5-Layer check ≥ 3/5\nF&G · Funding · TA · Vol/MC · Stability', color: '#8b5cf6', val: `${pipe?.validSignals ?? '--'} valid signals` },
             { stage: '⚡ Stage 4 — Execution', desc: 'Max 1.5% risk · 3x leverage\nMax 3 positions · 5% DD ceiling\nR:R ≥ 3:1 · Scale-Out TP/SL', color: '#ef4444', val: 'Hyperliquid Mainnet' },
             { stage: '📡 Stage 5 — Monitoring', desc: 'Discord Alerts · Dashboard\nbot.log · bot_stats.json', color: '#06b6d4', val: 'Live · 5x/day cron' },
@@ -376,7 +376,7 @@ export const EternaSignalStream: React.FC = () => {
           <div style={{ padding: '1rem', borderRadius: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(251,191,36,0.2)' }}>
             <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#fbbf24', marginBottom: '6px' }}>⏰ Cron Schedule (ULAT)</div>
             {[['09:00', '🌅 Morning scan + Institutional analytics'],
-              ['12:00', '🌞 Token scout (Solana + Base)'],
+              ['12:00', '🌞 Perp market scout (Hyperliquid)'],
               ['15:00', '🌇 Derivatives + GEX/Funding'],
               ['18:00', '🌆 Smart wallet flow'],
               ['21:00', '🌙 Liquidation map + Position audit']].map(([t, d]) => (

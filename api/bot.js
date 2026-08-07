@@ -44,7 +44,7 @@ let config = {
   breakevenTriggerPct: 0.015,
   watchlist: [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI", "AAVE",
     "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
   ],
   apiRetryCount: 3,
@@ -1365,7 +1365,7 @@ export default async function handler(req, res) {
   config.minScore = req.query?.min_score ? parseInt(req.query.min_score) : 50;
   config.watchlist = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI", "AAVE",
     "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
   ];
 
@@ -1638,7 +1638,7 @@ export default async function handler(req, res) {
         logger.warn("Failed to fetch from Binance, falling back to Hyperliquid data: " + e.message);
       }
     } else {
-      logger.info("[Scanner] binanceScanner disabled via config — using Hyperliquid data directly (tradfi/HIP-3 mode)", "events");
+      logger.info("[Scanner] binanceScanner disabled via config — using Hyperliquid data directly (crypto perps mode)", "events");
     }
 
     let scoredCoins = [];
@@ -2703,7 +2703,7 @@ export default async function handler(req, res) {
     const SUPPORTED_30_COINS = [
       "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
       "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
-      "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE", "PEPE"
+      "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
     ];
     let watchlist = config.watchlist || SUPPORTED_30_COINS;
     if (req.query.coin) {
@@ -2728,7 +2728,7 @@ export default async function handler(req, res) {
 
         const activePositionsList = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0);
         const activeCount = activePositionsList.length;
-        let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring tradfi (HIP-3)\n`;
+        let reportMsg = `🤖 **BOT REAL-TIME ACTION STATUS:** 🔍 Active Scanning & Monitoring crypto perps\n`;
         reportMsg += `⚡ **Current Action:** ${activeCount > 0 ? `🟢 Managing ${activeCount} Active Position(s)` : '⏳ Monitoring Candidates for 0.1% Gate Touch'} | **0.1% Gate Rule:** Active 🛡️\n`;
         reportMsg += `**💰 Account Balance:** $${displayBalance.toFixed(2)} | **Active Positions:** ${activeCount}/${maxConcurrentPositions}\n\n`;
 

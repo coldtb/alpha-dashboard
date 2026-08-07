@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Ticker, Position, ClosedTrade, TradePlan, BotConfig, DeepInsights } from '../types';
-import { fetchMarkets, DEFAULT_TRADFI_WATCHLIST, fetchPerformance, fetchBotConfig, fetchDeepInsights as apiFetchDeepInsights } from '../services/api';
+import { fetchMarkets, DEFAULT_WATCHLIST, fetchPerformance, fetchBotConfig, fetchDeepInsights as apiFetchDeepInsights } from '../services/api';
 import { calculateScore, calculateCustomSetupScore } from '../utils/helpers';
 
 export interface AppState {
@@ -43,7 +43,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 1. Initial State
   const [top100Coins, setTop100Coins] = useState<Ticker[]>([]);
   const [watchlistPrices, setWatchlistPrices] = useState<Record<string, { price: number; change: number; low: number; high: number }>>(
-    Object.fromEntries(DEFAULT_TRADFI_WATCHLIST.map(s => [s.replace("xyz:", ""), { price: 0, change: 0, low: 0, high: 0 }]))
+    Object.fromEntries(DEFAULT_WATCHLIST.map(s => [s, { price: 0, change: 0, low: 0, high: 0 }]))
   );
 
   const [customTrades, setCustomTrades] = useState<TradePlan[]>([]);
@@ -115,7 +115,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDrawerInsights(null);
   };
 
-  // Fetch TrueNorth deep insights when drawer is opened (crypto only; tradfi returns null)
+  // Fetch TrueNorth deep insights when drawer is opened (crypto only)
   const openDrawer = useCallback(async (coin: Ticker) => {
     setSelectedCoinState(coin);
     setIsDrawerOpen(true);
@@ -163,13 +163,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  // 3. Fetch Tradfi Scanner Data (Hyperliquid builder DEX "xyz" — same universe the bot trades)
+  // 3. Fetch Market Scanner Data (Hyperliquid crypto perps)
   const refreshScanner = useCallback(async (currentConfig?: BotConfig | null) => {
     try {
       const configToUse = currentConfig !== undefined ? currentConfig : activeBotConfig;
       const watchlist = (configToUse?.watchlist && configToUse.watchlist.length)
         ? configToUse.watchlist
-        : DEFAULT_TRADFI_WATCHLIST;
+        : DEFAULT_WATCHLIST;
 
       const rawTickers = await fetchMarkets(watchlist);
 
