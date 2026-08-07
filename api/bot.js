@@ -48,7 +48,11 @@ let config = {
   partialTpPercent: 50,
   partialTpTriggerPct: 0.40,
   breakevenTriggerPct: 0.015,
-  useSmartSlTp: false,
+  watchlist: [
+    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+    "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
+  ],
   apiRetryCount: 3,
   apiRetryDelayMs: 600,
   apiTimeoutMs: 12000
