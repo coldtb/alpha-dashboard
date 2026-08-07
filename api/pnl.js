@@ -191,31 +191,7 @@ export default async function handler(req, res) {
 
 
 
-    // Calculate Max Drawdown since June 13
-    const chronologicalFills = [...recentFills].reverse();
-    let currentEquityRun = startBalance;
-    let peak = startBalance;
-    let maxDrawdownPct = 0;
 
-    for (const fill of chronologicalFills) {
-      const pnl = parseFloat(fill.closedPnl || "0");
-      currentEquityRun += pnl;
-      if (currentEquityRun > peak) {
-        peak = currentEquityRun;
-      }
-      const dd = peak > 0 ? ((peak - currentEquityRun) / peak) * 100 : 0;
-      if (dd > maxDrawdownPct) {
-        maxDrawdownPct = dd;
-      }
-    }
-
-    if (accountValue > peak) {
-      peak = accountValue;
-    }
-    const finalDd = peak > 0 ? ((peak - accountValue) / peak) * 100 : 0;
-    if (finalDd > maxDrawdownPct) {
-      maxDrawdownPct = finalDd;
-    }
 
     return res.status(200).json({
       status: "success",
