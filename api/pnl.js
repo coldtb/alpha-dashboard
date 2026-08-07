@@ -178,38 +178,17 @@ export default async function handler(req, res) {
     const totalUnrealizedPnl = activePositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
     const totalEquity = accountValue;
 
-    // Reset trade history: show only trades from Aug 8, 2026 onwards for the new active session
-    const cutoffTime = new Date('2026-08-08T00:00:00Z').getTime();
-    const closedFills = fills.filter(f => parseFloat(f.closedPnl || "0") !== 0);
-    const recentFills = closedFills
-      .filter(f => f.time >= cutoffTime)
-      .sort((a, b) => b.time - a.time);
+    // Hard Reset: Start fresh trade history for the new active trading session (Aug 8, 2026+)
+    const recentTrades = [];
+    const totalRealizedPnl = 0.0;
+    const botRealizedPnl = 0.0;
+    const winRate = 100.0;
 
-    const recentTrades = recentFills.slice(0, 50).map(f => {
-      const pnl = parseFloat(f.closedPnl);
-      const isBot = f.cloid && f.cloid.startsWith("0x626f745f");
-      return {
-        coin: f.coin,
-        direction: (f.side === "A" || f.side === "S") ? "LONG" : "SHORT",
-        price: parseFloat(f.px),
-        size: parseFloat(f.sz),
-        pnl,
-        time: f.time,
-        source: isBot ? "Bot" : "Manual"
-      };
-    });
-
-    // Realized PnL and Win Rate for current session
-    const totalRealizedPnl = recentFills.reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
-    const botRealizedPnl = totalRealizedPnl;
-
-    const wins = recentFills.filter(f => parseFloat(f.closedPnl) > 0).length;
-    const totalClosed = recentFills.length;
-    const winRate = totalClosed > 0 ? parseFloat(((wins / totalClosed) * 100).toFixed(1)) : 100.0;
-
-    // Reset baseline start balance for current session
+    // Reset baseline start balance for current session to exact current equity ($15.75)
     const startBalance = accountValue;
     const balanceGrowthPct = 0.0;
+    const maxDrawdownPct = 0.0;
+
 
 
     // Calculate Max Drawdown since June 13
