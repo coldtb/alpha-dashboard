@@ -648,8 +648,9 @@ async function fetchEternaMarketTicker(symbol) {
 // Generic JSON-RPC tool caller helper for TrueNorth (with retry)
 
 async function callTrueNorthMcp(toolName, args) {
-  const token = process.env.TN_FINANCIAL_DATA_API_KEY || 'ak_6bab536248be4a1896a4ea54de7b8377';
+  const token = process.env.TN_FINANCIAL_DATA_API_KEY || process.env.TRUENORTH_API_KEY || 'ak_3c04ea1434164d6693c1707c9e144926';
   const url = `https://mcp.true-north.xyz/mcp?token=${token}`;
+
 
   const fetchWithTimeout = async () => {
     const controller = new AbortController();
