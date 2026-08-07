@@ -42,7 +42,65 @@ const CACHE_TTL_MS = 10000;
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "public, s-maxage=10, stale-while-revalidate=20");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+
+  if (req.query && (req.query.test_trade || req.query.test)) {
+    const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
+    const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
+    if (!privateKey || !walletAddress) {
+      return res.status(400).json({ error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS" });
+    }
+    try {
+      const { ExchangeClient } = await import("@nktkas/hyperliquid");
+      const { privateKeyToAccount } = await import("viem/accounts");
+      const transport = new HttpTransport();
+      const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+      const exchange = new ExchangeClient({ transport, wallet: account });
+
+      // Asset 0 is BTC on Hyperliquid Mainnet. 0.0002 BTC = ~$13.00 notional (~$2.60 margin @ 5x)
+      const btcIdx = 0;
+      const testSizeStr = "0.0002";
+
+      console.log("[Test Trade] Executing BUY market order for 0.0002 BTC on Mainnet...");
+      const openRes = await exchange.order({
+        orders: [{
+          a: btcIdx,
+          b: true,
+          p: "70000.0",
+          s: testSizeStr,
+          r: false,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      await new Promise(r => setTimeout(r, 2000));
+
+      console.log("[Test Trade] Executing SELL market order for 0.0002 BTC to close on Mainnet...");
+      const closeRes = await exchange.order({
+        orders: [{
+          a: btcIdx,
+          b: false,
+          p: "60000.0",
+          s: testSizeStr,
+          r: true,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      return res.status(200).json({
+        status: "success",
+        message: "Live test trade for BTC executed and closed successfully on Hyperliquid Mainnet!",
+        testDetails: {
+          symbol: "BTC",
+          size: testSizeStr,
+          openResponse: openRes,
+          closeResponse: closeRes
+        }
+      });
+    } catch (err) {
+      return res.status(500).json({ status: "error", error: "Test trade failed: " + err.message });
+    }
+  }
 
   const now = Date.now();
   if (_pnlCache && (now - _pnlCacheTime < CACHE_TTL_MS)) {
