@@ -13,7 +13,7 @@
   "hyperscaled": {
     "enabled": true,
     "tier": "A",
-    "startingHlEquity": 1000,
+    "startingHlEquity": 16.5,
     "maxSLPct": 0.015
   },
   "blacklist": ["PAXG", "FET"],
