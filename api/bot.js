@@ -1512,27 +1512,18 @@ export default async function handler(req, res) {
         return sendResponse(400, { error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS in environment variables." });
       }
       const transport = new HttpTransport();
-      const info = new InfoClient({ transport });
       const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
       const exchange = new ExchangeClient({ transport, wallet: account });
 
-      const coinSymbol = (req.query && req.query.coin) ? req.query.coin.toUpperCase() : "SOL";
-      logger.info(`[Test Trade] Executing live test order for ${coinSymbol} on Hyperliquid Mainnet...`, "events");
-      const [meta, ctxs] = await info.metaAndAssetCtxs();
-      const assetIdx = meta.universe.findIndex(u => u.name === coinSymbol);
-      if (assetIdx === -1) throw new Error(`Asset ${coinSymbol} not found on Hyperliquid`);
+      // Asset 0 is BTC on Hyperliquid Mainnet. 0.0002 BTC = ~$13.00 notional (~$2.60 margin @ 5x)
+      const btcIdx = 0;
+      const testSizeStr = "0.0002";
+      const buyPxStr = "70000.0"; // Aggressive IOC limit buy = market buy fill
 
-      const ctx = ctxs[assetIdx];
-      const markPx = parseFloat(ctx.markPx || ctx.midPx || "70.0");
-      const szDec = meta.universe[assetIdx].szDecimals;
-      
-      const testSize = coinSymbol === "BTC" ? 0.0002 : (coinSymbol === "SOL" ? 0.15 : 1.0);
-      const testSizeStr = testSize.toFixed(szDec);
-      const buyPxStr = (markPx * 1.02).toFixed(2);
-
+      logger.info("[Test Trade] Placing BUY market order for 0.0002 BTC on Hyperliquid Mainnet...", "events");
       const openRes = await exchange.order({
         orders: [{
-          a: assetIdx,
+          a: btcIdx,
           b: true,
           p: buyPxStr,
           s: testSizeStr,
@@ -1541,12 +1532,13 @@ export default async function handler(req, res) {
         }]
       });
 
-      await new Promise(r => setTimeout(r, 2500));
+      await new Promise(r => setTimeout(r, 2000));
 
-      const sellPxStr = (markPx * 0.98).toFixed(2);
+      const sellPxStr = "60000.0"; // Aggressive IOC limit sell = market sell fill (reduce-only)
+      logger.info("[Test Trade] Placing SELL market order to close 0.0002 BTC on Hyperliquid Mainnet...", "events");
       const closeRes = await exchange.order({
         orders: [{
-          a: assetIdx,
+          a: btcIdx,
           b: false,
           p: sellPxStr,
           s: testSizeStr,
@@ -1557,11 +1549,10 @@ export default async function handler(req, res) {
 
       return sendResponse(200, {
         status: "success",
-        message: `Live test trade for ${coinSymbol} executed and closed successfully on Hyperliquid Mainnet!`,
+        message: "Live test trade for BTC executed and closed successfully on Hyperliquid Mainnet!",
         testDetails: {
-          symbol: coinSymbol,
+          symbol: "BTC",
           size: testSizeStr,
-          approxPrice: markPx,
           openResponse: openRes,
           closeResponse: closeRes
         }
