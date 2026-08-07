@@ -178,9 +178,8 @@ export default async function handler(req, res) {
     const totalUnrealizedPnl = activePositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
     const totalEquity = accountValue;
 
-    // Process Trade History from Closed Fills
-    // Show only trades from July 26, 2026 onwards for the current challenge
-    const cutoffTime = new Date('2026-07-26T00:00:00Z').getTime();
+    // Reset trade history: show only trades from Aug 8, 2026 onwards for the new active session
+    const cutoffTime = new Date('2026-08-08T00:00:00Z').getTime();
     const closedFills = fills.filter(f => parseFloat(f.closedPnl || "0") !== 0);
     const recentFills = closedFills
       .filter(f => f.time >= cutoffTime)
@@ -191,7 +190,7 @@ export default async function handler(req, res) {
       const isBot = f.cloid && f.cloid.startsWith("0x626f745f");
       return {
         coin: f.coin,
-        direction: (f.side === "A" || f.side === "S") ? "LONG" : "SHORT", // selling (Ask 'A') closes LONG, buying (Bid 'B') closes SHORT
+        direction: (f.side === "A" || f.side === "S") ? "LONG" : "SHORT",
         price: parseFloat(f.px),
         size: parseFloat(f.sz),
         pnl,
@@ -200,18 +199,18 @@ export default async function handler(req, res) {
       };
     });
 
-    // All fills since July 26th for total PnL
+    // Realized PnL and Win Rate for current session
     const totalRealizedPnl = recentFills.reduce((sum, f) => sum + parseFloat(f.closedPnl), 0);
     const botRealizedPnl = totalRealizedPnl;
 
-    // Win Rate from all trades since July 26
     const wins = recentFills.filter(f => parseFloat(f.closedPnl) > 0).length;
     const totalClosed = recentFills.length;
     const winRate = totalClosed > 0 ? parseFloat(((wins / totalClosed) * 100).toFixed(1)) : 100.0;
 
-    // Starting balance on June 13: cash balance (equity excluding unrealized PnL) minus realized PnL since June 13
-    const startBalance = Math.max(accountValue - totalUnrealizedPnl - totalRealizedPnl, 0.01);
-    const balanceGrowthPct = parseFloat((((accountValue - startBalance) / startBalance) * 100).toFixed(2));
+    // Reset baseline start balance for current session
+    const startBalance = accountValue;
+    const balanceGrowthPct = 0.0;
+
 
     // Calculate Max Drawdown since June 13
     const chronologicalFills = [...recentFills].reverse();
