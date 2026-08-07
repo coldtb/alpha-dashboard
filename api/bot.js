@@ -1471,6 +1471,16 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
+  // Hard override config settings for Crypto Perps Mainnet (minScore: 50)
+  config.hyperscaled = { enabled: false };
+  config.perpDex = "";
+  config.minScore = req.query?.min_score ? parseInt(req.query.min_score) : 50;
+  config.watchlist = [
+    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+    "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
+  ];
+
   // Generate Trace ID for execution cycle
   const traceId = crypto.randomBytes(6).toString("hex");
   logger.setTraceId(traceId);
