@@ -3294,7 +3294,7 @@ export default async function handler(req, res) {
     }
 
     // ---- Hyperscaled challenge guard (soft per-pair/asset-class/portfolio caps + HARD drawdown gate) ----
-    const hsRealEquity = computeHlEquity(withdrawableUsd, userState.assetPositions);
+    const hsRealEquity = computeHlEquity(accountSize, userState.assetPositions);
     const hsGuard = computeHyperscaledGuard(target.symbol, hsRealEquity, userState.assetPositions, {
       config, maxSLPct: slDistancePct, currentEquity: hsRealEquity
     });
