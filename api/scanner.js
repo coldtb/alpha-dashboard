@@ -197,8 +197,8 @@ function checkConfluence(pool, fg, btcData) {
 
 // ── Token Class (MCap-based) ──────────────────────────────────────
 function tokenClass(mcap) {
-  if (mcap < 10_000_000) return { label: 'Class A', color: 'green', slPct: 0.02 };
-  return { label: 'Class B', color: 'yellow', slPct: 0.03 };
+  if (mcap < 10_000_000) return { label: 'Class A', color: 'green', slPct: 0.015 };
+  return { label: 'Class B', color: 'yellow', slPct: 0.015 };
 }
 
 // ── Main Handler ─────────────────────────────────────────────────
@@ -234,11 +234,11 @@ export default async function handler(req, res) {
       const confluence = gate.pass ? checkConfluence(pool, fg, btcData) : null;
       const tc = tokenClass(pool.mcap);
 
-      const slPct = tc.slPct;
-      const minRR = 3.0;
+      const slPct = 0.015; // 1.5% SL
+      const tpPct = 0.015; // 1.5% initial TP
       const entryPx = pool.price;
       const slPx = parseFloat((entryPx * (1 - slPct)).toFixed(6));
-      const tpPx = parseFloat((entryPx * (1 + slPct * minRR)).toFixed(6));
+      const tpPx = parseFloat((entryPx * (1 + tpPct)).toFixed(6));
 
       return {
         symbol: pool.symbol,

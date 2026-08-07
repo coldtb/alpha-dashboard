@@ -2227,15 +2227,25 @@ export default async function handler(req, res) {
       // Check if this position has already been trailed (TP is moved far beyond normal cap)
       const isAlreadyTrailed = tpOrder && tpPx > 0 && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
 
-      // Check A: Infinite Ratchet Step Profit Locking (Runs on every 1-minute cycle for all open positions)
+      // Check A: Infinite 3-Step Ratchet Trailing SL (User Mandate)
+      // Level 1 Lock: Gain +0.50% (+2.5% ROE @ 5x) -> Lock SL to +0.40% Gain (+2.0% ROE Profit)
+      // Level 2 Lock: Gain +0.70% (+3.5% ROE @ 5x) -> Lock SL to +0.60% Gain (+3.0% ROE Profit)
+      // Dynamic Trailing: Gain +1.00%+ (+5.0%+ ROE @ 5x) -> Dynamic Trailing SL at Mark Price - 0.20%
       const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
       const finalLeverage = Math.min(5, maxLeverage);
       const roePct = returnPct * finalLeverage;
 
       let ratchetLockedPricePct = 0;
-      if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous trail 0.20% behind mark price for +1.00%+ Gain (+5.0%+ ROE)
-      else if (roePct >= 0.035) ratchetLockedPricePct = 0.030 / finalLeverage; // Level 2: +0.60% price gain lock (+3.0% ROE) for +0.70% Gain (+3.5% ROE)
-      else if (roePct >= 0.025) ratchetLockedPricePct = 0.020 / finalLeverage; // Level 1: +0.40% price gain lock (+2.0% ROE) for +0.50% Gain (+2.5% ROE)
+      if (returnPct >= 0.0100 || roePct >= 0.050) {
+        // 3-р Шат (Dynamic Trailing): +1.00%+ Gain (+5.0%+ ROE) -> Mark Price - 0.20% (continuous trailing)
+        ratchetLockedPricePct = returnPct - 0.0020;
+      } else if (returnPct >= 0.0070 || roePct >= 0.035) {
+        // 2-р Шат (Level 2 Lock): +0.70% Gain (+3.5% ROE) -> Lock SL to +0.60% Gain (+3.0% ROE Profit)
+        ratchetLockedPricePct = 0.0060;
+      } else if (returnPct >= 0.0050 || roePct >= 0.025) {
+        // 1-р Шат (Level 1 Lock): +0.50% Gain (+2.5% ROE) -> Lock SL to +0.40% Gain (+2.0% ROE Profit)
+        ratchetLockedPricePct = 0.0040;
+      }
 
 
       if (ratchetLockedPricePct > 0) {
