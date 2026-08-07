@@ -1744,6 +1744,7 @@ export default async function handler(req, res) {
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
       return c.score >= coinMinScore && 
+             watchlist.includes(c.symbol) &&
              !(config.blacklist || []).includes(c.symbol) && 
              !openOrders.some(o => o.coin === c.symbol) && 
              !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0);
