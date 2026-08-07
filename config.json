@@ -14,7 +14,7 @@
     "enabled": true,
     "tier": "A",
     "startingHlEquity": 16.5,
-    "maxSLPct": 0.015
+    "maxSLPct": 0.020
   },
   "blacklist": ["PAXG", "FET"],
   "enableSupportRebound": true,

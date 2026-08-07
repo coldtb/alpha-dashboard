@@ -2232,10 +2232,10 @@ export default async function handler(req, res) {
       const roePct = returnPct * finalLeverage;
 
       let ratchetLockedPricePct = 0;
-      if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous trail 0.20% behind mark price for +5.0%+ ROE
-      else if (roePct >= 0.035) ratchetLockedPricePct = 0.030 / finalLeverage; // Level 3: +0.60% price gain lock (+3.0% ROE)
-      else if (roePct >= 0.025) ratchetLockedPricePct = 0.020 / finalLeverage; // Level 2: +0.40% price gain lock (+2.0% ROE)
-      else if (roePct >= 0.015) ratchetLockedPricePct = 0.010 / finalLeverage; // Level 1: +0.20% price gain lock (+1.0% ROE)
+      if (roePct >= 0.050) ratchetLockedPricePct = (roePct - 0.010) / finalLeverage; // Continuous trail 0.20% behind mark price for +1.00%+ Gain (+5.0%+ ROE)
+      else if (roePct >= 0.035) ratchetLockedPricePct = 0.030 / finalLeverage; // Level 2: +0.60% price gain lock (+3.0% ROE) for +0.70% Gain (+3.5% ROE)
+      else if (roePct >= 0.025) ratchetLockedPricePct = 0.020 / finalLeverage; // Level 1: +0.40% price gain lock (+2.0% ROE) for +0.50% Gain (+2.5% ROE)
+
 
       if (ratchetLockedPricePct > 0) {
         const targetSlPx = isLong 
