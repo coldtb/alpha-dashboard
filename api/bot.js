@@ -1584,7 +1584,7 @@ export default async function handler(req, res) {
 
     // 4. Fetch Scanner Data - metaAndAssetCtxs is public (unlimited), user calls are rate-limited
     // Always fetch public market data first
-    const dex = config.perpDex || "xyz";
+    const dex = (config.perpDex !== undefined && config.perpDex !== null) ? config.perpDex : "";
     const metaAndCtxs = await withRetryAndTimeout(
       () => info.metaAndAssetCtxs({ dex }),
       "Hyperliquid Market Data",
