@@ -1467,6 +1467,9 @@ async function safeCancelOrders(exchange, cancels) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
   // Generate Trace ID for execution cycle
   const traceId = crypto.randomBytes(6).toString("hex");
   logger.setTraceId(traceId);
