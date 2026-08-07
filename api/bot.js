@@ -3232,7 +3232,7 @@ export default async function handler(req, res) {
 
     // Unified Account Support: When Unified Account is enabled on Hyperliquid, Spot USDC is unified collateral for Perp Futures!
     const withdrawableUsd = Math.max(perpWithdrawable, spotUsdcBal);
-    const totalCapitalUsd = Math.max(withdrawableUsd, 18.53);
+    const totalCapitalUsd = withdrawableUsd;
     let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
     logger.info(`[Unified Account] Effective trading capital: $${accountSize.toFixed(2)} (Unified Margin: $${withdrawableUsd.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
 
