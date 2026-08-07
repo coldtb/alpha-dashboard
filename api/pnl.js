@@ -45,7 +45,8 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
 
-  if (req.query && (req.query.test_trade || req.query.test)) {
+  const isTestReq = (req.url && (req.url.includes("test_trade") || req.url.includes("test"))) || (req.query && (req.query.test_trade || req.query.test));
+  if (isTestReq) {
     const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
     const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
     if (!privateKey || !walletAddress) {
@@ -56,30 +57,36 @@ export default async function handler(req, res) {
       const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
       const exchange = new ExchangeClient({ transport, wallet: account });
 
+      const info = new InfoClient({ transport });
+      const mids = await info.allMids();
+      const btcPx = parseFloat(mids["BTC"] || "64800");
+
       // Asset 0 is BTC on Hyperliquid Mainnet. 0.0002 BTC = ~$13.00 notional (~$2.60 margin @ 5x)
       const btcIdx = 0;
       const testSizeStr = "0.0002";
+      const buyPxStr = (btcPx * 1.01).toFixed(1);
+      const sellPxStr = (btcPx * 0.99).toFixed(1);
 
-      console.log("[Test Trade] Executing BUY market order for 0.0002 BTC on Mainnet...");
+      console.log(`[Test Trade] Executing BUY market order for 0.0002 BTC at ~$${buyPxStr} on Mainnet...`);
       const openRes = await exchange.order({
         orders: [{
           a: btcIdx,
           b: true,
-          p: "70000.0",
+          p: buyPxStr,
           s: testSizeStr,
           r: false,
           t: { limit: { tif: "Ioc" } }
         }]
       });
 
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 2500));
 
-      console.log("[Test Trade] Executing SELL market order for 0.0002 BTC to close on Mainnet...");
+      console.log(`[Test Trade] Executing SELL market order for 0.0002 BTC at ~$${sellPxStr} to close on Mainnet...`);
       const closeRes = await exchange.order({
         orders: [{
           a: btcIdx,
           b: false,
-          p: "60000.0",
+          p: sellPxStr,
           s: testSizeStr,
           r: true,
           t: { limit: { tif: "Ioc" } }
