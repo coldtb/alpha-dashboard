@@ -48,15 +48,6 @@ const DashboardContent: React.FC = () => {
       {/* Falling Dollars Particle Rain Background Effect */}
       <FallingDollarsRain />
 
-      {/* Trade Planner & Signals Row */}
-      <div className="dashboard-top-row">
-        <TradePlanner
-          initialValues={plannerDefaults}
-          clearInitialValues={() => setPlannerDefaults(null)}
-        />
-        <OpportunityPodium onApplyPlan={handleApplyPlan} />
-      </div>
-
       {/* Live Eterna AI & TrueNorth Signals Feed */}
       <EternaSignalStream />
 
@@ -66,7 +57,7 @@ const DashboardContent: React.FC = () => {
           <svg width="20" height="20" fill="var(--color-green)" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '6px' }}>
             <path fill="currentColor" d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z" />
           </svg>
-          Bot Portfolio Performance & Active Positions
+          Hyperliquid Mainnet Bot Performance & Active Positions
         </h2>
 
         {/* Performance Summary Cards */}
@@ -84,19 +75,19 @@ const DashboardContent: React.FC = () => {
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Jul 26+ PnL (All)</span>
+            <span className="perf-label">Realized PnL</span>
             <span className={`perf-val ${botRealizedPnl >= 0 ? 'change-up' : 'change-down'}`} id="perf-bot-realized-pnl" style={{ background: 'none', padding: 0 }}>
               {botRealizedPnl >= 0 ? '+' : ''}${botRealizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Balance Growth (Jul 26)</span>
+            <span className="perf-label">Balance Growth</span>
             <span className={`perf-val ${balanceGrowth >= 0 ? 'change-up' : 'change-down'}`} id="perf-balance-growth" style={{ background: 'none', padding: 0 }}>
               {balanceGrowth >= 0 ? '+' : ''}{balanceGrowth.toFixed(2)}%
             </span>
           </div>
           <div className="perf-stat-card">
-            <span className="perf-label">Win Rate (Jul 26+)</span>
+            <span className="perf-label">Win Rate</span>
             <span className={`perf-val ${winRate >= 50 ? 'change-up' : 'change-down'}`} id="perf-win-rate" style={{ background: 'none', padding: 0 }}>
               {winRate.toFixed(1)}%
             </span>
@@ -116,16 +107,14 @@ const DashboardContent: React.FC = () => {
         </div>
       </section>
 
-      {/* Top 100 Scanner */}
+      {/* Hyperliquid 30 Crypto Perps Scanner */}
       <FuturesScanner />
-
-      {/* Prompts Hub Section */}
-      <PromptsHub />
 
       {/* Side Interactive Drawer & Backdrop */}
       <DeepInsightsDrawer />
     </Layout>
   );
+
 };
 
 export default function App() {
