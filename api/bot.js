@@ -1491,6 +1491,75 @@ export default async function handler(req, res) {
   }, 55000);
 
 
+  // Direct Test Trade Execution Guard
+  const isTestTradeReq = req.query && (req.query.test_trade !== undefined || req.query.test !== undefined || (req.url && req.url.includes("test_trade")));
+  if (isTestTradeReq) {
+    try {
+      const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
+      const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
+      if (!privateKey || !walletAddress) {
+        return sendResponse(400, { error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS in environment variables." });
+      }
+      const transport = new HttpTransport();
+      const info = new InfoClient({ transport });
+      const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+      const exchange = new ExchangeClient({ transport, wallet: account });
+
+      const coinSymbol = (req.query && req.query.coin) ? req.query.coin.toUpperCase() : "SOL";
+      logger.info(`[Test Trade] Executing live test order for ${coinSymbol} on Hyperliquid Mainnet...`, "events");
+      const [meta, ctxs] = await info.metaAndAssetCtxs();
+      const assetIdx = meta.universe.findIndex(u => u.name === coinSymbol);
+      if (assetIdx === -1) throw new Error(`Asset ${coinSymbol} not found on Hyperliquid`);
+
+      const ctx = ctxs[assetIdx];
+      const markPx = parseFloat(ctx.markPx || ctx.midPx || "70.0");
+      const szDec = meta.universe[assetIdx].szDecimals;
+      
+      const testSize = coinSymbol === "BTC" ? 0.0002 : (coinSymbol === "SOL" ? 0.15 : 1.0);
+      const testSizeStr = testSize.toFixed(szDec);
+      const buyPxStr = (markPx * 1.02).toFixed(2);
+
+      const openRes = await exchange.order({
+        orders: [{
+          a: assetIdx,
+          b: true,
+          p: buyPxStr,
+          s: testSizeStr,
+          r: false,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      await new Promise(r => setTimeout(r, 2500));
+
+      const sellPxStr = (markPx * 0.98).toFixed(2);
+      const closeRes = await exchange.order({
+        orders: [{
+          a: assetIdx,
+          b: false,
+          p: sellPxStr,
+          s: testSizeStr,
+          r: true,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      return sendResponse(200, {
+        status: "success",
+        message: `Live test trade for ${coinSymbol} executed and closed successfully on Hyperliquid Mainnet!`,
+        testDetails: {
+          symbol: coinSymbol,
+          size: testSizeStr,
+          approxPrice: markPx,
+          openResponse: openRes,
+          closeResponse: closeRes
+        }
+      });
+    } catch (tErr) {
+      return sendResponse(500, { status: "error", error: "Test trade failed: " + tErr.message });
+    }
+  }
+
   // Validate environment secrets
   try {
     validateEnvSecrets();
