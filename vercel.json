@@ -3,6 +3,15 @@
   "functions": {
     "api/bot.js": {
       "maxDuration": 60
+    },
+    "api/scanner.js": {
+      "maxDuration": 30
+    },
+    "api/pnl.js": {
+      "maxDuration": 30
+    },
+    "api/test_trade.js": {
+      "maxDuration": 30
     }
   }
 }
