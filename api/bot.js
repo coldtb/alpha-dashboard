@@ -257,7 +257,9 @@ function computeHyperscaledGuard(symbol, accountSize, openPositions, opts) {
   const assetClassLimit = L.assetClass[cls] * accountSize;
   const portfolioLimit = L.portfolio * accountSize;
 
-  const startingEq = parseFloat(cfg.startingHlEquity) || accountSize;
+  const startingEq = (cfg.startingHlEquity && parseFloat(cfg.startingHlEquity) <= accountSize)
+    ? parseFloat(cfg.startingHlEquity)
+    : accountSize;
   const currentEquity = (opts && opts.currentEquity) || accountSize;
   const maxSL = (opts && opts.maxSLPct) || 0.015;
   const ddBudget = L.drawdownPct * startingEq;
