@@ -274,10 +274,10 @@ export const EternaSignalStream: React.FC = () => {
           </div>
         </div>
         {/* Next Cron */}
-        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(251,191,36,0.2)' }}>
-          <div style={{ fontSize: '0.65rem', color: '#6b7280', marginBottom: '2px' }}>⏰ Next Cron (ULAT)</div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fbbf24' }}>{nextCron}:00</div>
-          <div style={{ fontSize: '0.68rem', color: '#6b7280' }}>~{Math.max(0, minsToNext)}m away</div>
+        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(156,163,175,0.2)' }}>
+          <div style={{ fontSize: '0.65rem', color: '#6b7280', marginBottom: '2px' }}>⏰ Cron Schedule</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#9ca3af' }}>⏸ PAUSED</div>
+          <div style={{ fontSize: '0.66rem', color: '#6b7280' }}>Manual mode active</div>
         </div>
         {/* Regime */}
         <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: `1px solid ${regimeColor}30` }}>

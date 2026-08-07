@@ -4,11 +4,5 @@
     "api/bot.js": {
       "maxDuration": 60
     }
-  },
-  "crons": [
-    {
-      "path": "/api/bot",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  }
 }
