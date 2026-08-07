@@ -17,12 +17,6 @@ let config = {
   dryRun: false,
   binanceScanner: true,
   perpDex: "",
-  hyperscaled: {
-    enabled: false,
-    tier: "A",
-    startingHlEquity: 15.75,
-    maxSLPct: 0.015
-  },
   blacklist: ["PAXG", "FET"],
   enableSupportRebound: true,
   minSupportDropPct: 0.001,
@@ -199,115 +193,13 @@ function generateBotCloid() {
   return "0x626f745f" + crypto.randomBytes(12).toString("hex");
 }
 
-// ===== Hyperscaled challenge guard (tradfi / HIP-3 builder-dex mode) =====
-// Per-pair / asset-class / portfolio limits are SOFT: Hyperscaled caps the mirrored copy and
-// never blocks the real HL order. The 5% drawdown limit is HARD: breaching it terminates the
-// challenge, so the bot must never open a trade whose worst-case SL loss would push cumulative
-// real drawdown past the budget.
-const HYPERSCALED_ASSET_CLASS = {
-  WTIOIL: 'commodity', GOLD: 'commodity', SILVER: 'commodity', COPPER: 'commodity', NATGAS: 'commodity', PLATINUM: 'commodity',
-  SP500: 'index', XYZ100: 'index', EWY: 'index',
-  NVDA: 'stock', AAPL: 'stock', TSLA: 'stock', MSFT: 'stock', AMZN: 'stock', GOOGL: 'stock', META: 'stock',
-  COIN: 'stock', CRCL: 'stock', MSTR: 'stock', PLTR: 'stock', AMD: 'stock', TSM: 'stock', NFLX: 'stock',
-  SNDK: 'stock', INTC: 'stock', MU: 'stock', HOOD: 'stock', ORCL: 'stock'
-};
-const HYPERSCALED_TIER_LIMITS = {
-  A: { perPair: { crypto: 0.5, commodity: 0.5, stock: 0.5, index: 1.5 },
-       assetClass: { crypto: 2.0, commodity: 2.0, stock: 1.0, index: 3.0 },
-       portfolio: 4.0, drawdownPct: 0.05 },
-  B: { perPair: { crypto: 1.0, commodity: 1.0, stock: 1.0, index: 3.0 },
-       assetClass: { crypto: 2.0, commodity: 2.0, stock: 1.5, index: 6.0 },
-       portfolio: 7.0, drawdownPct: 0.05 },
-  C: { perPair: { crypto: 1.5, commodity: 1.5, stock: 1.5, index: 4.5 },
-       assetClass: { crypto: 3.0, commodity: 3.0, stock: 2.0, index: 8.0 },
-       portfolio: 10.0, drawdownPct: 0.05 }
-};
-const GOLD_PERPAIR_OVERRIDE = { A: 1.0, B: 2.0, C: 3.0 }; // GOLD per-pair limit is higher
-const HL_MIN_NOTIONAL = 10.5; // Hyperliquid minimum order notional
 
-// Strip builder-dex / perp prefixes to get the canonical symbol (e.g. "xyz:GOLD" -> "GOLD", "@107../XYZ100" -> "XYZ100")
-function canonicalSymbol(s) {
-  if (!s) return '';
-  let n = String(s);
-  if (n.startsWith('xyz:')) n = n.slice(4);
-  if (n.includes('/')) n = n.split('/')[1];
-  return n;
-}
-function classOfCoin(coin) {
-  return HYPERSCALED_ASSET_CLASS[canonicalSymbol(coin)] || 'crypto';
-}
 
-// True HL account equity = free collateral + sum(open position margin + unrealized PnL).
-// Using withdrawable alone understates equity once a position is open (margin is locked), which
-// would falsely inflate drawdown usage. This computes real equity for accurate guard math.
-function computeHlEquity(withdrawable, openPositions) {
-  let eq = parseFloat(withdrawable) || 0;
-  if (Array.isArray(openPositions)) {
-    for (const p of openPositions) {
-      const pos = (p && p.position) ? p.position : p;
-      const sz = parseFloat(pos.szi || '0');
-      if (sz === 0) continue;
-      const entry = parseFloat(pos.entryPx || '0');
-      const mark = parseFloat(pos.markPx || pos.oraclePx || entry);
-      const levRaw = pos.leverage && (pos.leverage.value !== undefined ? pos.leverage.value : pos.leverage);
-      const lev = parseFloat(levRaw) || 5;
-      const notional = entry ? Math.abs(sz) * entry : 0;
-      const margin = notional / lev;
-      const upl = (mark - entry) * sz;
-      eq += margin + upl;
-    }
-  }
-  return eq;
-}
 
-// Returns a guard object, or null if the Hyperscaled guard is disabled.
-// accountSize = real HL equity (used for limit %). opts.currentEquity = real equity for drawdown.
-function computeHyperscaledGuard(symbol, accountSize, openPositions, opts) {
-  const cfg = (opts && opts.config && opts.config.hyperscaled) || null;
-  const isEnabled = cfg && (cfg.enabled === true || cfg.enabled === "true");
-  if (!isEnabled) return null;
-  const tier = (cfg.tier || 'A');
-  const L = HYPERSCALED_TIER_LIMITS[tier] || HYPERSCALED_TIER_LIMITS.A;
-  const sym = canonicalSymbol(symbol);
-  const cls = HYPERSCALED_ASSET_CLASS[sym] || 'crypto';
 
-  let perPairPct = L.perPair[cls];
-  if (cls === 'commodity' && sym === 'GOLD') perPairPct = (GOLD_PERPAIR_OVERRIDE[tier] || 1.0);
-  const perPairLimit = perPairPct * accountSize;
 
-  let usedClass = 0, usedPortfolio = 0;
-  if (Array.isArray(openPositions)) {
-    for (const p of openPositions) {
-      const pos = (p && p.position) ? p.position : p;
-      const sz = Math.abs(parseFloat(pos.szi || '0'));
-      if (sz === 0) continue;
-      const px = parseFloat(pos.entryPx || pos.oraclePx || pos.markPx || '0');
-      if (!px) continue;
-      const notional = sz * px;
-      usedPortfolio += notional;
-      if (classOfCoin(pos.coin) === cls) usedClass += notional;
-    }
-  }
-  const assetClassLimit = L.assetClass[cls] * accountSize;
-  const portfolioLimit = L.portfolio * accountSize;
 
-  const currentEquity = (opts && opts.currentEquity) || accountSize;
-  const startingEq = currentEquity;
-  const maxSL = (opts && opts.maxSLPct) || 0.015;
-  const ddBudget = L.drawdownPct * startingEq;
-  const currentDD = Math.max(0, startingEq - currentEquity);
-  const ddHeadroomReal = Math.max(0, ddBudget - currentDD);
-  const ddMaxNotional = maxSL ? ddHeadroomReal / maxSL : 0;
 
-  const softCap = Math.max(0, Math.min(perPairLimit, assetClassLimit - usedClass, portfolioLimit - usedPortfolio));
-
-  return {
-    enabled: true, tier, cls, sym,
-    perPairLimit, assetClassLimit, portfolioLimit,
-    usedClass, usedPortfolio, softCap,
-    ddBudget, currentDD, ddHeadroomReal, ddMaxNotional, accountSize
-  };
-}
 
 function isCoinInConsecutiveLossCooldown(coinSymbol, userFills) {
   if (!Array.isArray(userFills) || userFills.length === 0) return false;
@@ -1469,7 +1361,6 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
   // Hard override config settings for Crypto Perps Mainnet (minScore: 50)
-  config.hyperscaled = { enabled: false };
   config.perpDex = "";
   config.minScore = req.query?.min_score ? parseInt(req.query.min_score) : 50;
   config.watchlist = [
@@ -2491,20 +2382,7 @@ export default async function handler(req, res) {
           const positionSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
           let targetSizeUsd = (activeAccountSize * positionSizeFactor) * finalLeverage;
 
-          // Hyperscaled guard on pyramid add (treat existing position as already-open for headroom math)
-          const hsGuardPy = computeHyperscaledGuard(coin, activeAccountSize,
-            [{ position: { coin, szi: size, entryPx: currentPrice } }],
-            { config, maxSLPct: 0.015, currentEquity: activeAccountSize });
-          if (hsGuardPy) {
-            let pySized = Math.min(targetSizeUsd, hsGuardPy.softCap);
-            if (pySized < HL_MIN_NOTIONAL) pySized = HL_MIN_NOTIONAL;
-            const pyWorst = pySized * 0.015;
-            if (hsGuardPy.currentDD + pyWorst > hsGuardPy.ddBudget) {
-              logger.warn(`[Hyperscaled Guard] Pyramid SKIP ${hsGuardPy.sym}: would breach drawdown. No pyramid add.`, "events");
-            } else {
-              targetSizeUsd = pySized;
-            }
-          }
+
 
           if (targetSizeUsd < 10.5) targetSizeUsd = 10.5;
           const targetSizeTokens = targetSizeUsd / currentPrice;
@@ -2821,7 +2699,7 @@ export default async function handler(req, res) {
     // 5c. Limit Order Entry Level Trailing: No longer needed as we use instant market (taker) entry.
 
 
-    // Restrict scanner & candidates strictly to the 30 coins supported by Hyperscaled
+    // Restrict scanner & candidates strictly to the 30 supported crypto perps
     const SUPPORTED_30_COINS = [
       "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
       "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
@@ -2884,7 +2762,7 @@ export default async function handler(req, res) {
         reportMsg += `Coin   | Direction   | Price        | TN Support   | Distance %   | 0.1% Gate Status\n`;
         reportMsg += `-------+-------------+--------------+--------------+--------------+-------------------------\n`;
 
-        // Filter tradeable candidates dynamically for Discord report (strictly restricted to 30 Hyperscaled coins)
+        // Filter tradeable candidates dynamically for Discord report (strictly restricted to 30 crypto perps)
         const displayCandidates = scoredCoins.filter(c => 
           watchlist.includes(c.symbol) && 
           !(config.blacklist || []).includes(c.symbol)
@@ -3425,25 +3303,7 @@ export default async function handler(req, res) {
       positionSizeUsd = maxPositionSizeUsd;
     }
 
-    // ---- Hyperscaled challenge guard (soft per-pair/asset-class/portfolio caps + HARD drawdown gate) ----
-    const hsRealEquity = computeHlEquity(accountSize, userState.assetPositions);
-    const hsGuard = computeHyperscaledGuard(target.symbol, hsRealEquity, userState.assetPositions, {
-      config, maxSLPct: slDistancePct, currentEquity: hsRealEquity
-    });
-    if (hsGuard) {
-      let hsSized = Math.min(positionSizeUsd, hsGuard.softCap);
-      if (hsSized < HL_MIN_NOTIONAL) hsSized = HL_MIN_NOTIONAL; // honour HL min; Hyperscaled caps the mirror
-      const hsWorstLoss = hsSized * slDistancePct;
-      if (hsGuard.currentDD + hsWorstLoss > hsGuard.ddBudget) {
-        logger.warn(`[Hyperscaled Guard] SKIP ${hsGuard.sym}: would breach drawdown (used $${hsGuard.currentDD.toFixed(2)} + worst loss $${hsWorstLoss.toFixed(2)} > budget $${hsGuard.ddBudget.toFixed(2)}). No entry.`, "events");
-        await sendDiscordAlert(`🛡️ **Hyperscaled Guard:** Skipped ${hsGuard.sym} — would breach 5% drawdown limit.`, 'info').catch(() => {});
-        return sendResponse(200, { status: "success", message: `[Hyperscaled Guard] Skipped ${hsGuard.sym}: drawdown breach.`, debug: { hsRealEquity: hsRealEquity.toFixed(2), currentDD: hsGuard.currentDD.toFixed(2), ddBudget: hsGuard.ddBudget.toFixed(2), worstLoss: hsWorstLoss.toFixed(2), effectiveUser: effectiveUserAddress } });
-      }
-      if (hsSized !== positionSizeUsd) {
-        logger.info(`[Hyperscaled Guard] ${hsGuard.sym} size $${positionSizeUsd.toFixed(2)} -> $${hsSized.toFixed(2)} (softCap $${hsGuard.softCap.toFixed(2)}, class ${hsGuard.cls}, ddHeadroom $${hsGuard.ddHeadroomReal.toFixed(2)})`, "events");
-      }
-      positionSizeUsd = hsSized;
-    }
+
 
     // Hyperliquid requires a minimum notional order size of $10.0.
     // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
