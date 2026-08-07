@@ -10,7 +10,7 @@
   "nansenBuilderFeeRate": 80,
   "dryRun": false,
   "binanceScanner": true,
-  "perpDex": "xyz",
+  "perpDex": "",
 
   "_comment_hyperscaled": "=== Hyperscaled Challenge Mode ===",
   "hyperscaled": {

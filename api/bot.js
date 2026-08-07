@@ -16,7 +16,7 @@ let config = {
   nansenBuilderFeeRate: 80,
   dryRun: false,
   binanceScanner: true,
-  perpDex: "xyz",
+  perpDex: "",
   hyperscaled: {
     enabled: false,
     tier: "A",
