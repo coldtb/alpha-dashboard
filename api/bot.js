@@ -426,9 +426,6 @@ const geckoIdMap = {
   "ONDO": "ondo-finance",
   "JUP": "jupiter-exchange-solana",
   "POPCAT": "popcat-solana",
-  "NVDA": "nvidia",
-  "MU": "micron-technology",
-  "LLY": "eli-lilly-and-co",
   "0G": "0g-chain"
 };
 
