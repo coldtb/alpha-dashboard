@@ -1535,7 +1535,7 @@ export default async function handler(req, res) {
     });
 
     // 3b. Test Trade Direct Trigger Mode
-    if (req.query.test_trade === 'true') {
+    if (req.query.test_trade === 'true' || req.query.test_trade === '1' || req.query.test === 'true') {
       const coinSymbol = req.query.coin ? req.query.coin.toUpperCase() : "SOL";
       logger.info(`[Test Trade] Executing live test order for ${coinSymbol} on Hyperliquid Mainnet...`, "events");
       const [meta, ctxs] = await info.metaAndAssetCtxs();
