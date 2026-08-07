@@ -7,22 +7,51 @@ import logger from "./services/logger.js";
 
 let config = {
   minScore: 85,
+  minRewardRiskRatio: 3.0,
   minSlBuffer: 0.008,
   minTpBuffer: 0.005,
-  entryShiftThreshold: 0.0075,
+  entryShiftThreshold: 0.020,
   replacementScoreDiff: 10,
   nansenBuilderAddress: "",
   nansenBuilderFeeRate: 80,
+  dryRun: false,
+  binanceScanner: true,
+  perpDex: "xyz",
+  hyperscaled: {
+    enabled: false,
+    tier: "A",
+    startingHlEquity: 15.75,
+    maxSLPct: 0.015
+  },
   blacklist: ["PAXG", "FET"],
   enableSupportRebound: true,
-  minSupportDropPct: 0.015,
+  minSupportDropPct: 0.001,
   supportMinStrength: 50,
   enableResistanceRebound: true,
-  minResistanceRisePct: 0.015,
+  minResistanceRisePct: 0.001,
   resistanceMinStrength: 50,
-  entryBufferPct: 0.005,
-  maxReboundDistancePct: 0.025,
-  maxTpPct: 0.10
+  entryBufferPct: 0.001,
+  maxReboundDistancePct: 0.010,
+  maxDistancePct: 0.05,
+  enableNansenScoring: false,
+  cooldownHours: 1,
+  enableSmaTrendLock: false,
+  enableVwapFilter: true,
+  enableProximityFilter: true,
+  proximityFilterPct: 0.001,
+  maxConcurrentPositions: 3,
+  dailyLossLimitPct: 5,
+  maxPositionSizeUsd: 10000,
+  positionSizeFactor: 0.25,
+  staleOrderTimeoutHours: 4,
+  partialTpEnabled: true,
+  partialTpPercent: 50,
+  partialTpTriggerPct: 0.40,
+  breakevenTriggerPct: 0.015,
+  useSmartSlTp: false,
+  apiRetryCount: 3,
+  apiRetryDelayMs: 600,
+  apiTimeoutMs: 12000
 };
 
 try {
@@ -33,7 +62,7 @@ try {
     logger.info("Loaded config.json at startup", "audit", { config });
   }
 } catch (e) {
-  logger.warn("Failed to load config.json at startup, using defaults: " + e.message);
+  logger.warn("Using inline default config: " + e.message);
 }
 
 // ── Startup Secrets Validation ──────────────────────────────────
