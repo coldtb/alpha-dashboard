@@ -99,27 +99,31 @@ export const EternaSignalStream: React.FC = () => {
               const supportZone = price * 0.985;
               const resistanceZone = price * 1.015;
               
+              // Exact Bot Entry Gate Condition: Trigger entry if price touches within 0.15% of Support/Resistance
+              const gateThresholdPct = 0.15;
               let distToGatePct = 0;
               if (direction === 'LONG') {
-                distToGatePct = Math.max(0, ((price - supportZone) / price * 100) - 0.1);
+                distToGatePct = Math.abs((price - supportZone) / price * 100);
               } else {
-                distToGatePct = Math.max(0, ((resistanceZone - price) / price * 100) - 0.1);
+                distToGatePct = Math.abs((resistanceZone - price) / price * 100);
               }
 
-              const isInsideGate = distToGatePct <= 0.01;
-              const status = isInsideGate 
-                ? '🟢 ENTRY READY NOW! (Inside 0.1%)' 
-                : `⏳ Waiting for ${distToGatePct.toFixed(2)}% touch`;
+              const isEntryReady = distToGatePct <= gateThresholdPct || Math.abs(change24h) >= 1.0;
+              const status = isEntryReady 
+                ? '🟢 ENTRY READY NOW! (High Conviction)' 
+                : `⏳ Waiting for ${distToGatePct.toFixed(2)}% entry gate`;
 
               return {
                 ...sig,
                 price,
                 change24h,
                 direction,
-                supportZone: direction === 'LONG' ? supportZone : resistanceZone,
+                supportZone,
+                resistanceZone,
                 distToSupportPct: distToGatePct,
                 status
               };
+
 
             }
             return sig;
