@@ -1,6 +1,6 @@
 {
   "_comment_core": "=== Core Bot Settings ===",
-  "minScore": 85,
+  "minScore": 50,
   "minRewardRiskRatio": 3.0,
   "minSlBuffer": 0.008,
   "minTpBuffer": 0.005,

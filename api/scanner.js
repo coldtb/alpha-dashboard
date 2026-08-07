@@ -2,7 +2,7 @@
 // Mirrors the real bot's 5-stage pipeline for dashboard display:
 // Scout → Filter → 5-Layer Confluence → Signals → Monitoring
 
-const MIN_SCORE = 85;
+const MIN_SCORE = 50;
 const BLACKLIST = ['PAXG', 'FET'];
 
 // ── In-memory cache ──────────────────────────────────────────────
