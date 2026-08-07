@@ -19,12 +19,12 @@ export const FuturesScanner: React.FC = () => {
   });
 
   return (
-    <section>
+    <section style={{ marginTop: '1.5rem' }}>
       <h2 className="grid-section-title">
         <svg width="20" height="20" fill="var(--color-blue)" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '6px' }}>
           <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
         </svg>
-        Tradfi Scanner (HIP-3 / xyz DEX)
+        ⚡ Hyperliquid 30 Crypto Perps — Live Market Scanner
       </h2>
 
       {/* Controls */}
@@ -36,7 +36,7 @@ export const FuturesScanner: React.FC = () => {
           <input
             type="text"
             className="search-input"
-            placeholder="Search by symbol (e.g. GOLD, NVDA, SP500)..."
+            placeholder="Search by symbol (e.g. BTC, SOL, SUI, HYPE)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -46,7 +46,7 @@ export const FuturesScanner: React.FC = () => {
             className={`filter-btn ${activeFilter === 'all' ? 'active' : ''}`}
             onClick={() => setActiveFilter('all')}
           >
-            All Markets
+            All Markets ({top100Coins.length})
           </button>
           <button
             className={`filter-btn ${activeFilter === 'squeeze' ? 'active' : ''}`}
@@ -73,7 +73,7 @@ export const FuturesScanner: React.FC = () => {
               <th>Live Price</th>
               <th>24h Change</th>
               <th>24h Volume</th>
-              <th>Funding Rate</th>
+              <th>Funding Rate (daily)</th>
               <th style={{ textAlign: 'right' }}>Signal Setup</th>
             </tr>
           </thead>
@@ -85,7 +85,7 @@ export const FuturesScanner: React.FC = () => {
                 const changeClass = coin.change >= 0 ? 'change-up' : 'change-down';
                 const changePrefix = coin.change >= 0 ? '+' : '';
                 const fundingPercent = (coin.funding * 100).toFixed(4);
-                const fundingClass = coin.funding < 0 ? 'change-up' : '';
+                const fundingClass = coin.funding < 0 ? 'change-up' : coin.funding > 0.0003 ? 'change-down' : '';
 
                 let setupBadge = (
                   <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
@@ -118,11 +118,11 @@ export const FuturesScanner: React.FC = () => {
                   >
                     <td>
                       <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                        #{coin.rank || (coin.symbol === 'HYPE' ? '101' : '?')}
+                        #{coin.rank}
                       </span>
                     </td>
                     <td>
-                      <span className="table-symbol">{coin.symbol}</span>
+                      <span className="table-symbol" style={{ fontWeight: 700, color: '#fff' }}>{coin.symbol}</span>
                     </td>
                     <td id={`price-table-${coin.symbol}`} className="ticker-price-cell">
                       {formatPriceText(coin.price)}
@@ -137,7 +137,7 @@ export const FuturesScanner: React.FC = () => {
                       ${formatVolume(coin.volume)}
                     </td>
                     <td>
-                      <span className={fundingClass} style={{ fontWeight: 500 }}>
+                      <span className={fundingClass} style={{ fontWeight: 600 }}>
                         {fundingPercent}%
                       </span>
                     </td>
@@ -148,7 +148,7 @@ export const FuturesScanner: React.FC = () => {
             ) : (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-text-muted)' }}>
-                  No matching coins found.
+                  Loading Hyperliquid mainnet crypto perp markets...
                 </td>
               </tr>
             )}

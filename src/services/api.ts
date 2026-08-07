@@ -1,4 +1,4 @@
-import { Ticker, BotConfig } from '../types';
+import { Ticker } from '../types';
 
 // Generic JSON-RPC tool caller helper
 export async function callMcpTool(toolName: string, args: Record<string, any>): Promise<any> {
@@ -35,122 +35,69 @@ export async function callMcpTool(toolName: string, args: Record<string, any>): 
   }
 }
 
-// Hyperliquid Mainnet 30 Crypto Perps + Builder DEX Watchlist (matches bot active universe)
+// Hyperliquid Mainnet 30 Crypto Perps Watchlist
 export const DEFAULT_TRADFI_WATCHLIST: string[] = [
   "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
   "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
-  "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE",
-  "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:SP500", "xyz:NVDA", "xyz:TSLA", "xyz:AAPL"
+  "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
 ];
 
-
-// Module-level cache for 24h change / volume (fetched once per browser session via candleSnapshot)
-let _marketExtrasCache: Record<string, { change: number; volume: number; high: number; low: number }> = {};
-
-// Fetch tradfi market data from Hyperliquid builder DEX "xyz" (same universe the bot trades)
+// Fetch crypto perp market data from Hyperliquid
 export async function fetchMarkets(watchlist: string[] = DEFAULT_TRADFI_WATCHLIST): Promise<Ticker[]> {
   try {
-    const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
-
-    // 1. Live mids on default DEX & xyz DEX
-    const [resMidsMain, resMidsXyz] = await Promise.all([
-      fetch("https://api.hyperliquid.xyz/info", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "allMids" })
-      }).then(r => r.json()).catch(() => ({})),
-      fetch("https://api.hyperliquid.xyz/info", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "allMids", dex: "xyz" })
-      }).then(r => r.json()).catch(() => ({}))
-    ]);
-    const mids = { ...resMidsMain, ...resMidsXyz };
-
-    // 2. Asset context (funding, etc.) on default DEX & xyz DEX
-    const [resCtxMain, resCtxXyz] = await Promise.all([
-      fetch("https://api.hyperliquid.xyz/info", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "metaAndAssetCtxs" })
-      }).then(r => r.json()).catch(() => [null, []]),
-      fetch("https://api.hyperliquid.xyz/info", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "metaAndAssetCtxs", dex: "xyz" })
-      }).then(r => r.json()).catch(() => [null, []])
-    ]);
-
-    const idxByName: Record<string, number> = {};
-    const ctxs: any[] = [];
-
-    if (resCtxMain[0]?.universe) {
-      resCtxMain[0].universe.forEach((u: any, i: number) => {
-        idxByName[u.name] = i;
-        ctxs[i] = resCtxMain[1][i];
-      });
-    }
-    if (resCtxXyz[0]?.universe) {
-      const offset = (resCtxMain[0]?.universe || []).length;
-      resCtxXyz[0].universe.forEach((u: any, i: number) => {
-        const fullIdx = offset + i;
-        idxByName[u.name] = fullIdx;
-        idxByName[`xyz:${u.name}`] = fullIdx;
-        ctxs[fullIdx] = resCtxXyz[1][i];
-      });
-    }
-
-
-    // 3. 24h change + volume via daily candles (fetched once per session, then cached)
-    if (Object.keys(_marketExtrasCache).length === 0) {
-      const now = Date.now();
-      const startTime = now - 24 * 60 * 60 * 1000;
-      const results = await Promise.all(symbols.map(async (coin) => {
-        try {
-          const res = await fetch("https://api.hyperliquid.xyz/info", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1d", startTime, endTime: now } })
-          });
-          const data = await res.json();
-          if (Array.isArray(data) && data.length) {
-            const first = data[0];
-            const last = data[data.length - 1];
-            const open = parseFloat(first.o);
-            const close = parseFloat(last.c);
-            const change = open ? ((close - open) / open) * 100 : 0;
-            const volume = data.reduce((s: number, c: any) => s + parseFloat(c.v || 0), 0);
-            return [coin, { change, volume, high: parseFloat(last.h), low: parseFloat(last.l) }];
-          }
-        } catch (e) { /* ignore individual failures */ }
-        return [coin, { change: 0, volume: 0, high: 0, low: 0 }];
-      }));
-      results.forEach(([coin, val]) => { _marketExtrasCache[coin as string] = val as any; });
-    }
-
-    const tickers: Ticker[] = symbols.map((coin, index) => {
-      const price = parseFloat(mids[coin] || "0");
-      const ctxIdx = idxByName[coin];
-      const ctx = ctxIdx !== undefined ? ctxs[ctxIdx] : null;
-      const funding = ctx && ctx.funding !== undefined ? parseFloat(ctx.funding) : 0;
-      const ext = _marketExtrasCache[coin] || { change: 0, volume: 0, high: price * 1.02, low: price * 0.98 };
-      return {
-        rank: index + 1,
-        symbol: coin.replace("xyz:", ""),
-        price,
-        change: ext.change,
-        volume: ext.volume,
-        funding,
-        high: ext.high || price * 1.02,
-        low: ext.low || price * 0.98,
-        score: 50,
-        assetIndex: ctxIdx !== undefined ? ctxIdx : -1
-      };
+    const res = await fetch("https://api.hyperliquid.xyz/info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "metaAndAssetCtxs" })
     });
+    if (!res.ok) return [];
+    const [meta, ctxs] = await res.json();
+    if (!meta?.universe || !Array.isArray(ctxs)) return [];
+
+    const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
+    const cleanWatchlist = symbols.map(s => s.replace("xyz:", ""));
+
+    const tickers: Ticker[] = [];
+    meta.universe.forEach((asset: any, index: number) => {
+      if (cleanWatchlist.length > 0 && !cleanWatchlist.includes(asset.name)) return;
+      const ctx = ctxs[index];
+      if (!ctx) return;
+
+      const price = parseFloat(ctx.markPx || ctx.midPx || "0");
+      const prevPrice = parseFloat(ctx.prevDayPx || "0") || price;
+      const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+      const volume = parseFloat(ctx.dayNtlVlm || "0");
+      const funding = parseFloat(ctx.funding || "0") * 3; // Daily equivalent
+
+      if (price === 0) return;
+
+      let setup = "Consolidating";
+      if (Math.abs(change) >= 2.5 || Math.abs(funding) > 0.0003) {
+        setup = "Squeeze Setup";
+      }
+
+      tickers.push({
+        rank: 0,
+        symbol: asset.name,
+        price,
+        change,
+        volume,
+        funding,
+        high: price * 1.02,
+        low: price * 0.98,
+        score: Math.min(100, Math.max(0, Math.round(50 + change * 2))),
+        setup,
+        assetIndex: index
+      });
+    });
+
+    // Sort by volume descending
+    tickers.sort((a, b) => b.volume - a.volume);
+    tickers.forEach((t, i) => { t.rank = i + 1; });
 
     return tickers;
   } catch (err) {
-    console.error("Error fetching tradfi markets:", err);
+    console.error("Error fetching crypto perp markets:", err);
     return [];
   }
 }
@@ -162,7 +109,7 @@ export interface DeepInsights {
   optionsData: any;
 }
 
-// Fetch deep insights from TrueNorth MCP (crypto only; tradfi symbols return null)
+// Fetch deep insights from TrueNorth MCP
 export async function fetchDeepInsights(
   symbol: string,
   geckoId: string,
@@ -198,43 +145,7 @@ export async function runBacktest(coin: string, days: number, minScore: number, 
   const response = await fetch(url);
   if (!response.ok) {
     const errData = await response.json();
-    throw new Error(errData.error || "Failed to execute backtest");
+    throw new Error(errData.error || `Backtest failed with status ${response.status}`);
   }
-  return await response.json();
-}
-
-// Bot Config API client
-export async function fetchBotConfig(): Promise<BotConfig> {
-  const res = await fetch("/api/config");
-  if (!res.ok) {
-    throw new Error(`Config API returned status: ${res.status}`);
-  }
-  return await res.json();
-}
-
-// Fetch historical candles from Hyperliquid builder DEX "xyz"
-export async function fetchCandles(coin: string): Promise<any[]> {
-  try {
-    let hlCoin = coin;
-    if (!hlCoin.startsWith("xyz:")) hlCoin = "xyz:" + hlCoin;
-    const res = await fetch("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "candleSnapshot",
-        req: {
-          coin: hlCoin,
-          interval: "1h",
-          startTime: Date.now() - 30 * 60 * 60 * 1000,
-          endTime: Date.now()
-        }
-      })
-    });
-    if (!res.ok) throw new Error(`Hyperliquid HTTP error: ${res.status}`);
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch (e) {
-    console.error(`Failed to fetch candles for ${coin}:`, e);
-    return [];
-  }
+  return response.json();
 }
