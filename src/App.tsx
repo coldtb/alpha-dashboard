@@ -20,14 +20,12 @@ const DashboardContent: React.FC = () => {
     maxDrawdown,
   } = useStore();
 
-  // Set up 30-second pollers for scanner and performance PnL
+  // Set up 45-second pollers for scanner and performance PnL (prevents Hyperliquid rate limits)
   useEffect(() => {
-    refreshScanner();
-    refreshPerformance();
     const interval = setInterval(() => {
       refreshScanner();
       refreshPerformance();
-    }, 30000);
+    }, 45000);
     return () => clearInterval(interval);
   }, [refreshScanner, refreshPerformance]);
 

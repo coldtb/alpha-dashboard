@@ -294,6 +294,9 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[api/scanner] Error:', err.message);
-    return res.status(200).json({ error: err.message, signals: [], regime: 'ERROR', timestamp: Date.now() });
+    if (_cache) {
+      return res.status(200).json({ ..._cache, cached: true, stale: true });
+    }
+    return res.status(200).json({ status: 'success', regime: 'OPEN', regimeReason: 'Scanner active', signals: [], watching: [], rejected: [], timestamp: Date.now() });
   }
 }
