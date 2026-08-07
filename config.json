@@ -12,14 +12,6 @@
   "binanceScanner": true,
   "perpDex": "",
 
-  "_comment_hyperscaled": "=== Hyperscaled Challenge Mode ===",
-  "hyperscaled": {
-    "enabled": false,
-    "tier": "A",
-    "startingHlEquity": 15.75,
-    "maxSLPct": 0.015
-  },
-
   "_comment_filters": "=== Token & Regime Filters ===",
   "blacklist": ["PAXG", "FET"],
   "enableSupportRebound": true,
