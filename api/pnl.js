@@ -1,4 +1,5 @@
-import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
+import { InfoClient, ExchangeClient, HttpTransport } from "@nktkas/hyperliquid";
+import { privateKeyToAccount } from "viem/accounts";
 
 function decodeCloid(cloidStr) {
   if (!cloidStr || !cloidStr.startsWith("0x626f745f")) return "Manual / Unknown";
@@ -51,8 +52,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS" });
     }
     try {
-      const { ExchangeClient } = await import("@nktkas/hyperliquid");
-      const { privateKeyToAccount } = await import("viem/accounts");
       const transport = new HttpTransport();
       const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
       const exchange = new ExchangeClient({ transport, wallet: account });
