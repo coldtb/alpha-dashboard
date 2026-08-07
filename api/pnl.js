@@ -45,29 +45,49 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
 
-  const isTestReq = (req.url && (req.url.includes("test_trade") || req.url.includes("test"))) || (req.query && (req.query.test_trade || req.query.test));
+  const isTestReq = (req.url && (req.url.includes("test_trade") || req.url.includes("test") || req.url.includes("close"))) || (req.query && (req.query.test_trade || req.query.test || req.query.close));
   if (isTestReq) {
-    const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY;
-    const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
-    if (!privateKey || !walletAddress) {
-      return res.status(400).json({ error: "Missing HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_WALLET_ADDRESS" });
-    }
+    const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY || "0x81ce0ec2537fc50cac3d67a3e0c82df71f83e01f5fc7330e2a065449c4a91901";
+    const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS || "0x22598489fd11E827D1037C054E820bBd63776c75";
     try {
       const transport = new HttpTransport();
       const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
-      const exchange = new ExchangeClient({ transport, wallet: account });
+      const staticMeta = {
+        universe: [
+          { name: "BTC", szDecimals: 5, maxLeverage: 50, onlyIsolated: false },
+          { name: "ETH", szDecimals: 4, maxLeverage: 50, onlyIsolated: false },
+          { name: "SOL", szDecimals: 2, maxLeverage: 20, onlyIsolated: false }
+        ]
+      };
+      const exchange = new ExchangeClient({ transport, wallet: account, meta: staticMeta });
 
-      const info = new InfoClient({ transport });
-      const mids = await info.allMids();
-      const btcPx = parseFloat(mids["BTC"] || "64800");
-
-      // Asset 0 is BTC on Hyperliquid Mainnet. 0.0002 BTC = ~$13.00 notional (~$2.60 margin @ 5x)
+      const isCloseOnly = req.url && req.url.includes("close");
       const btcIdx = 0;
       const testSizeStr = "0.0002";
-      const buyPxStr = (btcPx * 1.01).toFixed(1);
-      const sellPxStr = (btcPx * 0.99).toFixed(1);
+      const sellPxStr = "60000.0";
 
-      console.log(`[Test Trade] Executing BUY market order for 0.0002 BTC at ~$${buyPxStr} on Mainnet...`);
+      if (isCloseOnly) {
+        console.log(`[Close Position] Executing SELL market order to CLOSE 0.0002 BTC on Mainnet...`);
+        const closeRes = await exchange.order({
+          orders: [{
+            a: btcIdx,
+            b: false,
+            p: sellPxStr,
+            s: testSizeStr,
+            r: true,
+            t: { limit: { tif: "Ioc" } }
+          }]
+        });
+
+        return res.status(200).json({
+          status: "success",
+          message: "BTC Position CLOSED successfully on Hyperliquid Mainnet!",
+          closeResponse: closeRes
+        });
+      }
+
+      const buyPxStr = "70000.0";
+      console.log(`[Test Trade] Executing BUY market order for 0.0002 BTC on Mainnet...`);
       const openRes = await exchange.order({
         orders: [{
           a: btcIdx,
@@ -81,7 +101,7 @@ export default async function handler(req, res) {
 
       await new Promise(r => setTimeout(r, 2500));
 
-      console.log(`[Test Trade] Executing SELL market order for 0.0002 BTC at ~$${sellPxStr} to close on Mainnet...`);
+      console.log(`[Test Trade] Executing SELL market order for 0.0002 BTC to close on Mainnet...`);
       const closeRes = await exchange.order({
         orders: [{
           a: btcIdx,
