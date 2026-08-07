@@ -16,8 +16,8 @@
   "hyperscaled": {
     "enabled": true,
     "tier": "A",
-    "startingHlEquity": 16.5,
-    "maxSLPct": 0.020
+    "startingHlEquity": 15.75,
+    "maxSLPct": 0.015
   },
 
   "_comment_filters": "=== Token & Regime Filters ===",
