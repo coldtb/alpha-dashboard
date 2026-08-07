@@ -1536,17 +1536,24 @@ export default async function handler(req, res) {
 
     // 3b. Test Trade Direct Trigger Mode
     if (req.query.test_trade === 'true') {
-      logger.info("[Test Trade] Executing live test order on Hyperliquid Mainnet...", "events");
+      const coinSymbol = req.query.coin ? req.query.coin.toUpperCase() : "SOL";
+      logger.info(`[Test Trade] Executing live test order for ${coinSymbol} on Hyperliquid Mainnet...`, "events");
       const [meta, ctxs] = await info.metaAndAssetCtxs();
-      const btcIdx = meta.universe.findIndex(u => u.name === "BTC");
-      const markPx = parseFloat(ctxs[btcIdx].markPx || ctxs[btcIdx].midPx || "64000");
-      const szDec = meta.universe[btcIdx].szDecimals;
-      const testSizeStr = (0.0002).toFixed(szDec);
-      const buyPxStr = (markPx * 1.01).toFixed(2);
+      const assetIdx = meta.universe.findIndex(u => u.name === coinSymbol);
+      if (assetIdx === -1) throw new Error(`Asset ${coinSymbol} not found on Hyperliquid`);
+
+      const ctx = ctxs[assetIdx];
+      const markPx = parseFloat(ctx.markPx || ctx.midPx || "70.0");
+      const szDec = meta.universe[assetIdx].szDecimals;
+      
+      // Minimum notional is $10.50 on Hyperliquid. At SOL = $73.5, 0.15 SOL = $11.02 notional (~$2.20 margin at 5x)
+      const testSize = coinSymbol === "BTC" ? 0.0002 : (coinSymbol === "SOL" ? 0.15 : 1.0);
+      const testSizeStr = testSize.toFixed(szDec);
+      const buyPxStr = (markPx * 1.02).toFixed(2);
 
       const openRes = await exchange.order({
         orders: [{
-          a: btcIdx,
+          a: assetIdx,
           b: true,
           p: buyPxStr,
           s: testSizeStr,
@@ -1557,10 +1564,10 @@ export default async function handler(req, res) {
 
       await new Promise(r => setTimeout(r, 2000));
 
-      const sellPxStr = (markPx * 0.99).toFixed(2);
+      const sellPxStr = (markPx * 0.98).toFixed(2);
       const closeRes = await exchange.order({
         orders: [{
-          a: btcIdx,
+          a: assetIdx,
           b: false,
           p: sellPxStr,
           s: testSizeStr,
@@ -1571,9 +1578,9 @@ export default async function handler(req, res) {
 
       return sendResponse(200, {
         status: "success",
-        message: "Live test trade executed and closed successfully on Hyperliquid Mainnet!",
+        message: `Live test trade for ${coinSymbol} executed and closed successfully on Hyperliquid Mainnet!`,
         testDetails: {
-          symbol: "BTC",
+          symbol: coinSymbol,
           size: testSizeStr,
           approxPrice: markPx,
           openResponse: openRes,
