@@ -1534,6 +1534,54 @@ export default async function handler(req, res) {
       wallet: account
     });
 
+    // 3b. Test Trade Direct Trigger Mode
+    if (req.query.test_trade === 'true') {
+      logger.info("[Test Trade] Executing live test order on Hyperliquid Mainnet...", "events");
+      const [meta, ctxs] = await info.metaAndAssetCtxs();
+      const btcIdx = meta.universe.findIndex(u => u.name === "BTC");
+      const markPx = parseFloat(ctxs[btcIdx].markPx || ctxs[btcIdx].midPx || "64000");
+      const szDec = meta.universe[btcIdx].szDecimals;
+      const testSizeStr = (0.0002).toFixed(szDec);
+      const buyPxStr = (markPx * 1.01).toFixed(2);
+
+      const openRes = await exchange.order({
+        orders: [{
+          a: btcIdx,
+          b: true,
+          p: buyPxStr,
+          s: testSizeStr,
+          r: false,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      await new Promise(r => setTimeout(r, 2000));
+
+      const sellPxStr = (markPx * 0.99).toFixed(2);
+      const closeRes = await exchange.order({
+        orders: [{
+          a: btcIdx,
+          b: false,
+          p: sellPxStr,
+          s: testSizeStr,
+          r: true,
+          t: { limit: { tif: "Ioc" } }
+        }]
+      });
+
+      return sendResponse(200, {
+        status: "success",
+        message: "Live test trade executed and closed successfully on Hyperliquid Mainnet!",
+        testDetails: {
+          symbol: "BTC",
+          size: testSizeStr,
+          approxPrice: markPx,
+          openResponse: openRes,
+          closeResponse: closeRes
+        }
+      });
+    }
+
     // 4. Fetch Scanner Data - metaAndAssetCtxs is public (unlimited), user calls are rate-limited
     // Always fetch public market data first
     const dex = config.perpDex || "xyz";
