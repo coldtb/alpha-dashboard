@@ -435,17 +435,17 @@ const COIN_SL_CAP = {
 
 const COIN_RISK_CONFIG = {
   BTC: {
-    partialTpEnabled: false,
+    partialTpEnabled: true,
     partialTpPercent: 50,
     breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
   XRP: {
-    partialTpEnabled: false,
+    partialTpEnabled: true,
     partialTpPercent: 50,
     breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
   SUI: {
-    partialTpEnabled: false,
+    partialTpEnabled: true,
     partialTpPercent: 50,
     breakevenTriggerPct: 0.015,  // Enabled at 1.5% to free up concurrent slots
   },
