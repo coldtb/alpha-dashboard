@@ -264,7 +264,8 @@ function computeHlEquity(withdrawable, openPositions) {
 // accountSize = real HL equity (used for limit %). opts.currentEquity = real equity for drawdown.
 function computeHyperscaledGuard(symbol, accountSize, openPositions, opts) {
   const cfg = (opts && opts.config && opts.config.hyperscaled) || null;
-  if (!cfg || !cfg.enabled) return null;
+  const isEnabled = cfg && (cfg.enabled === true || cfg.enabled === "true");
+  if (!isEnabled) return null;
   const tier = (cfg.tier || 'A');
   const L = HYPERSCALED_TIER_LIMITS[tier] || HYPERSCALED_TIER_LIMITS.A;
   const sym = canonicalSymbol(symbol);
