@@ -35,14 +35,14 @@ export async function callMcpTool(toolName: string, args: Record<string, any>): 
   }
 }
 
-// Default tradfi watchlist (matches bot config.json) used as a fallback until /api/config loads
+// Hyperliquid Mainnet 30 Crypto Perps + Builder DEX Watchlist (matches bot active universe)
 export const DEFAULT_TRADFI_WATCHLIST: string[] = [
-  "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:COPPER", "xyz:NATGAS", "xyz:PLATINUM",
-  "xyz:SP500", "xyz:XYZ100", "xyz:EWY",
-  "xyz:NVDA", "xyz:AAPL", "xyz:TSLA", "xyz:MSFT", "xyz:AMZN", "xyz:GOOGL", "xyz:META",
-  "xyz:COIN", "xyz:CRCL", "xyz:MSTR", "xyz:PLTR", "xyz:AMD", "xyz:TSM", "xyz:NFLX",
-  "xyz:SNDK", "xyz:INTC", "xyz:MU", "xyz:HOOD", "xyz:ORCL"
+  "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
+  "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "UNI", "AAVE",
+  "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE",
+  "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:SP500", "xyz:NVDA", "xyz:TSLA", "xyz:AAPL"
 ];
+
 
 // Module-level cache for 24h change / volume (fetched once per browser session via candleSnapshot)
 let _marketExtrasCache: Record<string, { change: number; volume: number; high: number; low: number }> = {};
@@ -52,23 +52,54 @@ export async function fetchMarkets(watchlist: string[] = DEFAULT_TRADFI_WATCHLIS
   try {
     const symbols = watchlist && watchlist.length ? watchlist : DEFAULT_TRADFI_WATCHLIST;
 
-    // 1. Live mids on xyz DEX
-    const resMids = await fetch("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "allMids", dex: "xyz" })
-    });
-    const mids = await resMids.json();
+    // 1. Live mids on default DEX & xyz DEX
+    const [resMidsMain, resMidsXyz] = await Promise.all([
+      fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "allMids" })
+      }).then(r => r.json()).catch(() => ({})),
+      fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "allMids", dex: "xyz" })
+      }).then(r => r.json()).catch(() => ({}))
+    ]);
+    const mids = { ...resMidsMain, ...resMidsXyz };
 
-    // 2. Asset context (funding, etc.) on xyz DEX
-    const resCtx = await fetch("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "metaAndAssetCtxs", dex: "xyz" })
-    });
-    const [meta, ctxs] = await resCtx.json();
+    // 2. Asset context (funding, etc.) on default DEX & xyz DEX
+    const [resCtxMain, resCtxXyz] = await Promise.all([
+      fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "metaAndAssetCtxs" })
+      }).then(r => r.json()).catch(() => [null, []]),
+      fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "metaAndAssetCtxs", dex: "xyz" })
+      }).then(r => r.json()).catch(() => [null, []])
+    ]);
+
     const idxByName: Record<string, number> = {};
-    (meta?.universe || []).forEach((u: any, i: number) => { idxByName[u.name] = i; });
+    const ctxs: any[] = [];
+
+    if (resCtxMain[0]?.universe) {
+      resCtxMain[0].universe.forEach((u: any, i: number) => {
+        idxByName[u.name] = i;
+        ctxs[i] = resCtxMain[1][i];
+      });
+    }
+    if (resCtxXyz[0]?.universe) {
+      const offset = (resCtxMain[0]?.universe || []).length;
+      resCtxXyz[0].universe.forEach((u: any, i: number) => {
+        const fullIdx = offset + i;
+        idxByName[u.name] = fullIdx;
+        idxByName[`xyz:${u.name}`] = fullIdx;
+        ctxs[fullIdx] = resCtxXyz[1][i];
+      });
+    }
+
 
     // 3. 24h change + volume via daily candles (fetched once per session, then cached)
     if (Object.keys(_marketExtrasCache).length === 0) {
