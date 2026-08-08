@@ -37,7 +37,7 @@
     "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
   ],
   "enableEternaSignals": true,
-  "dynamicWatchlist": false,
+  "dynamicWatchlist": true,
   "watchlistBonus": 15,
 
   "_comment_volume": "=== Volume Thresholds ===",

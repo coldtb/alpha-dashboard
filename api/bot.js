@@ -1776,10 +1776,12 @@ export default async function handler(req, res) {
     }
     logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
+    const isDynamicWatchlist = config.dynamicWatchlist === true || process.env.DYNAMIC_WATCHLIST === 'true';
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
+      const inWatchlist = isDynamicWatchlist ? true : watchlist.includes(c.symbol);
       return c.score >= coinMinScore && 
-             watchlist.includes(c.symbol) &&
+             inWatchlist &&
              !(config.blacklist || []).includes(c.symbol) && 
              !openOrders.some(o => o.coin === c.symbol) && 
              !userState.assetPositions.some(p => p.position.coin === c.symbol && parseFloat(p.position.szi) !== 0);
@@ -2835,7 +2837,8 @@ export default async function handler(req, res) {
 
     const candidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
-      return c.score >= coinMinScore && watchlist.includes(c.symbol) && !(config.blacklist || []).includes(c.symbol);
+      const inWatchlist = isDynamicWatchlist ? true : watchlist.includes(c.symbol);
+      return c.score >= coinMinScore && inWatchlist && !(config.blacklist || []).includes(c.symbol);
     });
     if (candidates.length === 0) {
       return sendResponse(200, { status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
