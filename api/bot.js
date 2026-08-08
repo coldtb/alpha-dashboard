@@ -157,7 +157,7 @@ async function withRetryAndTimeout(fn, label = "API Call", options = {}) {
 }
 
 async function sendDiscordAlert(message, type = 'info') {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL || config.discordWebhookUrl;
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL || config.discordWebhookUrl || "https://discord.com/api/webhooks/1529047529528885322/E8IMwDZ1XdNAA3hC7RzPTsn2irvTTWfJ6HQQdyDiERjZGRgMmTi_R9LJ2F1f3C1FHn5f";
   if (!webhookUrl) return;
 
   try {
