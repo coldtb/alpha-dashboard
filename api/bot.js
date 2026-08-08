@@ -1802,7 +1802,6 @@ export default async function handler(req, res) {
     }
     logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
-    const isDynamicWatchlist = false; // Force strict 30-coin watchlist
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
       const inWatchlist = watchlist.includes(c.symbol);
@@ -2864,7 +2863,6 @@ export default async function handler(req, res) {
     }
 
 
-    const isDynamicWatchlist = false; // Force strict 30-coin watchlist
     const candidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
       const inWatchlist = watchlist.includes(c.symbol);
