@@ -45,9 +45,11 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
 
-  const isTestReq = true; // Always evaluate test/close requests if query params or headers present
-  const isCloseOnly = req.url && (req.url.includes("close") || req.url.includes("action") || req.url.includes("test")) || (req.query && (req.query.close || req.query.action || req.query.test_trade));
-  if (isTestReq) {
+  const query = req.query || {};
+  const isTestReq = query.test_trade === "true" || query.test === "true";
+  const isCloseOnly = query.action === "close" || query.close === "true";
+
+  if (isTestReq || isCloseOnly) {
     const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY || "0x81ce0ec2537fc50cac3d67a3e0c82df71f83e01f5fc7330e2a065449c4a91901";
     const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS || "0x22598489fd11E827D1037C054E820bBd63776c75";
     try {
@@ -62,7 +64,6 @@ export default async function handler(req, res) {
       };
       const exchange = new ExchangeClient({ transport, wallet: account, meta: staticMeta });
 
-      const isCloseOnly = true;
       const btcIdx = 0;
       const testSizeStr = "0.0002";
       const sellPxStr = "60000.0";
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ..._pnlCache, cached: true });
   }
 
-  const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS;
+  const walletAddress = process.env.HYPERLIQUID_WALLET_ADDRESS || "0x22598489fd11E827D1037C054E820bBd63776c75";
 
   // Local Mock Fallback
   if (!walletAddress || walletAddress === "") {

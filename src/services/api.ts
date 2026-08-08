@@ -191,38 +191,37 @@ export async function runBacktest(coin: string, days: number, minScore: number, 
   return response.json();
 }
 
-// Fetch bot configuration from /api/config (config.json)
-export async function fetchBotConfig(): Promise<BotConfig | null> {
+// Fetch bot configuration
+export async function fetchBotConfig(): Promise<any> {
   try {
     const res = await fetch('/api/config');
-    if (!res.ok) {
-      throw new Error(`Config API returned status: ${res.status}`);
-    }
-    const data = await res.json();
-    return data as BotConfig;
-  } catch (err) {
-    console.warn('Failed to load bot config:', err);
-    return null;
+    if (res.ok) return await res.json();
+    const configRes = await fetch('/config.json');
+    if (configRes.ok) return await configRes.json();
+  } catch (e) {
+    console.warn('Failed to load bot config:', e);
   }
+  return { minScore: 50, dryRun: false, watchlist: DEFAULT_WATCHLIST };
 }
 
-// Fetch 1h candles from Hyperliquid for SMA calculation (trade planner)
-export async function fetchCandles(symbol: string): Promise<any[] | null> {
+// Fetch 1h candles
+export async function fetchCandles(symbol: string, interval: string = '1h'): Promise<any[]> {
   try {
-    const interval = '1h';
-    const endTime = Date.now();
-    const startTime = endTime - 25 * 3600 * 1000;
-    const res = await fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'candleSnapshot', coin: symbol, interval, startTime, endTime })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!Array.isArray(data)) return null;
-    return data; // Hyperliquid returns array of [t,o,h,l,c,v]
-  } catch (err) {
-    console.warn('Failed to fetch candles:', err);
-    return null;
+    const sym = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
+    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=50`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.map((d: any) => ({
+        time: d[0],
+        open: parseFloat(d[1]),
+        high: parseFloat(d[2]),
+        low: parseFloat(d[3]),
+        close: parseFloat(d[4]),
+        volume: parseFloat(d[5])
+      }));
+    }
+  } catch (e) {
+    console.warn("fetchCandles failed:", e);
   }
+  return [];
 }

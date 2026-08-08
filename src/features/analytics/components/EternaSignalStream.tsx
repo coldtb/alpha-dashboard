@@ -28,6 +28,7 @@ interface Signal {
   confluence: { layers: ConfluenceLayer[]; passedCount: number; isValid: boolean } | null;
   validSignal: boolean;
   source: string;
+  poolAddress?: string;
 }
 
 interface ScanData {
