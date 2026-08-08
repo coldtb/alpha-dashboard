@@ -3243,13 +3243,33 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // ── Direction Determination ─────────────────────────
-      // PRIORITY 1: S/R Rebound Direction (Support touch -> LONG 🟢, Resistance touch -> SHORT 🔴, trend IGNORED)
-      // PRIORITY 2: Funding / Momentum Fallback
-      let direction = srDirection || rawDirection;
-      if (!direction || direction === 'SKIP') {
-        const fundingSignal = (cand.funding || 0) < -0.0003 ? 'LONG' : (cand.funding || 0) > 0.0003 ? 'SHORT' : null;
-        direction = fundingSignal || (cand.change < 0 ? 'SHORT' : 'LONG');
+      // ── Direction Determination (TREND-AWARE) ───────────
+      // Trend bias from the per-coin SMA (smaTrend computed above):
+      //   price >= smaTrend => uptrend (LONG bias)
+      //   price <  smaTrend => downtrend (SHORT bias)
+      const trendDir = (smaTrend !== null && typeof smaTrend === 'number')
+        ? (cand.price >= smaTrend ? 'LONG' : 'SHORT')
+        : null;
+
+      // S/R Rebound entry only in the TREND's direction:
+      //   support touch   -> LONG  only if NOT a downtrend
+      //   resistance touch -> SHORT only if NOT an uptrend
+      // Counter-trend S/R rebounds are skipped (don't fight the trend).
+      let direction = null;
+      if (srDirection === 'LONG' && trendDir !== 'SHORT') direction = 'LONG';
+      else if (srDirection === 'SHORT' && trendDir !== 'LONG') direction = 'SHORT';
+
+      if (!direction) {
+        // No trend-aligned S/R rebound. Fall back only when there was no S/R
+        // direction (rare: no zone data) AND the fallback agrees with trend.
+        if (srDirection === null && rawDirection && rawDirection !== 'SKIP' && (trendDir === null || trendDir === rawDirection)) {
+          direction = rawDirection;
+        }
+      }
+      if (!direction) {
+        logger.info(`[Trend Filter] Skip ${cand.symbol}: S/R rebound (${srDirection}) counter-trend (trend=${trendDir}, px ${cand.price} vs SMA ${smaTrend})`, "events");
+        loopDiag.push(`${cand.symbol}:counterTrend(${srDirection}vs${trendDir})`);
+        continue;
       }
 
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
