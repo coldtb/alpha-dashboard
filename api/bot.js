@@ -2845,26 +2845,70 @@ export default async function handler(req, res) {
       return sendResponse(200, { status: "success", message: `No candidates with score >= ${minScore} found at this time.` });
     }
 
-    // FIX #8: Max concurrent positions guard — stop new entries if at limit
-    if (activePositionCount >= maxConcurrentPositions) {
-      logger.info(`[Risk] Max concurrent positions reached (${activePositionCount}/${maxConcurrentPositions}). Skipping new entry.`, "events");
-      return sendResponse(200, { status: 'success', message: `Max concurrent positions (${maxConcurrentPositions}) reached. No new entry.` });
-    }
-
     // Filter candidates that are not currently in active positions/orders (Strict Single Position per Coin Guard)
     // Ignore tiny dust positions under $1.00 USD value
-    const activePosCoins = (userState.assetPositions || [])
-      .filter(p => {
-        const sz = Math.abs(parseFloat(p.position?.szi || "0"));
-        const px = parseFloat(p.position?.entryPx || "0");
-        return (sz * px) >= 1.0;
-      })
-      .map(p => p.position.coin);
-    
-    const activePositionCount = activePosCoins.length;
+    const realPositions = (userState.assetPositions || []).filter(p => {
+      const sz = Math.abs(parseFloat(p.position?.szi || "0"));
+      const px = parseFloat(p.position?.entryPx || "0");
+      return (sz * px) >= 1.0;
+    });
+
+    const activePosCoins = realPositions.map(p => p.position.coin);
+    let currentActiveCount = activePosCoins.length;
+
+    // Strict Hard Lock: If active positions >= maxConcurrentPositions (3), STOP IMMEDIATELY!
+    if (currentActiveCount >= maxConcurrentPositions) {
+      logger.info(`[Strict Risk Lock] Active main positions count (${currentActiveCount}/${maxConcurrentPositions}) is at limit. Stopping new trade entries.`, "events");
+      return sendResponse(200, {
+        status: "success",
+        message: `Max concurrent positions (${maxConcurrentPositions}) reached. Active: ${activePosCoins.join(', ')}`
+      });
+    }
+
+    // Auto-clean micro dust positions (< $1.00 USD value)
+    const dustPositions = (userState.assetPositions || []).filter(p => {
+      const sz = Math.abs(parseFloat(p.position?.szi || "0"));
+      const px = parseFloat(p.position?.entryPx || "0");
+      return sz > 0 && (sz * px) < 1.0;
+    });
+
+    if (dustPositions.length > 0 && !isDryRun) {
+      logger.info(`[Dust Cleaner] Found ${dustPositions.length} micro dust position(s). Auto-closing...`, "events");
+      for (const dp of dustPositions) {
+        try {
+          const coin = dp.position.coin;
+          const sz = Math.abs(parseFloat(dp.position.szi));
+          const isShort = parseFloat(dp.position.szi) < 0;
+          const meta = assetMetaMap[coin];
+          if (meta) {
+            const szDec = meta.szDecimals || 0;
+            const formattedSz = formatSize(sz, szDec);
+            const markPx = parseFloat(dp.position.entryPx || "1");
+            const worstPx = formatPrice(isShort ? markPx * 1.05 : markPx * 0.95, szDec);
+            const closePayload = {
+              orders: [{
+                a: meta.assetIndex,
+                b: isShort,
+                p: worstPx,
+                s: formattedSz,
+                r: true,
+                t: { limit: { tif: "Ioc" } },
+                c: generateBotCloid()
+              }],
+              grouping: "na"
+            };
+            if (vaultAddress) closePayload.vaultAddress = vaultAddress;
+            await exchange.order(closePayload);
+            logger.info(`[Dust Cleaner] Successfully closed dust position for ${coin}`, "events");
+          }
+        } catch (dustErr) {
+          logger.warn(`[Dust Cleaner] Failed to close dust for ${dp.position?.coin}: ${dustErr.message}`, "events");
+        }
+      }
+    }
+
     const activeOrdCoins = (openOrders || []).map(o => o.coin);
     const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins]);
-
     const tradeableCandidates = candidates.filter(cand => !blockedCoins.has(cand.symbol));
 
     if (tradeableCandidates.length === 0) {
