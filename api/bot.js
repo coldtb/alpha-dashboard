@@ -12,7 +12,7 @@ let config = {
   minTpBuffer: 0.005,
   entryShiftThreshold: 0.020,
   replacementScoreDiff: 10,
-  nansenBuilderAddress: "",
+  nansenBuilderAddress: "0x7a7f5e87e734cc839abae35712e34f98bbeab741",
   nansenBuilderFeeRate: 80,
   dryRun: false,
   binanceScanner: true,
