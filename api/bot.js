@@ -288,37 +288,61 @@ function getPositionOpenTime(coinSymbol, userFills) {
 
 // Symbol to CoinGecko ID map for TrueNorth MCP Server queries
 const geckoIdMap = {
-  "BTC": "bitcoin",
-  "ETH": "ethereum",
-  "SOL": "solana",
-  "BNB": "binancecoin",
-  "HYPE": "hyperliquid",
-  "LINK": "chainlink",
-  "XRP": "ripple",
-  "INJ": "injective-protocol",
-  "WLD": "worldcoin-wld",
-  "ZEC": "zcash",
-  "XLM": "stellar",
-  "TRX": "tron",
-  "SUI": "sui",
-  "TIA": "celestia",
-  "FTM": "fantom",
+  // Watchlist — 30 coins (S/R proximity filter шаардлагдана)
+  "BTC":   "bitcoin",
+  "ETH":   "ethereum",
+  "SOL":   "solana",
+  "BNB":   "binancecoin",
+  "XRP":   "ripple",
+  "DOGE":  "dogecoin",
+  "ADA":   "cardano",
+  "AVAX":  "avalanche-2",
+  "LINK":  "chainlink",
+  "DOT":   "polkadot",
+  "TON":   "the-open-network",
+  "TRX":   "tron",
+  "LTC":   "litecoin",
+  "TAO":   "bittensor",
+  "SUI":   "sui",
+  "ARB":   "arbitrum",
+  "NEAR":  "near",
+  "ALGO":  "algorand",
+  "ASTER": "astar",
+  "UNI":   "uniswap",
+  "AAVE":  "aave",
+  "CRV":   "curve-dao-token",
+  "HYPE":  "hyperliquid",
+  "XMR":   "monero",
+  "ZEC":   "zcash",
+  "ENA":   "ethena",
+  "ZRO":   "layerzero",
+  "WLD":   "worldcoin-wld",
+  "PUMP":  "pump-eth",
+  "kPEPE": "pepe",
+  // Extra popular coins (bonus coverage)
+  "HYPE":  "hyperliquid",
+  "INJ":   "injective-protocol",
+  "WIF":   "dogwifhat",
+  "BONK":  "bonk",
+  "PEPE":  "pepe",
+  "ONDO":  "ondo-finance",
+  "JUP":   "jupiter-exchange-solana",
+  "TIA":   "celestia",
+  "FTM":   "fantom",
+  "OP":    "optimism",
   "TRUMP": "official-trump",
-  "PUMP": "pump-eth",
-  "AVAX": "avalanche-2",
-  "NEAR": "near",
-  "OP": "optimism",
-  "ARB": "arbitrum",
-  "DOGE": "dogecoin",
-  "LTC": "litecoin",
-  "PEPE": "pepe",
-  "WIF": "dogwifhat",
-  "BONK": "bonk",
-  "ENA": "ethena",
-  "ONDO": "ondo-finance",
-  "JUP": "jupiter-exchange-solana",
-  "POPCAT": "popcat-solana",
-  "0G": "0g-chain"
+  "XLM":   "stellar",
+  "0G":    "0g-chain",
+  "POPCAT":"popcat-solana",
+  "NIL":   "nil-foundation",
+  "GMT":   "stepn",
+  "REZ":   "renzo",
+  "SAGA":  "saga-2",
+  "BOME":  "book-of-meme",
+  "ACE":   "ace-casino",
+  "TST":   "the-standard-token",
+  "KAITO": "kaito",
+  "STG":   "stargate-finance"
 };
 
 // FIX #2: Coin-specific TP caps (used in computeStrategyLevels + recovery)
@@ -1971,7 +1995,12 @@ export default async function handler(req, res) {
     const maxPositionSizeUsd     = config.maxPositionSizeUsd     !== undefined ? config.maxPositionSizeUsd     : 10000;
 
     // Count active positions
-    const activePositionCount = userState.assetPositions.filter(p => parseFloat(p.position.szi || '0') !== 0).length;
+    // Count REAL active positions (ignore dust < $1 USD)
+    const activePositionCount = (userState.assetPositions || []).filter(p => {
+      const sz = Math.abs(parseFloat(p.position?.szi || '0'));
+      const px = parseFloat(p.position?.entryPx || '0');
+      return (sz * px) >= 1.0;
+    }).length;
     logger.info(`[Risk] Active positions: ${activePositionCount}/${maxConcurrentPositions}`, "events");
 
     // Daily PnL check: sum closedPnl from fills in last 24h
@@ -2221,9 +2250,9 @@ export default async function handler(req, res) {
 
         // RELIABILITY FIX: Guard against null recoveryLevels or missing assetInfo
         if (!recoveryLevels || !recoveryLevels.sl || !recoveryLevels.tp) {
-          // Fallback: compute SL/TP from entry price with safe defaults
-          const fallbackSlPct = COIN_SL_CAP[coin] ?? 0.02;
-          const fallbackTpPct = coinMaxTpPct ?? 0.0075;
+          // Fallback: 1.5% hard SL, 4.5% TP (3x RR)
+          const fallbackSlPct = 0.015;
+          const fallbackTpPct = 0.045;
           recoveryLevels = {
             sl: isLong ? entryPx * (1 - fallbackSlPct) : entryPx * (1 + fallbackSlPct),
             tp: isLong ? entryPx * (1 + fallbackTpPct) : entryPx * (1 - fallbackTpPct)
@@ -2299,31 +2328,28 @@ export default async function handler(req, res) {
       // Check if this position has already been trailed (TP is moved far beyond normal cap)
       const isAlreadyTrailed = tpOrder && tpPx > 0 && (isLong ? tpPx > entryPx * (1 + coinMaxTpPct * 1.5) : tpPx < entryPx * (1 - coinMaxTpPct * 1.5));
 
-      // Check A: Infinite 3-Step Ratchet Trailing SL (User Mandate)
-      // Level 1 Lock: Gain +0.50% (+2.5% ROE @ 5x) -> Lock SL to +0.40% Gain (+2.0% ROE Profit)
-      // Level 2 Lock: Gain +0.70% (+3.5% ROE @ 5x) -> Lock SL to +0.60% Gain (+3.0% ROE Profit)
-      // Dynamic Trailing: Gain +1.00%+ (+5.0%+ ROE @ 5x) -> Dynamic Trailing SL at Mark Price - 0.20%
+      // ── Check A: ROE-Based Unlimited Trailing Stop (User Mandate) ────────────
+      // ROE < 3%  → SL хөдөлгөхгүй (hard 1.5% SL хадгалагдана)
+      // ROE = 3%  → SL → entry + 2% ROE profit lock (анхны lock)
+      // ROE = 4%+ → SL → entry + (ROE - 1%) profit — хязгааргүй trail
+      // Жишээ: ROE 5% → SL entry+4%, ROE 10% → SL entry+9%
       const maxLeverage = currentCoin.assetInfo?.maxLeverage || 5;
       const finalLeverage = Math.min(5, maxLeverage);
-      const roePct = returnPct * finalLeverage;
+      const roePctVal = returnPct * finalLeverage * 100; // ROE % утга (e.g. 3.5)
 
-      let ratchetLockedPricePct = 0;
-      if (returnPct >= 0.0100 || roePct >= 0.050) {
-        // 3-р Шат (Dynamic Trailing): +1.00%+ Gain (+5.0%+ ROE) -> Mark Price - 0.20% (continuous trailing)
-        ratchetLockedPricePct = returnPct - 0.0020;
-      } else if (returnPct >= 0.0070 || roePct >= 0.035) {
-        // 2-р Шат (Level 2 Lock): +0.70% Gain (+3.5% ROE) -> Lock SL to +0.60% Gain (+3.0% ROE Profit)
-        ratchetLockedPricePct = 0.0060;
-      } else if (returnPct >= 0.0050 || roePct >= 0.025) {
-        // 1-р Шат (Level 1 Lock): +0.50% Gain (+2.5% ROE) -> Lock SL to +0.40% Gain (+2.0% ROE Profit)
-        ratchetLockedPricePct = 0.0040;
+      let lockedPricePct = 0;
+      if (roePctVal >= 4) {
+        // Хязгааргүй trail: (ROE - 1%) profit lock
+        lockedPricePct = ((roePctVal - 1) / 100) / finalLeverage;
+      } else if (roePctVal >= 3) {
+        // Анхны trigger: 2% ROE profit lock
+        lockedPricePct = (2 / 100) / finalLeverage;
       }
 
-
-      if (ratchetLockedPricePct > 0) {
-        const targetSlPx = isLong 
-          ? entryPx * (1 + ratchetLockedPricePct)
-          : entryPx * (1 - ratchetLockedPricePct);
+      if (lockedPricePct > 0) {
+        const targetSlPx = isLong
+          ? entryPx * (1 + lockedPricePct)
+          : entryPx * (1 - lockedPricePct);
 
         let currentSlPx = isLong ? 0 : 999999;
         if (slOrder) {
@@ -2339,51 +2365,52 @@ export default async function handler(req, res) {
         const isBetterSl = isLong ? (targetSlPx > currentSlPx) : (targetSlPx < currentSlPx);
 
         if (isBetterSl) {
-          logger.info(`[Ratchet Profit Lock] Position ${coin} ROE is ${(returnPct * 100).toFixed(2)}%. Ratchet Lock SL to $${targetSlPx.toFixed(4)} (Current SL: $${currentSlPx.toFixed(4)})...`, "events");
+          logger.info(`[ROE Trail] ${coin}: ROE ${roePctVal.toFixed(2)}% → Trail SL → $${targetSlPx.toFixed(4)} (lock ${(lockedPricePct * 100).toFixed(2)}% price gain)`, "events");
           try {
             if (!isDryRun) {
               const assetIdx = hlMeta ? hlMeta.universe.findIndex(a => a.name === coin) : meta[0].universe.findIndex(a => a.name === coin);
               const szDec = hlMeta ? hlMeta.universe[assetIdx].szDecimals : meta[0].universe[assetIdx].szDecimals;
 
-              // Cancel ALL existing SL orders for this position before placing new ratchet SL
+              // Existing SL order-уудыг цуцалж шинийг тавина
               const cancelsList = [];
               if (Array.isArray(openOrders)) {
                 openOrders.forEach(o => {
                   if (o.coin === coin && o.oid) {
                     const parsedPx = parseFloat(o.triggerPx || o.limitPx || "0");
-                    const isSlOrder = isLong ? (parsedPx < currentPrice) : (parsedPx > currentPrice);
-                    if (isSlOrder) cancelsList.push({ a: assetIdx, o: Number(o.oid) });
+                    const isSlOrd = isLong ? (parsedPx < currentPrice) : (parsedPx > currentPrice);
+                    if (isSlOrd) cancelsList.push({ a: assetIdx, o: Number(o.oid) });
                   }
                 });
               }
               if (cancelsList.length > 0) {
                 await exchange.cancel({ cancels: cancelsList }).catch(err => {
-                  logger.warn(`[Ratchet Lock Cancel Warning] ${err.message}`, "events");
+                  logger.warn(`[ROE Trail Cancel] ${err.message}`, "events");
                 });
               }
 
-              // Place new ratchet locked SL order
-              const tpslTag = isLong 
+              const tpslTag = isLong
                 ? (targetSlPx < currentPrice ? "sl" : "tp")
                 : (targetSlPx > currentPrice ? "sl" : "tp");
-
-              const ratchetWorstPx = formatPrice(isLong ? targetSlPx * 0.90 : targetSlPx * 1.10);
+              const trailWorstPx = formatPrice(isLong ? targetSlPx * 0.90 : targetSlPx * 1.10);
 
               await exchange.order({
                 orders: attachBuilderFee([{
                   a: assetIdx,
                   b: !isLong,
-                  p: ratchetWorstPx,
+                  p: trailWorstPx,
                   s: formatSize(Math.abs(size), szDec),
                   r: true,
                   t: { trigger: { isMarket: true, triggerPx: formatPrice(targetSlPx), tpsl: tpslTag } }
                 }])
               });
-              logger.info(`[Ratchet Profit Lock] Successfully updated SL for ${coin} to $${targetSlPx.toFixed(4)}!`, "events");
-              await sendDiscordAlert(`🛡️ **Ratchet Profit Lock Updated!**\n**Coin:** ${coin}\n**ROE:** +${(returnPct * 100).toFixed(2)}%\n**New SL:** $${targetSlPx.toFixed(4)} (Guaranteed Profit Lock)`, 'open').catch(() => {});
+              logger.info(`[ROE Trail] SL successfully moved for ${coin} → $${targetSlPx.toFixed(4)} (guaranteed profit)`, "events");
+              await sendDiscordAlert(
+                `🏹 **ROE Trailing Stop Updated!**\n**Coin:** ${coin}\n**ROE:** +${roePctVal.toFixed(2)}%\n**SL Locked At:** $${targetSlPx.toFixed(4)} (+${(lockedPricePct * 100).toFixed(2)}% profit guaranteed)`,
+                'open'
+              ).catch(() => {});
             }
           } catch (rErr) {
-            logger.error(`[Ratchet Profit Lock] Error updating SL for ${coin}: ${rErr.message}`, "events");
+            logger.error(`[ROE Trail] Error updating SL for ${coin}: ${rErr.message}`, "events");
           }
         }
       }
@@ -3152,61 +3179,119 @@ export default async function handler(req, res) {
         loopDiag.push(`${cand.symbol}:levelsNull(px=${cand.price})`);
         continue;
       }
-      let bypassTrendFilter = false;
 
-      // Trend-Aligned Direction Engine:
-      // If coin price change is negative or momentum is Bearish -> SHORT 🔴
-      // If coin price change is positive or momentum is Bullish -> LONG 🟢
-      let targetDirection = rawDirection;
-      if (!targetDirection || targetDirection === 'SKIP') {
-        targetDirection = cand.change < 0 ? 'SHORT' : 'LONG';
-      }
-
-      const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
-      const loopSlPct = COIN_SL_CAP[cand.symbol] ?? (cand.price < 1.0 ? 0.025 : 0.020);
-      const loopMinRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.8;
-
-      if (targetDirection === 'SHORT') {
-        levels = resistLevelObj || levels || suppLevelObj;
-        levels.entry = cand.price;
-        levels.sl = parseFloat((cand.price * (1 + loopSlPct)).toFixed(dec));
-        levels.tp = parseFloat((cand.price * (1 - loopSlPct * loopMinRR)).toFixed(dec));
-        logger.info(`[Momentum Engine] Candidate ${cand.symbol} at $${cand.price} (24h: ${cand.change}%) signals SHORT. Target TP: $${levels.tp}, SL: $${levels.sl}`, "events");
+      // ── S/R 0.3% Proximity Entry Filter ────────────────────────────
+      // Зөвхөн Support/Resistance zone-оос 0.3%-ийн дотор ирсэн үед л нээнэ
+      const SR_TOUCH_PCT = 0.003;
+      let touchingZone = false;
+      let zoneNote = '';
+      if (parsedTa?.support_resistance?.['support and resistance channel']?.channels?.length > 0) {
+        const srChs = parsedTa.support_resistance['support and resistance channel'].channels;
+        let nearestSrDist = Infinity;
+        for (const ch of srChs) {
+          const dLo = Math.abs(cand.price - ch.lo) / cand.price;
+          const dHi = Math.abs(cand.price - ch.hi) / cand.price;
+          const nearest = Math.min(dLo, dHi);
+          if (nearest < nearestSrDist) {
+            nearestSrDist = nearest;
+            zoneNote = dLo < dHi
+              ? `support@${ch.lo.toFixed(cand.price < 1 ? 6 : 4)}(${(dLo * 100).toFixed(2)}%)`
+              : `resist@${ch.hi.toFixed(cand.price < 1 ? 6 : 4)}(${(dHi * 100).toFixed(2)}%)`;
+          }
+        }
+        touchingZone = nearestSrDist <= SR_TOUCH_PCT;
+        if (!touchingZone) {
+          logger.info(`[S/R Proximity] Skip ${cand.symbol}: nearest zone ${zoneNote} > 0.3% away`, "events");
+          loopDiag.push(`${cand.symbol}:srFar(${zoneNote})`);
+          continue;
+        }
+        logger.info(`[S/R Proximity] ${cand.symbol}: TOUCHING zone — ${zoneNote} ✅`, "events");
       } else {
-        levels = suppLevelObj || levels || resistLevelObj;
-        levels.entry = cand.price;
-        levels.sl = parseFloat((cand.price * (1 - loopSlPct)).toFixed(dec));
-        levels.tp = parseFloat((cand.price * (1 + loopSlPct * loopMinRR)).toFixed(dec));
-        logger.info(`[Momentum Engine] Candidate ${cand.symbol} at $${cand.price} (24h: ${cand.change}%) signals LONG. Target TP: $${levels.tp}, SL: $${levels.sl}`, "events");
+        // TrueNorth S/R байхгүй: Binance 24h high/low-г ашиглана
+        if (cand.high24h && cand.low24h) {
+          const dHigh = Math.abs(cand.price - cand.high24h) / cand.price;
+          const dLow  = Math.abs(cand.price - cand.low24h)  / cand.price;
+          touchingZone = (dHigh <= SR_TOUCH_PCT || dLow <= SR_TOUCH_PCT);
+          zoneNote = dHigh < dLow ? `24hH@${cand.high24h}` : `24hL@${cand.low24h}`;
+          if (!touchingZone) {
+            logger.info(`[S/R Proximity] Skip ${cand.symbol}: No TrueNorth data, ${zoneNote} is ${(Math.min(dHigh, dLow)*100).toFixed(2)}% away`, "events");
+            loopDiag.push(`${cand.symbol}:noSR_Far`);
+            continue;
+          }
+        } else {
+          touchingZone = true; // мэдээлэл байхгүй үед нэвтрүүлнэ
+          zoneNote = 'noSRdata';
+        }
       }
 
-
-      // Evaluate final direction
-      const direction = bypassTrendFilter ? targetDirection : detectAutoDirection(cand, parsedTa, sma24, smaTrend);
-      if (direction === 'SKIP') {
-        logger.info(`[Bot Execution] Skip candidate ${cand.symbol}: Direction filtered by trend filter or SMA caps (Price: ${cand.price}, SMA24: ${sma24.toFixed(4)}, SMA Trend: ${smaTrend.toFixed(4)})`, "events");
-        loopDiag.push(`${cand.symbol}:dirSkip(rawDir=${rawDirection},bypass=${bypassTrendFilter})`);
+      // S/R мэдээлэл огт байхгүй (geckoId mapping хийгдээгүй) бол нэвтрэхийг хориглоно
+      // NOTE: geckoIdMap-д бүх watchlist coin нэмэгдсэн тул энэ зам маш ховор
+      if (zoneNote === 'noSRdata' && !geckoId) {
+        logger.info(`[S/R Proximity] Skip ${cand.symbol}: No TrueNorth mapping — S/R zone confirmation required`, "events");
+        loopDiag.push(`${cand.symbol}:noGeckoId_blocked`);
         continue;
       }
 
-      // Hard Macro Trend Protection Guard (NEVER trade against a strong macro trend!)
-      // NOTE: bypassTrendFilter=true means price is AT Support/Resistance Zone — zone touch overrides macro trend filter.
-      const macroTrend = parsedTa?.trend || 'UNKNOWN';
-      if (!bypassTrendFilter) {
-        if (direction === 'SHORT' && (macroTrend === 'Bullish' || (sma24 && cand.price > sma24 * 1.005))) {
-          logger.warn(`[Macro Trend Guard] Blocked SHORT candidate ${cand.symbol}: Cannot open SHORT during strong Bullish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
-          continue;
-        }
-        if (direction === 'LONG' && (macroTrend === 'Bearish' || (sma24 && cand.price < sma24 * 0.995))) {
-          logger.warn(`[Macro Trend Guard] Blocked LONG candidate ${cand.symbol}: Cannot open LONG during strong Bearish trend! (Price: ${cand.price}, SMA24: ${sma24?.toFixed(4)})`, "events");
-          continue;
-        }
-      } else {
-        logger.info(`[Macro Trend Guard] Skipped macro guard for ${cand.symbol}: Support/Resistance Zone touch bypasses macro trend filter (bypassTrendFilter=true, direction=${direction})`, "events");
+      // ── Momentum-Aligned Direction Engine ─────────────────────────
+      // Negative 24h change OR negative funding → SHORT (fade bounce)
+      // Positive 24h change OR positive momentum  → LONG  (ride momentum)
+      let direction = rawDirection;
+      if (!direction || direction === 'SKIP') {
+        // funding < 0 means shorts are paying longs → bullish squeeze → LONG
+        // funding > 0 means longs are paying shorts → bearish squeeze → SHORT
+        const fundingSignal = (cand.funding || 0) < -0.0003 ? 'LONG' : (cand.funding || 0) > 0.0003 ? 'SHORT' : null;
+        direction = fundingSignal || (cand.change < 0 ? 'SHORT' : 'LONG');
       }
 
-      // Dual Timeframe Confluence Gate (1h Macro Trend + 15m Micro Entry Alignment)
-      if (!bypassTrendFilter) {
+      const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
+      // ── Hard 1.5% SL — Бүх coin-д адил ──────────────────────────
+      const loopSlPct = 0.015;
+      const loopMinRR = 3.0; // Minimum 3x RR (1.5% SL → 4.5% TP)
+
+      // ── TP: TrueNorth next S/R level, fallback 4.5% ───────────────
+      let loopTpPct = loopSlPct * loopMinRR; // default 4.5%
+      if (parsedTa?.support_resistance?.['support and resistance channel']?.channels?.length > 0) {
+        const srChs = parsedTa.support_resistance['support and resistance channel'].channels;
+        if (direction === 'SHORT') {
+          // SHORT TP: price-аас доош байгаа хамгийн ойр support level
+          const supports = srChs
+            .filter(ch => ch.hi < cand.price)
+            .sort((a, b) => b.hi - a.hi);
+          if (supports.length > 0) {
+            const srTpPct = (cand.price - supports[0].hi) / cand.price;
+            if (srTpPct >= loopSlPct * 2) loopTpPct = srTpPct; // min 2x RR
+          }
+        } else {
+          // LONG TP: price-аас дээш байгаа хамгийн ойр resistance level
+          const resistances = srChs
+            .filter(ch => ch.lo > cand.price)
+            .sort((a, b) => a.lo - b.lo);
+          if (resistances.length > 0) {
+            const srTpPct = (resistances[0].lo - cand.price) / cand.price;
+            if (srTpPct >= loopSlPct * 2) loopTpPct = srTpPct; // min 2x RR
+          }
+        }
+      }
+
+      if (direction === 'SHORT') {
+        levels = resistLevelObj || levels || suppLevelObj;
+        levels.entry = cand.price;
+        levels.sl    = parseFloat((cand.price * (1 + loopSlPct)).toFixed(dec));
+        levels.tp    = parseFloat((cand.price * (1 - loopTpPct)).toFixed(dec));
+        logger.info(`[Momentum Engine] ${cand.symbol} $${cand.price} (24h: ${cand.change}% | zone: ${zoneNote}) → SHORT | SL $${levels.sl} (+${(loopSlPct*100).toFixed(1)}%) | TP $${levels.tp} (-${(loopTpPct*100).toFixed(2)}%)`, "events");
+      } else {
+        direction = 'LONG';
+        levels = suppLevelObj || levels || resistLevelObj;
+        levels.entry = cand.price;
+        levels.sl    = parseFloat((cand.price * (1 - loopSlPct)).toFixed(dec));
+        levels.tp    = parseFloat((cand.price * (1 + loopTpPct)).toFixed(dec));
+        logger.info(`[Momentum Engine] ${cand.symbol} $${cand.price} (24h: ${cand.change}% | zone: ${zoneNote}) → LONG | SL $${levels.sl} (-${(loopSlPct*100).toFixed(1)}%) | TP $${levels.tp} (+${(loopTpPct*100).toFixed(2)}%)`, "events");
+      }
+
+      logger.info(`[Macro Trend Guard] Executing ${direction} for ${cand.symbol} (momentum-based bypass, no macro filter)`, "events");
+
+      // Dual Timeframe Confluence Gate — only apply for BTC chop/ADX filter, skip for momentum trades
+      if (false) { // disabled: momentum engine bypasses dual confluence gate
         const isReboundTrade = levels.reason && (
           levels.reason.includes('support_rebound') || 
           levels.reason.includes('resistance_rebound') || 
@@ -3345,8 +3430,8 @@ export default async function handler(req, res) {
           takeProfit: tpPx,
           cloid: entryCloid
         });
-        activePositionCount++;
-        if (activePositionCount >= maxConcurrentPositions) break;
+        currentActiveCount++;
+        if (currentActiveCount >= maxConcurrentPositions) break;
       } else {
         try {
           const levPayload = { asset: target.assetIndex, isCross: true, leverage: finalLeverage };
@@ -3386,8 +3471,8 @@ export default async function handler(req, res) {
             orderResult
           });
 
-          activePositionCount++;
-          if (activePositionCount >= maxConcurrentPositions) break;
+          currentActiveCount++;
+          if (currentActiveCount >= maxConcurrentPositions) break;
         } catch (orderErr) {
           logger.error(`[Order Execution Error] Candidate ${target.symbol} failed: ${orderErr.message}. Trying next candidate...`, "events");
           loopDiag.push(`${target.symbol}:orderError(${orderErr.message})`);
