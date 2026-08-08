@@ -3153,35 +3153,31 @@ export default async function handler(req, res) {
         continue;
       }
       let bypassTrendFilter = false;
+
+      // Trend-Aligned Direction Engine:
+      // If coin price change is negative or momentum is Bearish -> SHORT 🔴
+      // If coin price change is positive or momentum is Bullish -> LONG 🟢
       let targetDirection = rawDirection;
+      if (!targetDirection || targetDirection === 'SKIP') {
+        targetDirection = cand.change < 0 ? 'SHORT' : 'LONG';
+      }
 
-      // August 2nd Winning Execution Engine (User Mandate):
-      // Instant Market Entry when candidate signals momentum alignment!
-      // Support Rebound -> LONG 🟢, Resistance Rejection -> SHORT 🔴
       const dec = cand.price < 1 ? 6 : (cand.price < 10 ? 4 : 2);
-      const suppEntryPx = suppLevelObj?.entry || (cand.price * 0.985);
-      const resistEntryPx = resistLevelObj?.entry || (cand.price * 1.015);
-
-      const isSupportRebound = cand.price <= suppEntryPx * 1.015;
-      const isResistanceRejection = cand.price >= resistEntryPx * 0.985;
-
-      bypassTrendFilter = true;
       const loopSlPct = COIN_SL_CAP[cand.symbol] ?? (cand.price < 1.0 ? 0.025 : 0.020);
       const loopMinRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.8;
-      if (isSupportRebound || rawDirection === 'LONG') {
-        targetDirection = 'LONG';
-        levels = suppLevelObj || levels;
-        levels.entry = cand.price;
-        levels.sl = parseFloat((cand.price * (1 - loopSlPct)).toFixed(dec));
-        levels.tp = parseFloat((cand.price * (1 + loopSlPct * loopMinRR)).toFixed(dec));
-        logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals LONG Support Rebound. Executing Instant Market Entry!`, "events");
-      } else {
-        targetDirection = 'SHORT';
-        levels = resistLevelObj || levels;
+
+      if (targetDirection === 'SHORT') {
+        levels = resistLevelObj || levels || suppLevelObj;
         levels.entry = cand.price;
         levels.sl = parseFloat((cand.price * (1 + loopSlPct)).toFixed(dec));
         levels.tp = parseFloat((cand.price * (1 - loopSlPct * loopMinRR)).toFixed(dec));
-        logger.info(`[Aug 2 Engine] Candidate ${cand.symbol} at $${cand.price} signals SHORT Resistance Rejection. Executing Instant Market Entry!`, "events");
+        logger.info(`[Momentum Engine] Candidate ${cand.symbol} at $${cand.price} (24h: ${cand.change}%) signals SHORT. Target TP: $${levels.tp}, SL: $${levels.sl}`, "events");
+      } else {
+        levels = suppLevelObj || levels || resistLevelObj;
+        levels.entry = cand.price;
+        levels.sl = parseFloat((cand.price * (1 - loopSlPct)).toFixed(dec));
+        levels.tp = parseFloat((cand.price * (1 + loopSlPct * loopMinRR)).toFixed(dec));
+        logger.info(`[Momentum Engine] Candidate ${cand.symbol} at $${cand.price} (24h: ${cand.change}%) signals LONG. Target TP: $${levels.tp}, SL: $${levels.sl}`, "events");
       }
 
 
