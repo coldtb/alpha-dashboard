@@ -65,7 +65,7 @@
     "kPEPE"
   ],
   "enableEternaSignals": true,
-  "dynamicWatchlist": true,
+  "dynamicWatchlist": false,
   "watchlistBonus": 15,
   "_comment_volume": "=== Volume Thresholds ===",
   "binanceVolumeThresholds": [

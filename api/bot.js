@@ -1387,6 +1387,7 @@ export default async function handler(req, res) {
   // Hard override config settings for Crypto Perps Mainnet (minScore: 50)
   config.perpDex = "";
   config.minScore = req.query?.min_score ? parseInt(req.query.min_score) : 50;
+  config.dynamicWatchlist = false; // Strictly restricted to 30 watchlist coins
   config.watchlist = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
     "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI", "AAVE",
@@ -1801,10 +1802,10 @@ export default async function handler(req, res) {
     }
     logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
-    const isDynamicWatchlist = config.dynamicWatchlist === true || process.env.DYNAMIC_WATCHLIST === 'true';
+    const isDynamicWatchlist = false; // Force strict 30-coin watchlist
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
-      const inWatchlist = isDynamicWatchlist ? true : watchlist.includes(c.symbol);
+      const inWatchlist = watchlist.includes(c.symbol);
       return c.score >= coinMinScore && 
              inWatchlist &&
              !(config.blacklist || []).includes(c.symbol) && 
@@ -2863,9 +2864,10 @@ export default async function handler(req, res) {
     }
 
 
+    const isDynamicWatchlist = false; // Force strict 30-coin watchlist
     const candidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
-      const inWatchlist = isDynamicWatchlist ? true : watchlist.includes(c.symbol);
+      const inWatchlist = watchlist.includes(c.symbol);
       return c.score >= coinMinScore && inWatchlist && !(config.blacklist || []).includes(c.symbol);
     });
     if (candidates.length === 0) {
@@ -3185,6 +3187,8 @@ export default async function handler(req, res) {
       const SR_TOUCH_PCT = 0.003;
       let touchingZone = false;
       let zoneNote = '';
+      let srDirection = null; // Rebound direction (Support -> LONG 🟢, Resistance -> SHORT 🔴)
+
       if (parsedTa?.support_resistance?.['support and resistance channel']?.channels?.length > 0) {
         const srChs = parsedTa.support_resistance['support and resistance channel'].channels;
         let nearestSrDist = Infinity;
@@ -3194,9 +3198,13 @@ export default async function handler(req, res) {
           const nearest = Math.min(dLo, dHi);
           if (nearest < nearestSrDist) {
             nearestSrDist = nearest;
-            zoneNote = dLo < dHi
-              ? `support@${ch.lo.toFixed(cand.price < 1 ? 6 : 4)}(${(dLo * 100).toFixed(2)}%)`
-              : `resist@${ch.hi.toFixed(cand.price < 1 ? 6 : 4)}(${(dHi * 100).toFixed(2)}%)`;
+            if (dLo < dHi) {
+              zoneNote = `support@${ch.lo.toFixed(cand.price < 1 ? 6 : 4)}(${(dLo * 100).toFixed(2)}%)`;
+              srDirection = 'LONG'; // Touching Support -> ALWAYS LONG 🟢 (Rebound off support)
+            } else {
+              zoneNote = `resist@${ch.hi.toFixed(cand.price < 1 ? 6 : 4)}(${(dHi * 100).toFixed(2)}%)`;
+              srDirection = 'SHORT'; // Touching Resistance -> ALWAYS SHORT 🔴 (Rebound off resistance)
+            }
           }
         }
         touchingZone = nearestSrDist <= SR_TOUCH_PCT;
@@ -3205,14 +3213,20 @@ export default async function handler(req, res) {
           loopDiag.push(`${cand.symbol}:srFar(${zoneNote})`);
           continue;
         }
-        logger.info(`[S/R Proximity] ${cand.symbol}: TOUCHING zone — ${zoneNote} ✅`, "events");
+        logger.info(`[S/R Proximity] ${cand.symbol}: TOUCHING zone — ${zoneNote} ✅ (S/R Rebound Dir: ${srDirection})`, "events");
       } else {
         // TrueNorth S/R байхгүй: Binance 24h high/low-г ашиглана
         if (cand.high24h && cand.low24h) {
           const dHigh = Math.abs(cand.price - cand.high24h) / cand.price;
           const dLow  = Math.abs(cand.price - cand.low24h)  / cand.price;
           touchingZone = (dHigh <= SR_TOUCH_PCT || dLow <= SR_TOUCH_PCT);
-          zoneNote = dHigh < dLow ? `24hH@${cand.high24h}` : `24hL@${cand.low24h}`;
+          if (dLow < dHigh) {
+            zoneNote = `24hL@${cand.low24h}`;
+            srDirection = 'LONG';
+          } else {
+            zoneNote = `24hH@${cand.high24h}`;
+            srDirection = 'SHORT';
+          }
           if (!touchingZone) {
             logger.info(`[S/R Proximity] Skip ${cand.symbol}: No TrueNorth data, ${zoneNote} is ${(Math.min(dHigh, dLow)*100).toFixed(2)}% away`, "events");
             loopDiag.push(`${cand.symbol}:noSR_Far`);
@@ -3225,20 +3239,17 @@ export default async function handler(req, res) {
       }
 
       // S/R мэдээлэл огт байхгүй (geckoId mapping хийгдээгүй) бол нэвтрэхийг хориглоно
-      // NOTE: geckoIdMap-д бүх watchlist coin нэмэгдсэн тул энэ зам маш ховор
       if (zoneNote === 'noSRdata' && !geckoId) {
         logger.info(`[S/R Proximity] Skip ${cand.symbol}: No TrueNorth mapping — S/R zone confirmation required`, "events");
         loopDiag.push(`${cand.symbol}:noGeckoId_blocked`);
         continue;
       }
 
-      // ── Momentum-Aligned Direction Engine ─────────────────────────
-      // Negative 24h change OR negative funding → SHORT (fade bounce)
-      // Positive 24h change OR positive momentum  → LONG  (ride momentum)
-      let direction = rawDirection;
+      // ── Direction Determination ─────────────────────────
+      // PRIORITY 1: S/R Rebound Direction (Support touch -> LONG 🟢, Resistance touch -> SHORT 🔴, trend IGNORED)
+      // PRIORITY 2: Funding / Momentum Fallback
+      let direction = srDirection || rawDirection;
       if (!direction || direction === 'SKIP') {
-        // funding < 0 means shorts are paying longs → bullish squeeze → LONG
-        // funding > 0 means longs are paying shorts → bearish squeeze → SHORT
         const fundingSignal = (cand.funding || 0) < -0.0003 ? 'LONG' : (cand.funding || 0) > 0.0003 ? 'SHORT' : null;
         direction = fundingSignal || (cand.change < 0 ? 'SHORT' : 'LONG');
       }
