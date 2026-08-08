@@ -2856,7 +2856,7 @@ export default async function handler(req, res) {
       .filter(p => parseFloat(p.position?.szi || "0") !== 0)
       .map(p => p.position.coin);
     const activeOrdCoins = (openOrders || []).map(o => o.coin);
-    const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins]);
+    const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins, "TST"]);
 
     const tradeableCandidates = candidates.filter(cand => !blockedCoins.has(cand.symbol));
 
@@ -3434,8 +3434,14 @@ export default async function handler(req, res) {
         ]),
         grouping: "normalTpsl"
       };
-      if (vaultAddress) orderPayload.vaultAddress = vaultAddress;
-      const orderResult = await exchange.order(orderPayload);
+      let orderResult;
+      try {
+        if (vaultAddress) orderPayload.vaultAddress = vaultAddress;
+        orderResult = await exchange.order(orderPayload);
+      } catch (orderErr) {
+        logger.error(`[Order Execution Error] Candidate ${target.symbol} failed: ${orderErr.message}`, "events");
+        return sendResponse(200, { status: "error", error: `Order Execution Failed for ${target.symbol}: ${orderErr.message}` });
+      }
 
       await sendDiscordAlert(
         `**Coin:** ${target.symbol}\n` +
