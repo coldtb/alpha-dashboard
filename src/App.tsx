@@ -102,10 +102,82 @@ const DashboardContent: React.FC = () => {
   );
 };
 
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: string;
+}
+
+class DashboardErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: '' };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error: error.message || 'Unknown Dashboard Error' };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Dashboard Error Boundary Caught Error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          backgroundColor: '#090a0f',
+          color: '#f8fafc',
+          fontFamily: 'sans-serif',
+          padding: '2rem',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            background: 'rgba(30, 41, 59, 0.8)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: '12px',
+            padding: '2.5rem',
+            maxWidth: '500px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+          }}>
+            <h2 style={{ color: '#ef4444', marginBottom: '1rem' }}>⚠️ Dashboard Component Render Warning</h2>
+            <p style={{ color: '#94a3b8', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
+              {this.state.error}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.75rem 1.75rem',
+                borderRadius: '8px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)'
+              }}
+            >
+              Refresh Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <StoreProvider>
-      <DashboardContent />
-    </StoreProvider>
+    <DashboardErrorBoundary>
+      <StoreProvider>
+        <DashboardContent />
+      </StoreProvider>
+    </DashboardErrorBoundary>
   );
 }
