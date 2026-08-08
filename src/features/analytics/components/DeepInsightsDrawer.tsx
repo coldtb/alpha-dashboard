@@ -571,14 +571,14 @@ export const DeepInsightsDrawer: React.FC = () => {
               </div>
 
               <div className="liq-metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
-                {shortLiqs.slice(0, 2).map((s: any, sidx: number) => (
+                {(shortLiqs || []).slice(0, 2).map((s: any, sidx: number) => (
                   <div key={sidx} className="liq-metric" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-light)', borderLeft: '2px solid var(--color-red)', padding: '0.4rem 0.6rem', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <span className="w-label" style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>Short Liq Magnet</span>
                     <span className="w-val" style={{ color: 'var(--color-red)', fontWeight: 700, fontSize: '0.85rem' }}>{formatPriceText(s.price)}</span>
                     <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>${formatVolume(s.liq_usd)} · +{s.distance_pct?.toFixed(2)}%</span>
                   </div>
                 ))}
-                {longLiqs.slice(0, 2).map((l: any, lidx: number) => (
+                {(longLiqs || []).slice(0, 2).map((l: any, lidx: number) => (
                   <div key={lidx} className="liq-metric" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-light)', borderLeft: '2px solid var(--color-green)', padding: '0.4rem 0.6rem', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <span className="w-label" style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>Long Liq Magnet</span>
                     <span className="w-val" style={{ color: 'var(--color-green)', fontWeight: 700, fontSize: '0.85rem' }}>{formatPriceText(l.price)}</span>

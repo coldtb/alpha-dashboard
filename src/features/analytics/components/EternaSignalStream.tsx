@@ -92,7 +92,7 @@ const SignalCard = ({ sig }: { sig: Signal }) => {
         <div>
           <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff' }}>{sig.symbol}</span>
           <span style={{ fontSize: '0.68rem', color: '#6b7280', marginLeft: '6px' }}>{isNet} {sig.network}</span>
-          <div style={{ fontSize: '0.68rem', color: '#9ca3af', marginTop: '1px' }}>{sig.name.slice(0, 24)}</div>
+          <div style={{ fontSize: '0.68rem', color: '#9ca3af', marginTop: '1px' }}>{(sig?.name || sig?.symbol || '').slice(0, 24)}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
           <span style={{

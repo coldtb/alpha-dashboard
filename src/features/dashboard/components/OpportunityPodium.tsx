@@ -20,7 +20,7 @@ export const OpportunityPodium: React.FC<OpportunityPodiumProps> = ({ onApplyPla
   } = useStore();
 
   // Get Top 3 candidates for Podium
-  const topCandidates = top100Coins.slice(0, 3);
+  const topCandidates = (top100Coins || []).slice(0, 3);
 
   // Copy address helper
   const handleCopyAddress = (address: string, e: React.MouseEvent) => {
