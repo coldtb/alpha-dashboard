@@ -2966,6 +2966,7 @@ export default async function handler(req, res) {
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
     const loopDiag = [];
+    const executedTrades = [];
     for (const cand of tradeableCandidates) {
       const lastFillTime = lastFillTimeMap[cand.symbol];
       if (lastFillTime) {
@@ -3223,250 +3224,156 @@ export default async function handler(req, res) {
 
 
 
-      // Valid candidate found
-      target = cand;
-      taData = parsedTa;
-      derivData = parsedDeriv;
-      optionsData = parsedOpt;
-      target.precalculatedLevels = levels;
-      target.precalculatedDirection = rawDirection;
-      target.direction = direction;
-      break;
-    }
+      // Execute candidate order immediately inside loop to allow multi-position concurrent entries (up to maxConcurrentPositions)
+      const target = cand;
+      const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.03;
+      const finalLevels = levels || computeStrategyLevels(target, direction, parsedTa, parsedDeriv, parsedOpt, useSmartSlTp, null, targetMaxTpPct);
+      
+      if (!finalLevels) {
+        logger.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`, "events");
+        continue;
+      }
 
-    if (!target) {
-      const diagScored = scoredCoins.slice(0, 15).map(c => `${c.symbol}:s=${c.score},px=${c.price}`);
-      const diagCand = candidates.map(c => c.symbol);
-      const diagTrade = tradeableCandidates.map(c => c.symbol);
-      const loopDiagOut = (typeof loopDiag !== 'undefined') ? loopDiag : [];
-      logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
-      return sendResponse(200, {
-        status: "success",
-        message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.",
-        debug: {
-          scoredTop: diagScored,
-          candidates: diagCand,
-          tradeable: diagTrade,
-          activePositionCount,
-          maxConcurrentPositions,
-          loopDiag: loopDiagOut
-        }
+      // Risk and Position Size Calculations
+      const marginSummary = userState.marginSummary || {};
+      const accountEquity = parseFloat(marginSummary.accountValue || userState.withdrawable || "0");
+      let spotUsdcBal = 0;
+      if (spotState && spotState.balances) {
+        const usdcObj = spotState.balances.find(b => b.coin === "USDC");
+        if (usdcObj) spotUsdcBal = parseFloat(usdcObj.total || "0") - parseFloat(usdcObj.hold || "0");
+      }
+      const totalCapitalUsd = Math.max(accountEquity, spotUsdcBal);
+      const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
+      const accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
+
+      if (accountSize <= 5.0) {
+        logger.warn(`[Bot Execution] Insufficient balance for ${target.symbol}. Account size: $${accountSize.toFixed(2)}`, "events");
+        break; // Stop loop if balance is insufficient
+      }
+
+      const slDistancePct = Math.abs(finalLevels.entry - finalLevels.sl) / finalLevels.entry;
+      if (slDistancePct === 0) continue;
+
+      const maxLeverage = target.assetInfo?.maxLeverage || 5;
+      const finalLeverage = Math.min(5, maxLeverage);
+      const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
+      let sizeFactor = baseSizeFactor;
+      if (target.symbol === 'HYPE' && target.volatility24h) {
+        sizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / target.volatility24h));
+      }
+      let positionSizeUsd = (accountSize * sizeFactor) * finalLeverage;
+      if (positionSizeUsd > maxPositionSizeUsd) positionSizeUsd = maxPositionSizeUsd;
+      if (positionSizeUsd < 10.5) positionSizeUsd = 10.5;
+
+      const positionSizeTokens = positionSizeUsd / finalLevels.entry;
+      const isBuy = direction === "LONG";
+      const szDec = target.assetInfo?.szDecimals || 0;
+      const entrySz = formatSize(positionSizeTokens, szDec);
+      const entryPx = formatPrice(finalLevels.entry, szDec);
+      const entryMarketWorstPx = formatPrice(isBuy ? finalLevels.entry * 1.02 : finalLevels.entry * 0.98, szDec);
+      const tpPx = formatPrice(finalLevels.tp, szDec);
+      const tpWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, finalLevels.tp), szDec);
+      const slPx = formatPrice(finalLevels.sl, szDec);
+      const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, finalLevels.sl), szDec);
+
+      const entryCloid = generateEncodedCloid({
+        score: target.score,
+        nansenSmartMoney: target.nansenSmartMoney || 0,
+        nansenWhale: target.nansenWhale || 0,
+        nansenExchange: target.nansenExchange || 0,
+        tnVwap: target.tnVwap || 0,
+        direction
       });
-    }
 
-    logger.info(`[Bot Execution] Smart TP/SL Enabled: ${useSmartSlTp}`, "events");
+      if (isDryRun) {
+        logger.info(`[DRY RUN] Bypassed order placement for ${target.symbol}`, "events");
+        executedTrades.push({
+          symbol: target.symbol,
+          score: target.score,
+          direction,
+          leverage: finalLeverage,
+          positionSizeUsd: positionSizeUsd.toFixed(2),
+          entryPrice: entryPx,
+          stopLoss: slPx,
+          takeProfit: tpPx,
+          cloid: entryCloid
+        });
+        activePositionCount++;
+        if (activePositionCount >= maxConcurrentPositions) break;
+      } else {
+        try {
+          const levPayload = { asset: target.assetIndex, isCross: true, leverage: finalLeverage };
+          if (vaultAddress) levPayload.vaultAddress = vaultAddress;
+          await exchange.updateLeverage(levPayload);
 
-    const direction = target.direction;
-    // FIX #2: always pass coin-specific maxTpPctOverride
-    const targetMaxTpPct = COIN_TP_CAP[target.symbol] ?? 0.03;
-    const levels = (target.precalculatedLevels && direction === target.precalculatedDirection)
-      ? target.precalculatedLevels
-      : computeStrategyLevels(target, direction, taData, derivData, optionsData, useSmartSlTp, null, targetMaxTpPct);
-    if (!levels) {
-      logger.warn(`[Bot Execution] computeStrategyLevels returned null for ${target.symbol}. Skipping.`, "events");
-      return sendResponse(200, { status: 'success', message: 'Level computation returned null. Skipped.' });
-    }
-    logger.info(`[Bot Execution] Calculated Levels: Entry=${levels.entry}, TP=${levels.tp}, SL=${levels.sl}, Reason=${levels.reason}`, "events");
+          const orderPayload = {
+            orders: attachBuilderFee([
+              { a: target.assetIndex, b: isBuy, p: entryMarketWorstPx, s: entrySz, r: false, t: { limit: { tif: "Ioc" } }, c: entryCloid },
+              { a: target.assetIndex, b: !isBuy, p: tpWorstPx, s: entrySz, r: true, t: { trigger: { triggerPx: tpPx, isMarket: true, tpsl: "tp" } }, c: generateBotCloid() },
+              { a: target.assetIndex, b: !isBuy, p: slWorstPx, s: entrySz, r: true, t: { trigger: { triggerPx: slPx, isMarket: true, tpsl: "sl" } }, c: generateBotCloid() }
+            ]),
+            grouping: "normalTpsl"
+          };
+          if (vaultAddress) orderPayload.vaultAddress = vaultAddress;
+          const orderResult = await exchange.order(orderPayload);
 
-    // 6. Risk and Position Size Calculations: Unified Account Support (Perp Margin + Spot USDC)
-    const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
-    const marginSummary = userState.marginSummary || {};
-    const accountEquity = parseFloat(marginSummary.accountValue || userState.withdrawable || "0");
-    let spotUsdcBal = 0;
+          logger.info(`[Bot Execution] Successfully placed trade for ${target.symbol} (${direction})`, "events");
+          await sendDiscordAlert(
+            `**Coin:** ${target.symbol}\n` +
+            `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
+            `**Entry Price:** $${entryPx}\n` +
+            `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
+            `**Position Size:** $${positionSizeUsd.toFixed(2)} (Margin: $${(positionSizeUsd / finalLeverage).toFixed(2)})`,
+            'open'
+          );
 
-    if (spotState && spotState.balances) {
-      const usdcObj = spotState.balances.find(b => b.coin === "USDC");
-      if (usdcObj) {
-        spotUsdcBal = parseFloat(usdcObj.total || "0") - parseFloat(usdcObj.hold || "0");
+          executedTrades.push({
+            symbol: target.symbol,
+            score: target.score,
+            direction,
+            leverage: finalLeverage,
+            positionSizeUsd: positionSizeUsd.toFixed(2),
+            entryPrice: entryPx,
+            stopLoss: slPx,
+            takeProfit: tpPx,
+            orderResult
+          });
+
+          activePositionCount++;
+          if (activePositionCount >= maxConcurrentPositions) break;
+        } catch (orderErr) {
+          logger.error(`[Order Execution Error] Candidate ${target.symbol} failed: ${orderErr.message}. Trying next candidate...`, "events");
+          loopDiag.push(`${target.symbol}:orderError(${orderErr.message})`);
+          continue;
+        }
       }
     }
 
-    // Unified Account Support: When Unified Account is enabled on Hyperliquid, Spot USDC is unified collateral for Perp Futures!
-    const withdrawableUsd = Math.max(accountEquity, spotUsdcBal);
-    const totalCapitalUsd = withdrawableUsd;
-    let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
-    logger.info(`[Unified Account] Effective trading capital: $${accountSize.toFixed(2)} (Account Equity: $${accountEquity.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
-
-    if (accountSize <= 5.0) {
-      logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
-      return sendResponse(200, { status: "success", message: `No trade executed: Insufficient balance. Account size: $${accountSize.toFixed(2)}` });
+    if (executedTrades.length > 0) {
+      return sendResponse(200, {
+        status: "success",
+        message: `Executed ${executedTrades.length} new trade(s) concurrently`,
+        executedTrades
+      });
     }
 
-
-    const slDistancePct = Math.abs(levels.entry - levels.sl) / levels.entry;
-    if (slDistancePct === 0) {
-      logger.warn(`[Bot Execution] No trade: Calculated Stop Loss distance is zero. Entry: ${levels.entry}, SL: ${levels.sl}`, "events");
-      return sendResponse(200, { status: "success", message: "No trade executed: Calculated Stop Loss distance is zero." });
-    }
-
-    // Use dynamic leverage: min(5, coin's max leverage) to avoid "Invalid leverage value" error
-    const maxLeverage = target.assetInfo?.maxLeverage || 5;
-    const finalLeverage = Math.min(5, maxLeverage);
-    const baseSizeFactor = config.positionSizeFactor !== undefined ? config.positionSizeFactor : 0.5;
-    let sizeFactor = baseSizeFactor;
-    if (target.symbol === 'HYPE' && target.volatility24h) {
-      sizeFactor = Math.min(baseSizeFactor, Math.max(0.15, 0.05 / target.volatility24h));
-      logger.info(`[Volatility Sizing] HYPE sizeFactor scaled from ${baseSizeFactor} to ${sizeFactor.toFixed(3)} (24h Volatility: ${(target.volatility24h * 100).toFixed(2)}%)`, "events");
-    }
-    let positionSizeUsd = (accountSize * sizeFactor) * finalLeverage;
-    // FIX #9: Cap position size to maxPositionSizeUsd
-    if (positionSizeUsd > maxPositionSizeUsd) {
-      logger.info(`[Risk] Position size $${positionSizeUsd.toFixed(2)} capped to $${maxPositionSizeUsd} (maxPositionSizeUsd)`, "events");
-      positionSizeUsd = maxPositionSizeUsd;
-    }
-
-
-
-    // Hyperliquid requires a minimum notional order size of $10.0.
-    // We round up to $10.5 if the calculated size is smaller, to ensure the order is accepted.
-    if (positionSizeUsd < 10.5) {
-      positionSizeUsd = 10.5;
-    }
-
-    const positionSizeTokens = positionSizeUsd / levels.entry;
-
-    // 7. Execute Leverage and Order
-    const isBuy = direction === "LONG";
-    const szDec = target.assetInfo?.szDecimals || 0;
-    const entrySz = formatSize(positionSizeTokens, szDec);
-    const entryPx = formatPrice(levels.entry, szDec);
-    const entryMarketWorstPx = formatPrice(isBuy ? levels.entry * 1.02 : levels.entry * 0.98, szDec);
-
-    const tpPx = formatPrice(levels.tp, szDec);
-    const tpWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.tp), szDec);
-
-    const slPx = formatPrice(levels.sl, szDec);
-    const slWorstPx = formatPrice(getTriggerLimitPrice(!isBuy, levels.sl), szDec);
-
-    const entryCloid = generateEncodedCloid({
-      score: target.score,
-      nansenSmartMoney: target.nansenSmartMoney || 0,
-      nansenWhale: target.nansenWhale || 0,
-      nansenExchange: target.nansenExchange || 0,
-      tnVwap: target.tnVwap || 0,
-      direction
+    const diagScored = scoredCoins.slice(0, 15).map(c => `${c.symbol}:s=${c.score},px=${c.price}`);
+    const diagCand = candidates.map(c => c.symbol);
+    const diagTrade = tradeableCandidates.map(c => c.symbol);
+    const loopDiagOut = (typeof loopDiag !== 'undefined') ? loopDiag : [];
+    logger.info("[Bot Execution] Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.", "events");
+    return sendResponse(200, {
+      status: "success",
+      message: "Scan cycle complete: Candidates are monitoring Support/Resistance Touch Zones for entry.",
+      debug: {
+        scoredTop: diagScored,
+        candidates: diagCand,
+        tradeable: diagTrade,
+        activePositionCount,
+        maxConcurrentPositions,
+        loopDiag: loopDiagOut
+      }
     });
-    logger.info(`[Bot Execution] Generated encoded cloid for entry: ${entryCloid}`, "events");
-
-    if (isDryRun) {
-      logger.info(`[DRY RUN] Bypassed updating leverage for ${target.symbol} to ${finalLeverage}x`, "events");
-      logger.info(`[DRY RUN] Bypassed placing GTC Limit bracket order for ${target.symbol}: Entry Limit=${entryPx}, TP Trigger=${tpPx}, SL Trigger=${slPx}, Size=${entrySz}, Cloid=${entryCloid}`, "events");
-      await sendDiscordAlert(
-        `**[DRY RUN]**\n` +
-        `**Coin:** ${target.symbol}\n` +
-        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
-        `**Entry Price:** $${entryPx}\n` +
-        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
-        `**Position Size:** $${positionSizeUsd.toFixed(2)}`,
-        'open'
-      );
-      return sendResponse(200, {
-        status: "success",
-        message: "[DRY RUN] Simulated trade execution succeeded",
-        executedTrade: {
-          symbol: target.symbol,
-          score: target.score,
-          direction,
-          leverage: finalLeverage,
-          positionSizeUsd: positionSizeUsd.toFixed(2),
-          entryPrice: entryPx,
-          stopLoss: slPx,
-          takeProfit: tpPx,
-          cloid: entryCloid,
-          orderResult: { status: "simulated" }
-        }
-      });
-    } else {
-      // A. Update Leverage
-      const levPayload = {
-        asset: target.assetIndex,
-        isCross: true,
-        leverage: finalLeverage
-      };
-      if (vaultAddress) levPayload.vaultAddress = vaultAddress;
-      await exchange.updateLeverage(levPayload);
-
-      // B. Place Bracket Order (Limit Entry + TP/SL bracket)
-      const orderPayload = {
-        orders: attachBuilderFee([
-          // Direct Market Order Entry (IOC at market worst price for instant fill)
-          {
-            a: target.assetIndex,
-            b: isBuy,
-            p: entryMarketWorstPx,
-            s: entrySz,
-            r: false,
-            t: { limit: { tif: "Ioc" } },
-            c: entryCloid
-          },
-          // Take Profit Trigger Order (Market Trigger to guarantee fill)
-          {
-            a: target.assetIndex,
-            b: !isBuy,
-            p: tpWorstPx,
-            s: entrySz,
-            r: true,
-            t: {
-              trigger: {
-                triggerPx: tpPx,
-                isMarket: true,
-                tpsl: "tp"
-              }
-            },
-            c: generateBotCloid()
-          },
-          // Stop Loss Trigger Order (Market Trigger to guarantee invalidation)
-          {
-            a: target.assetIndex,
-            b: !isBuy,
-            p: slWorstPx,
-            s: entrySz,
-            r: true,
-            t: {
-              trigger: {
-                triggerPx: slPx,
-                isMarket: true,
-                tpsl: "sl"
-              }
-            },
-            c: generateBotCloid()
-          }
-        ]),
-        grouping: "normalTpsl"
-      };
-      let orderResult;
-      try {
-        if (vaultAddress) orderPayload.vaultAddress = vaultAddress;
-        orderResult = await exchange.order(orderPayload);
-      } catch (orderErr) {
-        logger.error(`[Order Execution Error] Candidate ${target.symbol} failed: ${orderErr.message}`, "events");
-        return sendResponse(200, { status: "error", error: `Order Execution Failed for ${target.symbol}: ${orderErr.message}` });
-      }
-
-      await sendDiscordAlert(
-        `**Coin:** ${target.symbol}\n` +
-        `**Direction:** ${direction} (Leverage: ${finalLeverage}x)\n` +
-        `**Entry Price:** $${entryPx}\n` +
-        `**Take Profit:** $${tpPx} | **Stop Loss:** $${slPx}\n` +
-        `**Position Size:** $${positionSizeUsd.toFixed(2)} (Margin: $${(positionSizeUsd / finalLeverage).toFixed(2)})`,
-        'open'
-      );
-
-      return sendResponse(200, {
-        status: "success",
-        executedTrade: {
-          symbol: target.symbol,
-          score: target.score,
-          direction,
-          leverage: finalLeverage,
-          positionSizeUsd: positionSizeUsd.toFixed(2),
-          entryPrice: entryPx,
-          stopLoss: slPx,
-          takeProfit: tpPx,
-          orderResult
-        }
-      });
-    }
   } catch (error) {
 
     logger.error("Bot execution error: " + error.message, "events", { stack: error.stack });
