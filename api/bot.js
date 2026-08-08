@@ -1583,18 +1583,18 @@ export default async function handler(req, res) {
       logger.info(`[Vault Mode] Operating on Vault / Prop Challenge Account: ${vaultAddress}`, "events");
     }
 
-    // User-specific calls — query effectiveUserAddress (Vault or Main Wallet)
+    // User-specific calls — query effectiveUserAddress (Vault or Main Wallet) with retry and 8s timeout
     const [initialUserState, initialOpenOrders, initialSpotState, userFills] = await Promise.all([
-      info.clearinghouseState({ user: effectiveUserAddress, dex }).catch(err => {
+      withRetryAndTimeout(() => info.clearinghouseState({ user: effectiveUserAddress }), "clearinghouseState", { retries: 2, delayMs: 300, timeoutMs: 8000 }).catch(err => {
         logger.warn(`[Rate Limit] clearinghouseState blocked: ${err.message}`, "events");
         return { assetPositions: [], withdrawable: "0", marginSummary: { accountValue: "0", totalNtlPos: "0", totalRawUsd: "0", totalMarginUsed: "0" } };
       }),
-      info.frontendOpenOrders({ user: effectiveUserAddress, dex }).catch(err => {
+      withRetryAndTimeout(() => info.frontendOpenOrders({ user: effectiveUserAddress }), "frontendOpenOrders", { retries: 2, delayMs: 300, timeoutMs: 8000 }).catch(err => {
         logger.warn(`[Rate Limit] frontendOpenOrders blocked: ${err.message}`, "events");
         return [];
       }),
-      info.spotClearinghouseState({ user: walletAddress }).catch(() => null),
-      info.userFills({ user: effectiveUserAddress, dex }).catch(() => [])
+      withRetryAndTimeout(() => info.spotClearinghouseState({ user: walletAddress }), "spotClearinghouseState", { retries: 1, delayMs: 300, timeoutMs: 5000 }).catch(() => null),
+      withRetryAndTimeout(() => info.userFills({ user: effectiveUserAddress }), "userFills", { retries: 1, delayMs: 300, timeoutMs: 5000 }).catch(() => [])
     ]);
 
 
@@ -2060,7 +2060,7 @@ export default async function handler(req, res) {
 
       // Missing SL/TP Automatic Recovery Guard: Automatically attach missing 1.5% SL & TP trigger orders if missing
       const activeCoinOrders = openOrders.filter(o => o.coin === coin);
-      const hasSlOrder = activeCoinOrders.some(o => o.orderType === 'Stop Market' || (o.triggerCondition && o.triggerCondition.includes('below') && isLong) || (o.triggerCondition && o.triggerCondition.includes('above') && !isLong) || o.isTrigger || o.oid);
+      const hasSlOrder = activeCoinOrders.some(o => o.isTrigger);
 
       if (!hasSlOrder) {
         logger.warn(`[Missing SL Guard] Active position ${coin} (${isLong ? 'LONG' : 'SHORT'}) has no active Stop Loss! Attaching missing SL/TP bracket...`, "events");
@@ -3266,7 +3266,8 @@ export default async function handler(req, res) {
 
     // 6. Risk and Position Size Calculations: Unified Account Support (Perp Margin + Spot USDC)
     const accountSizeEnv = process.env.HYPERLIQUID_ACCOUNT_SIZE;
-    const perpWithdrawable = parseFloat(userState.withdrawable || "0");
+    const marginSummary = userState.marginSummary || {};
+    const accountEquity = parseFloat(marginSummary.accountValue || userState.withdrawable || "0");
     let spotUsdcBal = 0;
 
     if (spotState && spotState.balances) {
@@ -3277,10 +3278,10 @@ export default async function handler(req, res) {
     }
 
     // Unified Account Support: When Unified Account is enabled on Hyperliquid, Spot USDC is unified collateral for Perp Futures!
-    const withdrawableUsd = Math.max(perpWithdrawable, spotUsdcBal);
+    const withdrawableUsd = Math.max(accountEquity, spotUsdcBal);
     const totalCapitalUsd = withdrawableUsd;
     let accountSize = accountSizeEnv ? parseFloat(accountSizeEnv) : totalCapitalUsd;
-    logger.info(`[Unified Account] Effective trading capital: $${accountSize.toFixed(2)} (Unified Margin: $${withdrawableUsd.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
+    logger.info(`[Unified Account] Effective trading capital: $${accountSize.toFixed(2)} (Account Equity: $${accountEquity.toFixed(2)}, Spot: $${spotUsdcBal.toFixed(2)})`, "events");
 
     if (accountSize <= 5.0) {
       logger.warn(`[Bot Execution] No trade: Insufficient balance. Account size: $${accountSize.toFixed(2)}`, "events");
