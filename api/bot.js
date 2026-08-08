@@ -1498,6 +1498,7 @@ export default async function handler(req, res) {
     const exchange = new ExchangeClient({
       transport,
       wallet: account,
+      accountAddress: walletAddress,
       meta: staticMeta
     });
 

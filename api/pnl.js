@@ -62,7 +62,7 @@ export default async function handler(req, res) {
           { name: "SOL", szDecimals: 2, maxLeverage: 20, onlyIsolated: false }
         ]
       };
-      const exchange = new ExchangeClient({ transport, wallet: account, meta: staticMeta });
+      const exchange = new ExchangeClient({ transport, wallet: account, accountAddress: walletAddress, meta: staticMeta });
 
       const btcIdx = 0;
       const testSizeStr = "0.0002";
