@@ -1766,7 +1766,7 @@ export default async function handler(req, res) {
     }
     logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
-    // Find the highest score among all tradeable candidates (no positions, no open orders)
+    const watchlist = config.watchlist || [];
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
       return c.score >= coinMinScore && 
