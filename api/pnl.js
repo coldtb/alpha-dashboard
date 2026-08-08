@@ -45,9 +45,8 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
 
-  const query = req.query || {};
-  const isTestReq = query.test_trade === "true" || query.test === "true";
-  const isCloseOnly = query.action === "close" || query.close === "true";
+  const isTestReq = Boolean(req.query && (req.query.test_trade === "true" || req.query.test === "true"));
+  const isCloseOnly = Boolean(req.query && (req.query.action === "close" || req.query.close === "true"));
 
   if (isTestReq || isCloseOnly) {
     const privateKey = process.env.HYPERLIQUID_PRIVATE_KEY || "0x81ce0ec2537fc50cac3d67a3e0c82df71f83e01f5fc7330e2a065449c4a91901";
@@ -62,7 +61,11 @@ export default async function handler(req, res) {
           { name: "SOL", szDecimals: 2, maxLeverage: 20, onlyIsolated: false }
         ]
       };
-      const exchange = new ExchangeClient({ transport, wallet: account, accountAddress: walletAddress, meta: staticMeta });
+      const exchangeOpts = { transport, wallet: account, meta: staticMeta };
+      if (account.address.toLowerCase() !== walletAddress.toLowerCase()) {
+        exchangeOpts.accountAddress = walletAddress;
+      }
+      const exchange = new ExchangeClient(exchangeOpts);
 
       const btcIdx = 0;
       const testSizeStr = "0.0002";

@@ -1495,12 +1495,11 @@ export default async function handler(req, res) {
         { name: "SOL", szDecimals: 2, maxLeverage: 20, onlyIsolated: false }
       ]
     };
-    const exchange = new ExchangeClient({
-      transport,
-      wallet: account,
-      accountAddress: walletAddress,
-      meta: staticMeta
-    });
+    const exchangeOpts = { transport, wallet: account, meta: staticMeta };
+    if (account.address.toLowerCase() !== walletAddress.toLowerCase()) {
+      exchangeOpts.accountAddress = walletAddress;
+    }
+    const exchange = new ExchangeClient(exchangeOpts);
 
     // 3b. Test Trade Direct Trigger Mode
     const isTestTrade = req.query?.test_trade || req.query?.test || (req.url && req.url.includes("test_trade"));
