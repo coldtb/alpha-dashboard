@@ -2852,11 +2852,18 @@ export default async function handler(req, res) {
     }
 
     // Filter candidates that are not currently in active positions/orders (Strict Single Position per Coin Guard)
+    // Ignore tiny dust positions under $1.00 USD value
     const activePosCoins = (userState.assetPositions || [])
-      .filter(p => parseFloat(p.position?.szi || "0") !== 0)
+      .filter(p => {
+        const sz = Math.abs(parseFloat(p.position?.szi || "0"));
+        const px = parseFloat(p.position?.entryPx || "0");
+        return (sz * px) >= 1.0;
+      })
       .map(p => p.position.coin);
+    
+    const activePositionCount = activePosCoins.length;
     const activeOrdCoins = (openOrders || []).map(o => o.coin);
-    const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins, "TST"]);
+    const blockedCoins = new Set([...activePosCoins, ...activeOrdCoins]);
 
     const tradeableCandidates = candidates.filter(cand => !blockedCoins.has(cand.symbol));
 
