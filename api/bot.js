@@ -1577,7 +1577,8 @@ export default async function handler(req, res) {
     );
 
     // Vault / Prop Challenge Account ("dundiin dans") support
-    const vaultAddress = process.env.HYPERLIQUID_VAULT_ADDRESS || req.query.vault || null;
+    const rawVaultAddress = process.env.HYPERLIQUID_VAULT_ADDRESS || req.query.vault || null;
+    const vaultAddress = (rawVaultAddress && rawVaultAddress.startsWith('0x') && rawVaultAddress.length === 42 && !rawVaultAddress.includes('0057b3b67ac1f54ff32e301bab174ce30bfb06e1')) ? rawVaultAddress : null;
     const effectiveUserAddress = vaultAddress || walletAddress;
     if (vaultAddress) {
       logger.info(`[Vault Mode] Operating on Vault / Prop Challenge Account: ${vaultAddress}`, "events");
