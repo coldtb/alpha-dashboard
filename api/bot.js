@@ -1461,6 +1461,16 @@ export default async function handler(req, res) {
   const isDryRun = process.env.DRY_RUN === "true" || req.query.dry_run === "true" || config.dryRun === true || config.dryRun === "true";
   const useSmartSlTp = config.useSmartSlTp !== false && process.env.USE_SMART_SL_TP !== 'false' && req.query.smart_sl_tp !== 'false';
 
+  let watchlist = config.watchlist || [
+    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
+    "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
+    "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
+  ];
+  if (req.query && req.query.coin) {
+    watchlist = [req.query.coin.toUpperCase()];
+    logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
+  }
+
   // 1. Cron Auth Check
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && process.env.NODE_ENV !== 'development') {
@@ -1766,7 +1776,6 @@ export default async function handler(req, res) {
     }
     logger.info(`[Stale Cleanup] Open orders count: ${openOrders.length}, pending coins found: ${Array.from(coinsWithPendingOrders).join(", ")}`, "events");
 
-    const watchlist = config.watchlist || [];
     const potentialCandidates = scoredCoins.filter(c => {
       const coinMinScore = c.symbol === 'BTC' ? 40 : minScore;
       return c.score >= coinMinScore && 
@@ -2707,17 +2716,7 @@ export default async function handler(req, res) {
     // 5c. Limit Order Entry Level Trailing: No longer needed as we use instant market (taker) entry.
 
 
-    // Restrict scanner & candidates strictly to the 30 supported crypto perps
-    const SUPPORTED_30_COINS = [
-      "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-      "TON", "TRX", "LTC", "TAO", "SUI", "ARB", "NEAR", "ALGO", "ASTER", "UNI",
-      "AAVE", "CRV", "HYPE", "XMR", "ZEC", "ENA", "ZRO", "WLD", "PUMP", "kPEPE"
-    ];
-    let watchlist = config.watchlist || SUPPORTED_30_COINS;
-    if (req.query.coin) {
-      watchlist = [req.query.coin.toUpperCase()];
-      logger.info(`[Query Coin Override] Watchlist restricted to: ${watchlist}`, "events");
-    }
+    // Watchlist initialized at handler start
 
     // 5-Minute Frequency Discord Status Report Generator (Formatted exactly like the image table with REAL TrueNorth data)
     const currentMin = new Date().getMinutes();
