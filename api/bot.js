@@ -6,7 +6,7 @@ import path from "path";
 import logger from "./services/logger.js";
 
 let config = {
-  minScore: 50,
+  minScore: 70,
   minRewardRiskRatio: 3.0,
   minSlBuffer: 0.008,
   minTpBuffer: 0.005,
