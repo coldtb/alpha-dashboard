@@ -3114,8 +3114,8 @@ export default async function handler(req, res) {
       const isResistanceRejection = cand.price >= resistEntryPx * 0.985;
 
       bypassTrendFilter = true;
-      const loopSlPct = COIN_SL_CAP[cand.symbol] ?? 0.015;
-      const loopMinRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.5;
+      const loopSlPct = COIN_SL_CAP[cand.symbol] ?? (cand.price < 1.0 ? 0.025 : 0.020);
+      const loopMinRR = config.minRewardRiskRatio !== undefined ? config.minRewardRiskRatio : 1.8;
       if (isSupportRebound || rawDirection === 'LONG') {
         targetDirection = 'LONG';
         levels = suppLevelObj || levels;
