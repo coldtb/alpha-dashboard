@@ -8,7 +8,7 @@
   "replacementScoreDiff": 10,
   "nansenBuilderAddress": "",
   "nansenBuilderFeeRate": 80,
-  "dryRun": false,
+  "dryRun": true,
   "binanceScanner": true,
   "perpDex": "",
   "_comment_filters": "=== Token & Regime Filters ===",
